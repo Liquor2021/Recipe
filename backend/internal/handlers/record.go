@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type nameAmount struct {
@@ -18,9 +19,9 @@ type nameAmount struct {
 	Amount string `json:"amount"`
 }
 
-func addShoppingItems(dishID uint, dishName string, mealType string, mealDate string) {
+func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string, mealDate string) {
 	var dish models.Dish
-	if err := database.DB.Unscoped().First(&dish, dishID).Error; err != nil {
+	if err := db.Unscoped().First(&dish, dishID).Error; err != nil {
 		return
 	}
 
@@ -59,12 +60,12 @@ func addShoppingItems(dishID uint, dishName string, mealType string, mealDate st
 	}
 
 	if len(items) > 0 {
-		database.DB.Create(&items)
+		db.Create(&items)
 	}
 }
 
-func removeShoppingItems(dishID uint, mealType string, mealDate string) {
-	database.DB.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
+func removeShoppingItems(db *gorm.DB, dishID uint, mealType string, mealDate string) {
+	db.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
 		Delete(&models.ShoppingCheck{})
 }
 
@@ -240,12 +241,28 @@ func CreateRecord(c *gin.Context) {
 		Photo:    req.Photo,
 	}
 
-	if err := database.DB.Create(&record).Error; err != nil {
+	// 记录与买菜清单联动写入放在同一事务，避免中途失败留脏数据
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+		addShoppingItems(tx, req.DishID, req.DishName, req.MealType, req.MealDate)
+		return nil
+	})
+	if err != nil {
+		// 唯一索引冲突说明并发下已记录过，视为重复而非错误
+		var existing int64
+		database.DB.Model(&models.MealRecord{}).
+			Where("dish_id = ? AND meal_type = ? AND meal_date = ?", req.DishID, req.MealType, req.MealDate).
+			Count(&existing)
+		if existing > 0 {
+			utils.BadRequest(c, "该菜品已在当日该餐次中记录过")
+			return
+		}
 		utils.InternalError(c, "创建记录失败")
 		return
 	}
 
-	addShoppingItems(req.DishID, req.DishName, req.MealType, req.MealDate)
 	services.QueueAutoAchievementSync()
 
 	utils.Success(c, record)
@@ -284,9 +301,16 @@ func BatchCreateRecords(c *gin.Context) {
 			Photo:    r.Photo,
 		}
 
-		if err := database.DB.Create(&record).Error; err == nil {
+		// 每条记录一个事务：记录+买菜清单要么同时成功，要么跳过
+		err := database.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&record).Error; err != nil {
+				return err
+			}
+			addShoppingItems(tx, r.DishID, r.DishName, r.MealType, r.MealDate)
+			return nil
+		})
+		if err == nil {
 			created = append(created, record)
-			addShoppingItems(r.DishID, r.DishName, r.MealType, r.MealDate)
 		}
 	}
 	if len(created) > 0 {
@@ -337,12 +361,18 @@ func DeleteRecord(c *gin.Context) {
 		utils.NotFound(c, "记录不存在")
 		return
 	}
-	if err := database.DB.Delete(&record).Error; err != nil {
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&record).Error; err != nil {
+			return err
+		}
+		removeShoppingItems(tx, record.DishID, record.MealType, record.MealDate)
+		return nil
+	})
+	if err != nil {
 		utils.InternalError(c, "删除记录失败")
 		return
 	}
 
-	removeShoppingItems(record.DishID, record.MealType, record.MealDate)
 	services.QueueAutoAchievementSync()
 
 	utils.Success(c, nil)

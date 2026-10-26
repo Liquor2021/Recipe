@@ -17,6 +17,11 @@ type TomorrowPickOptions struct {
 	ExcludeIDs []uint
 }
 
+// getRepeatDays 优先读管理后台的 repeat_days 设置，读不到再回退环境变量。
+func getRepeatDays() int {
+	return getSettingInt("repeat_days", config.C.RepeatDays)
+}
+
 func PickDishes(mealType string, count int, excludeRecent bool) ([]models.Dish, error) {
 	var dishes []models.Dish
 	query := database.DB.Where("enabled = ?", true)
@@ -32,7 +37,7 @@ func PickDishes(mealType string, count int, excludeRecent bool) ([]models.Dish, 
 	}
 
 	if excludeRecent {
-		dishes = filterRecent(dishes, config.C.RepeatDays)
+		dishes = filterRecent(dishes, getRepeatDays())
 	}
 
 	if len(dishes) == 0 {
@@ -113,7 +118,7 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 		}
 	}
 
-	recent := recentDishIDMap(config.C.RepeatDays)
+	recent := recentDishIDMap(getRepeatDays())
 	pool := filterTomorrowPool(dishes, profile, excluded, recent, true)
 	if len(pool) == 0 {
 		pool = filterTomorrowPool(dishes, profile, excluded, recent, false)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
-	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
 	"strings"
 	"time"
@@ -62,7 +61,8 @@ func DeleteQuote(c *gin.Context) {
 }
 
 func GetAchievements(c *gin.Context) {
-	services.SyncAutoAchievements()
+	// 同步交给写操作后的 QueueAutoAchievementSync（300ms 防抖），
+	// 这里直接查库返回，避免每次 GET 全量重算快照。
 
 	var achievements []models.Achievement
 	database.DB.Order("id ASC").Find(&achievements)

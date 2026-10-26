@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type favoriteDishEntry struct {
@@ -350,8 +351,23 @@ func AddFavorite(c *gin.Context) {
 	}
 
 	fav := models.Favorite{DishID: dish.ID}
-	database.DB.Create(&fav)
-	database.DB.Model(&dish).Update("favorite", true)
+	// 收藏表与菜品冗余标记同事务写入，保证两边一致
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&fav).Error; err != nil {
+			return err
+		}
+		return tx.Model(&dish).Update("favorite", true).Error
+	})
+	if err != nil {
+		// 唯一约束冲突说明并发下已收藏，视为幂等成功
+		var existing models.Favorite
+		if err := database.DB.Where("dish_id = ?", dish.ID).First(&existing).Error; err == nil {
+			utils.SuccessMsg(c, "已收藏")
+			return
+		}
+		utils.InternalError(c, "收藏失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 
 	utils.SuccessMsg(c, "收藏成功")
@@ -360,8 +376,16 @@ func AddFavorite(c *gin.Context) {
 func RemoveFavorite(c *gin.Context) {
 	dishID := c.Param("dishId")
 
-	database.DB.Where("dish_id = ?", dishID).Delete(&models.Favorite{})
-	database.DB.Model(&models.Dish{}).Where("id = ?", dishID).Update("favorite", false)
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("dish_id = ?", dishID).Delete(&models.Favorite{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.Dish{}).Where("id = ?", dishID).Update("favorite", false).Error
+	})
+	if err != nil {
+		utils.InternalError(c, "取消收藏失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 
 	utils.SuccessMsg(c, "取消收藏成功")

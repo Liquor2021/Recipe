@@ -76,13 +76,32 @@ func GetCachedWeekPlan() *WeekPlan {
 		}
 	}
 
-	plan, _ := GenerateWeekPlan()
+	plan, err := GenerateWeekPlan()
+	if err != nil || len(plan.Days) == 0 {
+		// 生成失败或结果为空：保留旧缓存，绝不用空计划覆盖有效周计划
+		planMu.RLock()
+		stale := cachedPlan
+		planMu.RUnlock()
+		if stale != nil {
+			return stale
+		}
+		return plan
+	}
 	saveWeekPlanCache(plan)
 	return plan
 }
 
 func RegenerateWeekPlan() *WeekPlan {
-	plan, _ := GenerateWeekPlan()
+	plan, err := GenerateWeekPlan()
+	if err != nil || len(plan.Days) == 0 {
+		planMu.RLock()
+		stale := cachedPlan
+		planMu.RUnlock()
+		if stale != nil {
+			return stale
+		}
+		return plan
+	}
 	saveWeekPlanCache(plan)
 	return plan
 }

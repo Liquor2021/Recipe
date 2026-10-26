@@ -49,8 +49,25 @@ func Init() error {
 		return err
 	}
 
+	migrateMealRecordUniqueIndex()
+
 	seedData()
 	return nil
+}
+
+// migrateMealRecordUniqueIndex 把同菜同餐同日的普通索引升级为唯一索引。
+// SQLite 无法直接修改已有索引，需先清理历史重复数据再重建；
+// 若建唯一索引失败（如仍存在无法删除的重复行），保留普通索引兜底。
+func migrateMealRecordUniqueIndex() {
+	DB.Exec(`DELETE FROM meal_records WHERE id NOT IN (
+		SELECT MIN(id) FROM meal_records GROUP BY dish_id, meal_type, meal_date
+	)`)
+	DB.Exec(`DROP INDEX IF EXISTS idx_meal_records_unique_day`)
+	if err := DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meal_records_unique_day
+		ON meal_records(dish_id, meal_type, meal_date)`).Error; err != nil {
+		DB.Exec(`CREATE INDEX IF NOT EXISTS idx_meal_records_unique_day
+		ON meal_records(dish_id, meal_type, meal_date)`)
+	}
 }
 
 func configureSQLite(db *gorm.DB) error {
