@@ -266,23 +266,33 @@ func UpdateSettings(c *gin.Context) {
 }
 
 func GetDashboard(c *gin.Context) {
-	var totalDishes int64
-	database.DB.Model(&models.Dish{}).Count(&totalDishes)
+	// 同表多项统计合并为单条条件聚合，减少往返
+	type dishStatsRow struct {
+		TotalDishes   int64
+		EnabledDishes int64
+	}
+	var dishStats dishStatsRow
+	database.DB.Model(&models.Dish{}).Select(
+		"count(*) as total_dishes, coalesce(sum(case when enabled then 1 else 0 end), 0) as enabled_dishes",
+	).Scan(&dishStats)
+	totalDishes := dishStats.TotalDishes
+	enabledDishes := dishStats.EnabledDishes
+	disabledDishes := totalDishes - enabledDishes
 
-	var enabledDishes int64
-	database.DB.Model(&models.Dish{}).Where("enabled = ?", true).Count(&enabledDishes)
-
-	var totalRecords int64
-	database.DB.Model(&models.MealRecord{}).Count(&totalRecords)
-
-	var todayRecords int64
-	database.DB.Model(&models.MealRecord{}).Where("meal_date = ?", todayStr()).Count(&todayRecords)
+	type recordStatsRow struct {
+		TotalRecords int64
+		TodayRecords int64
+	}
+	var recordStats recordStatsRow
+	database.DB.Model(&models.MealRecord{}).Select(
+		"count(*) as total_records, coalesce(sum(case when meal_date = ? then 1 else 0 end), 0) as today_records",
+		todayStr(),
+	).Scan(&recordStats)
+	totalRecords := recordStats.TotalRecords
+	todayRecords := recordStats.TodayRecords
 
 	var favoriteCount int64
 	database.DB.Model(&models.Favorite{}).Count(&favoriteCount)
-
-	var disabledDishes int64
-	database.DB.Model(&models.Dish{}).Where("enabled = ?", false).Count(&disabledDishes)
 
 	type CategoryCount struct {
 		Category string `json:"category"`
@@ -324,12 +334,22 @@ func GetDashboard(c *gin.Context) {
 		Date  string `json:"date"`
 		Count int64  `json:"count"`
 	}
-	var weekTrend []DayCount
+	// 一条 GROUP BY 拉齐近 7 天，替代逐天 COUNT
+	weekStart := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
+	var trendRows []DayCount
+	database.DB.Model(&models.MealRecord{}).
+		Select("meal_date as date, count(*) as count").
+		Where("meal_date >= ?", weekStart).
+		Group("meal_date").
+		Find(&trendRows)
+	countByDate := make(map[string]int64, len(trendRows))
+	for _, row := range trendRows {
+		countByDate[row.Date] = row.Count
+	}
+	weekTrend := make([]DayCount, 0, 7)
 	for i := 6; i >= 0; i-- {
 		d := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
-		var cnt int64
-		database.DB.Model(&models.MealRecord{}).Where("meal_date = ?", d).Count(&cnt)
-		weekTrend = append(weekTrend, DayCount{Date: d, Count: cnt})
+		weekTrend = append(weekTrend, DayCount{Date: d, Count: countByDate[d]})
 	}
 
 	type DifficultyCount struct {

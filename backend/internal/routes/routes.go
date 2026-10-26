@@ -69,6 +69,10 @@ func Setup(r *gin.Engine) {
 			app.POST("/shopping-list/toggle", handlers.ToggleShoppingCheckHandler)
 			app.POST("/shopping-list/inventory", handlers.ToggleHomeInventoryHandler)
 			app.GET("/holidays/upcoming", handlers.GetUpcomingHolidays)
+			app.GET("/fridge", handlers.GetFridge)
+			app.POST("/fridge", handlers.AddFridge)
+			app.DELETE("/fridge/:itemName", handlers.RemoveFridge)
+			app.GET("/fridge/recipes", handlers.GetFridgeRecipes)
 		}
 	}
 
