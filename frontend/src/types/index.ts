@@ -285,3 +285,18 @@ export interface DishRecordsResponse {
   records: DishRecordWithDay[]
   stats: DishRecordsStats
 }
+
+export interface HomeInventoryItem {
+  id: number
+  item_name: string
+  in_stock: boolean
+  updated_at: string
+}
+
+export interface FridgeMatch {
+  dish: Dish
+  matched: string[]
+  missing: string[]
+  matched_count: number
+  coverage: number
+}

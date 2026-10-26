@@ -7,6 +7,7 @@ import { asString } from "@/lib/utils"
 import { Flip, gsap, motionDuration, useGSAP } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import PageHeader from "@/components/PageHeader"
+import { cardShadow } from "@/components/Card"
 import type { Achievement, WeekDayPlan, ShoppingCategory, MealRecord } from "@/types"
 import toast from "react-hot-toast"
 import { Menu } from "lucide-react"
@@ -384,6 +385,18 @@ export default function More() {
             ))
           )}
         </div>
+
+        <button
+          onClick={() => navigate("/fridge")}
+          className={`w-full bg-card rounded-2xl p-4 ${cardShadow} border border-border flex items-center gap-3.5 transition-all active:scale-98 mb-7`}
+        >
+          <div className="w-12 h-12 rounded-[10px] bg-gradient-to-br from-mint-light to-yellow-light flex items-center justify-center text-2xl flex-shrink-0">🧊</div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="text-[15px] font-bold mb-0.5">🧊 冰箱库存</div>
+            <div className="text-xs text-text2">记下家里有什么，按食材找能做的菜</div>
+          </div>
+          <span className="text-text3 text-sm">›</span>
+        </button>
 
         {isLoggedIn && (
           <>

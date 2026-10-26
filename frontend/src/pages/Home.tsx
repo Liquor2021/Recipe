@@ -13,6 +13,7 @@ import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { gsap, motionDuration, scrollToElement, useGSAP } from "@/lib/gsap"
+import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import toast from "react-hot-toast"
 import { Home as HomeIcon, Settings } from "lucide-react"
 
@@ -68,7 +69,9 @@ export default function Home() {
   const [selectedMood, setSelectedMood] = useState<string | null>(todayRating?.home_mood || null)
   const [blindRevealed, setBlindRevealed] = useState(false)
   const [spinning, setSpinning] = useState(false)
+  const [wheelResult, setWheelResult] = useState<Dish | null>(null)
   const wheelDegRef = useRef(0)
+  const wheelHighlightRef = useRef(-1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wheelRef = useRef<HTMLDivElement>(null)
   const blindBoxRef = useRef<HTMLDivElement>(null)
@@ -155,15 +158,14 @@ export default function Home() {
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const cx = 106, cy = 106, r = 105
-    const colors = ["#E8734A", "#6EC6B8", "#F5D76E", "#F4A8A0", "#8B5CF6", "#F0E6FF"]
+    const colors = ["#E8734A", "#F5D76E", "#6EC6B8", "#F4A8A0", "#8B5CF6", "#C89B6C"]
     const n = wheelDishes.length
     const angle = (2 * Math.PI) / n
     ctx.clearRect(0, 0, size, size)
     const fontSize = n > 12 ? 9 : n > 8 ? 10 : 11
     // 文字沿半径方向从内向外排，超出可用长度的名字截断加省略号
     const textStart = r * 0.26
-    const maxTextLen = r * 0.66
-    const maxChars = Math.max(2, Math.floor(maxTextLen / fontSize))
+    const maxChars = Math.max(2, Math.floor((r * 0.66) / fontSize))
     for (let i = 0; i < n; i++) {
       ctx.beginPath()
       ctx.moveTo(cx, cy)
@@ -171,6 +173,14 @@ export default function Home() {
       ctx.closePath()
       ctx.fillStyle = colors[i % colors.length]
       ctx.fill()
+      // 中奖扇区白色高亮
+      if (i === wheelHighlightRef.current) {
+        ctx.fillStyle = "rgba(255,255,255,.35)"
+        ctx.fill()
+        ctx.strokeStyle = "#fff"
+        ctx.lineWidth = 3
+        ctx.stroke()
+      }
       ctx.save()
       ctx.translate(cx, cy)
       ctx.rotate(i * angle + angle / 2 - Math.PI / 2)
@@ -178,12 +188,24 @@ export default function Home() {
       ctx.font = `bold ${fontSize}px -apple-system, sans-serif`
       ctx.textAlign = "left"
       ctx.textBaseline = "middle"
+      ctx.shadowColor = "rgba(0,0,0,.22)"
+      ctx.shadowBlur = 3
       let label = wheelDishes[i].name
       if (label.length > maxChars) {
         label = label.slice(0, maxChars - 1) + "…"
       }
       ctx.fillText(label, textStart, 0)
       ctx.restore()
+    }
+    // 扇区分隔线
+    ctx.strokeStyle = "rgba(255,255,255,.85)"
+    ctx.lineWidth = 2.5
+    for (let i = 0; i < n; i++) {
+      const a = i * angle - Math.PI / 2
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a) * r * 0.16, cy + Math.sin(a) * r * 0.16)
+      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+      ctx.stroke()
     }
   }, [wheelDishes])
 
@@ -202,22 +224,27 @@ export default function Home() {
     const seg = 360 / wheelDishes.length
     const targetWithin = (360 - (pickIdx * seg + seg / 2)) % 360
     const base = wheelDegRef.current - (wheelDegRef.current % 360)
-    const nextRotation = base + 360 * 5 + targetWithin
+    const nextRotation = base + 360 * 6 + targetWithin
     wheelDegRef.current = nextRotation
+    wheelHighlightRef.current = -1
+    drawWheel()
 
     gsap.to(wheelRef.current, {
       rotation: nextRotation,
-      duration: motionDuration(3),
+      duration: motionDuration(3.2),
       ease: "power4.out",
       overwrite: true,
       onComplete: () => {
         setSpinning(false)
         const pick = wheelDishes[pickIdx]
+        wheelHighlightRef.current = pickIdx
+        drawWheel()
         setPickedRec(pick)
         setRecQuote("")
         setRecMeal(null)
-        toast.success(`🎯 转到了：${pick.name}！`)
-        requestAnimationFrame(() => scrollToElement(recCardRef.current, { block: "center" }))
+        setWheelResult(pick)
+        launchConfetti(confettiRef.current)
+        qc.invalidateQueries({ queryKey: ["achievements"] })
       },
     })
   }
@@ -245,22 +272,26 @@ export default function Home() {
     gsap.set(blindBoxRef.current, { rotationY: 0 })
   }
 
-  function handlePickMeal(mealType: "lunch" | "dinner") {
-    if (!currentRec) return
-    const today = todayKey
+  function recordForDish(dish: Dish, mealType: "lunch" | "dinner") {
     const alreadyPicked = todayRecords.some(
-      (r) => r.dish_id === currentRec.id && r.meal_type === mealType && r.meal_date === today
+      (r) => r.dish_id === dish.id && r.meal_type === mealType && r.meal_date === todayKey
     )
     if (alreadyPicked) {
-      toast.error(`${currentRec.name} 已在今日${mealType === "lunch" ? "午餐" : "晚餐"}中记录过啦~`)
+      toast.error(`${dish.name} 已在今日${mealType === "lunch" ? "午餐" : "晚餐"}中记录过啦~`)
       return
     }
     recordMut.mutate({
-      dish_id: currentRec.id,
-      dish_name: currentRec.name,
+      dish_id: dish.id,
+      dish_name: dish.name,
       meal_type: mealType,
-      meal_date: today,
+      meal_date: todayKey,
     })
+    setWheelResult(null)
+  }
+
+  function handlePickMeal(mealType: "lunch" | "dinner") {
+    if (!currentRec) return
+    recordForDish(currentRec, mealType)
   }
 
   function handleMoodPick(mood: string) {
@@ -406,15 +437,35 @@ export default function Home() {
         )}
 
         <SectionHeader title="🎰 转一转" />
-        <div className="relative w-[220px] h-[220px] mx-auto mb-6">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[20px] border-t-primary z-2 drop-shadow-sm" />
-          <div
-            ref={wheelRef}
-            className="w-[220px] h-[220px] rounded-full overflow-hidden shadow-[0_4px_24px_rgba(232,115,74,.2)] border-4 border-primary bg-card relative"
-          >
-            <canvas ref={canvasRef} width={212} height={212} className="w-full h-full" />
+        <div className="relative w-[240px] h-[240px] mx-auto mb-6">
+          {/* 顶部指针 */}
+          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[22px] border-t-primary-dark drop-shadow-[0_2px_3px_rgba(0,0,0,.2)]" />
+          {/* 外圈灯珠环（静态，不随盘面旋转） */}
+          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-primary to-primary-dark shadow-[0_10px_32px_rgba(232,115,74,.32),inset_0_2px_6px_rgba(255,255,255,.35)]" />
+          {Array.from({ length: 12 }).map((_, i) => (
+            <span
+              key={i}
+              className="absolute left-1/2 top-1/2 z-10"
+              style={{ transform: `translate(-50%, -50%) rotate(${i * 30}deg) translateY(-113px)` }}
+            >
+              <span
+                className="block w-[7px] h-[7px] rounded-full bg-[#FFEFC2] shadow-[0_0_6px_rgba(255,224,130,.95)]"
+                style={{ animation: `bulb-twinkle ${spinning ? 0.4 : 1.8}s ease-in-out ${(i % 3) * 0.18}s infinite` }}
+              />
+            </span>
+          ))}
+          {/* 盘面（唯一旋转的部分） */}
+          <div ref={wheelRef} className="absolute inset-[14px] rounded-full overflow-hidden will-change-transform bg-card">
+            <canvas ref={canvasRef} className="w-full h-full" />
           </div>
-          <button onClick={spinWheel} disabled={spinning} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-card shadow-md z-2 flex items-center justify-center text-sm font-bold text-primary active:scale-90 transition-transform disabled:opacity-70">{spinning ? "🎰" : "转"}</button>
+          {/* 中心按钮（静态） */}
+          <button
+            onClick={spinWheel}
+            disabled={spinning || wheelDishes.length === 0}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-[62px] h-[62px] rounded-full bg-gradient-to-b from-white to-[#FFF1E8] border-[3px] border-primary/15 shadow-[0_4px_14px_rgba(200,90,53,.35)] flex items-center justify-center text-[15px] font-black text-primary active:scale-90 transition-transform disabled:opacity-70"
+          >
+            {spinning ? "…" : "转"}
+          </button>
         </div>
 
         <SectionHeader title="🎁 惊喜盲盒" />
@@ -453,6 +504,41 @@ export default function Home() {
           <span className="text-text3 text-sm">›</span>
         </button>
       </div>
+
+      {/* 转盘结果弹层 */}
+      {wheelResult && (
+        <AnimatedBottomSheet onClose={() => setWheelResult(null)} className="rounded-t-3xl overflow-hidden">
+          <div className="relative">
+            <div className="relative h-[190px] bg-gradient-to-br from-primary-light to-pink-light">
+              <DishImage dish={wheelResult} className="w-full h-full" emojiSize="text-[52px]" />
+              <span className="absolute top-3 left-3 bg-white/92 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-primary z-10">🎯 转盘结果</span>
+              <button
+                onClick={() => setWheelResult(null)}
+                aria-label="关闭"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/92 text-text2 flex items-center justify-center shadow-sm active:scale-90 transition-transform"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="text-xl font-extrabold mb-1.5">{wheelResult.name}</div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{wheelResult.category}</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-mint-light text-mint">{wheelResult.cook_time}分钟</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{diffLabel(wheelResult.difficulty)}</span>
+              </div>
+              <div className="flex gap-2.5 mb-2.5">
+                <button onClick={() => recordForDish(wheelResult, "lunch")} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white active:scale-96 transition-all">🍳 中午吃这个</button>
+                <button onClick={() => recordForDish(wheelResult, "dinner")} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white active:scale-96 transition-all">🍲 晚上吃这个</button>
+              </div>
+              <div className="flex gap-2.5">
+                <button onClick={() => { setWheelResult(null); navigate(`/dishes/${wheelResult.id}`) }} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border2 text-text2 active:scale-96 transition-all">查看做法</button>
+                <button onClick={() => { setWheelResult(null); requestAnimationFrame(() => spinWheel()) }} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border2 text-text2 active:scale-96 transition-all">再转一次</button>
+              </div>
+            </div>
+          </div>
+        </AnimatedBottomSheet>
+      )}
     </div>
   )
 }

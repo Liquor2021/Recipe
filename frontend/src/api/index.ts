@@ -1,6 +1,6 @@
 import { api, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
-import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview } from "@/types"
+import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, HomeInventoryItem, FridgeMatch } from "@/types"
 
 export const dishesApi = {
   list: (params?: Record<string, string>) =>
@@ -130,4 +130,11 @@ export const settingsApi = {
 
 export const dashboardApi = {
   get: () => api<DashboardData>("GET", "/admin/dashboard"),
+}
+
+export const fridgeApi = {
+  list: () => api<HomeInventoryItem[]>("GET", "/fridge"),
+  add: (item_name: string) => api<null>("POST", "/fridge", { item_name }),
+  remove: (itemName: string) => api<null>("DELETE", `/fridge/${encodeURIComponent(itemName)}`),
+  recipes: (limit = 12) => api<FridgeMatch[]>("GET", `/fridge/recipes?limit=${limit}`),
 }
