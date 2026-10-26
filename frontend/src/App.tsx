@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "react-hot-toast"
-import { useEffect } from "react"
+import { lazy, Suspense, useEffect } from "react"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import AppGate from "@/components/AppGate"
 import MainLayout from "@/layouts/MainLayout"
@@ -17,14 +17,16 @@ import More from "@/pages/More"
 import Tomorrow from "@/pages/Tomorrow"
 import Achievements from "@/pages/Achievements"
 import CookMode from "@/pages/CookMode"
-import AdminLogin from "@/pages/admin/Login"
-import AdminDashboard from "@/pages/admin/Dashboard"
-import AdminDishes from "@/pages/admin/Dishes"
-import AdminDishEdit from "@/pages/admin/DishEdit"
-import AdminSettings from "@/pages/admin/Settings"
-import AdminAchievements from "@/pages/admin/Achievements"
-import AdminQuotes from "@/pages/admin/Quotes"
-import AdminRecords from "@/pages/admin/Records"
+
+// 管理端按需加载：普通用户首屏不必下载后台代码
+const AdminLogin = lazy(() => import("@/pages/admin/Login"))
+const AdminDashboard = lazy(() => import("@/pages/admin/Dashboard"))
+const AdminDishes = lazy(() => import("@/pages/admin/Dishes"))
+const AdminDishEdit = lazy(() => import("@/pages/admin/DishEdit"))
+const AdminSettings = lazy(() => import("@/pages/admin/Settings"))
+const AdminAchievements = lazy(() => import("@/pages/admin/Achievements"))
+const AdminQuotes = lazy(() => import("@/pages/admin/Quotes"))
+const AdminRecords = lazy(() => import("@/pages/admin/Records"))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,7 +62,14 @@ export default function App() {
             <Route path="/achievements" element={<Achievements />} />
           </Route>
           <Route path="/dishes/:id/cook" element={<AppGate><CookMode /></AppGate>} />
-          <Route path="/admin" element={<AdminLayout />}>
+          <Route
+            path="/admin"
+            element={
+              <Suspense fallback={<div className="min-h-dvh bg-bg" />}>
+                <AdminLayout />
+              </Suspense>
+            }
+          >
             <Route path="login" element={<AdminLogin />} />
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="dishes" element={<AdminDishes />} />

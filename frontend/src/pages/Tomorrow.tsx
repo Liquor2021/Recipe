@@ -282,13 +282,13 @@ function PlanSummary({
         <div className="rounded-2xl bg-bg px-3 py-2.5">
           <div className="text-lg font-extrabold leading-tight">午餐 {lunch.length} 道</div>
           <div className="mt-0.5 truncate text-[11px] font-semibold text-text3">
-            约用时 {lunchMinutes > 0 ? `${lunchMinutes}m` : "-"}
+            约用时 {lunchMinutes > 0 ? `${lunchMinutes} 分钟` : "-"}
           </div>
         </div>
         <div className="rounded-2xl bg-bg px-3 py-2.5">
           <div className="text-lg font-extrabold leading-tight">晚餐 {dinner.length} 道</div>
           <div className="mt-0.5 truncate text-[11px] font-semibold text-text3">
-            约用时 {dinnerMinutes > 0 ? `${dinnerMinutes}m` : "-"}
+            约用时 {dinnerMinutes > 0 ? `${dinnerMinutes} 分钟` : "-"}
           </div>
         </div>
       </div>
@@ -550,7 +550,7 @@ function DishPickerModal({
             />
           </label>
 
-          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-none">
+          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-none scroll-fade-x">
             {categories.map((item) => (
               <button
                 key={item}

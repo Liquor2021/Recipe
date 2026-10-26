@@ -471,7 +471,7 @@ export default function History() {
               return (
                 <div className="px-4 py-2.5 border-t border-border">
                   <div className="text-[11px] text-text3 mb-1.5">{hasPhotos ? `📷 照片 (${dayPhotos.length})` : "📷 拍张照记录一下？"}</div>
-                  <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
+                  <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1 scroll-fade-x">
                     {dayPhotos.map((p, i) => (
                        <div
                          key={i}

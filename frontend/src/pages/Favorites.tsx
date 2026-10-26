@@ -166,7 +166,7 @@ export default function Favorites() {
             />
 
             <section className="mb-4">
-              <div className="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              <div className="mb-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none scroll-fade-x">
                 <CategoryChip
                   active={activeCategory === "全部"}
                   label="全部"
@@ -340,7 +340,7 @@ function SmartShelf({
               <div className="text-[13px] font-black text-text">{group.title}</div>
               <div className="truncate text-[11px] font-medium text-text3">{group.meta}</div>
             </div>
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-none">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-none scroll-fade-x">
               {group.items.slice(0, 10).map((item) => (
                 <button
                   key={item.dish.id}

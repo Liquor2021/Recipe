@@ -302,8 +302,8 @@ export default function More() {
             >
               {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
               <span className="text-[32px] block mb-1.5">{a.icon}</span>
-              <div className="text-xs font-semibold mb-0.5">{a.name}</div>
-              <div className="text-[10px] text-text2">{a.description}</div>
+              <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
+              <div className="text-[10px] text-text2 line-clamp-2">{a.description}</div>
             </div>
           ))}
         </div>

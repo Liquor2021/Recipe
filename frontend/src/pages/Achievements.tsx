@@ -8,7 +8,7 @@ function formatUnlockedAt(value?: string | null) {
   if (!value) return ""
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ""
-  return `${d.getMonth() + 1}月${d.getDate()}日`
+  return `${d.getMonth() + 1}.${d.getDate()}`
 }
 
 export default function Achievements() {
@@ -60,9 +60,9 @@ export default function Achievements() {
             >
               {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
               <span className="text-[32px] block mb-1.5">{a.icon}</span>
-              <div className="text-xs font-semibold mb-0.5">{a.name}</div>
+              <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
               <div className="text-[10px] text-text2 leading-snug min-h-[28px]">{a.description}</div>
-              <div className={`mt-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[9px] font-semibold ${a.is_unlocked ? "bg-primary-light text-primary" : "bg-bg text-text3"}`}>
+              <div className={`mt-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap ${a.is_unlocked ? "bg-primary-light text-primary" : "bg-bg text-text3"}`}>
                 {a.is_unlocked ? `已解锁 ${formatUnlockedAt(a.unlocked_at)}` : a.condition === "auto" ? "自动检测" : "手动成就"}
               </div>
             </div>

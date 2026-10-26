@@ -146,11 +146,24 @@ export default function Home() {
     if (!canvas || wheelDishes.length === 0) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
+    // 按 devicePixelRatio 放大画布，避免手机高分屏上文字发虚
+    const dpr = Math.min(window.devicePixelRatio || 1, 3)
+    const size = 212
+    if (canvas.width !== size * dpr) {
+      canvas.width = size * dpr
+      canvas.height = size * dpr
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const cx = 106, cy = 106, r = 105
     const colors = ["#E8734A", "#6EC6B8", "#F5D76E", "#F4A8A0", "#8B5CF6", "#F0E6FF"]
     const n = wheelDishes.length
     const angle = (2 * Math.PI) / n
-    ctx.clearRect(0, 0, 212, 212)
+    ctx.clearRect(0, 0, size, size)
+    const fontSize = n > 12 ? 9 : n > 8 ? 10 : 11
+    // 文字沿半径方向从内向外排，超出可用长度的名字截断加省略号
+    const textStart = r * 0.26
+    const maxTextLen = r * 0.66
+    const maxChars = Math.max(2, Math.floor(maxTextLen / fontSize))
     for (let i = 0; i < n; i++) {
       ctx.beginPath()
       ctx.moveTo(cx, cy)
@@ -162,9 +175,14 @@ export default function Home() {
       ctx.translate(cx, cy)
       ctx.rotate(i * angle + angle / 2 - Math.PI / 2)
       ctx.fillStyle = "#fff"
-      ctx.font = "bold 11px -apple-system, sans-serif"
-      ctx.textAlign = "center"
-      ctx.fillText(wheelDishes[i].name, r * 0.6, 4)
+      ctx.font = `bold ${fontSize}px -apple-system, sans-serif`
+      ctx.textAlign = "left"
+      ctx.textBaseline = "middle"
+      let label = wheelDishes[i].name
+      if (label.length > maxChars) {
+        label = label.slice(0, maxChars - 1) + "…"
+      }
+      ctx.fillText(label, textStart, 0)
       ctx.restore()
     }
   }, [wheelDishes])
@@ -363,7 +381,7 @@ export default function Home() {
         </div>
 
         <SectionHeader title="😃 今天的心情" />
-        <div className="flex gap-2.5 overflow-x-auto pb-3 mb-5 scrollbar-none">
+        <div className="flex gap-2.5 overflow-x-auto pb-3 mb-5 scrollbar-none scroll-fade-x">
           {moods.map((m) => (
             <button
               key={m.key}

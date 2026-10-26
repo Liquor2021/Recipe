@@ -26,6 +26,7 @@ export default function AdminDashboard() {
 
   const trend = d?.week_trend || []
   const maxTrend = Math.max(...trend.map((w) => w.count), 1)
+  const trendEmpty = trend.length === 0 || trend.every((w) => w.count === 0)
 
   return (
     <div className="px-5 py-4 max-w-[640px] mx-auto pb-20">
@@ -58,18 +59,22 @@ export default function AdminDashboard() {
       <div className="mb-5">
         <div className="text-sm font-bold mb-2">近7天点菜趋势</div>
         <div className="bg-card rounded-2xl p-4 shadow-sm">
-          <div className="flex items-end gap-1.5 h-20">
-            {trend.map((w, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-[10px] text-text2 font-semibold">{w.count}</span>
-                <div
-                  className="w-full rounded-t-md bg-primary/70 transition-all"
-                  style={{ height: `${Math.max((w.count / maxTrend) * 48, 3)}px` }}
-                />
-                <span className="text-[9px] text-text3">{w.date.slice(5)}</span>
-              </div>
-            ))}
-          </div>
+          {trendEmpty ? (
+            <div className="py-6 text-center text-xs text-text3">最近还没有点菜记录，去首页推荐一道试试吧</div>
+          ) : (
+            <div className="flex items-end gap-1.5 h-20">
+              {trend.map((w, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[10px] text-text2 font-semibold">{w.count}</span>
+                  <div
+                    className="w-full rounded-t-md bg-primary/70 transition-all"
+                    style={{ height: `${Math.max((w.count / maxTrend) * 48, 3)}px` }}
+                  />
+                  <span className="text-[9px] text-text3">{w.date.slice(5)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

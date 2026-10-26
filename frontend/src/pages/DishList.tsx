@@ -338,7 +338,7 @@ export default function DishList() {
             </div>
 
             <div className="px-3 pb-2">
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none scroll-fade-x">
                 {tastes.map((t) => (
                   <button
                     key={t}
