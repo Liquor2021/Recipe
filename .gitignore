@@ -1,0 +1,20 @@
+# 运行时数据（备份 = 备份 backend/data/ 与 backend/uploads/，不入库）
+backend/data/
+
+# 用户上传原图备份
+backend/uploads_backup/
+
+# 本地环境变量
+.env
+env.bak
+
+# 构建产物
+dist/
+dist-win/
+frontend/dist/
+backend/ninimenu
+backend/ninimenu.exe
+*.tar.gz
+
+# 日志
+*.log
