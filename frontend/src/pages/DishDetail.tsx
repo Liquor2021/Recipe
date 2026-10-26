@@ -391,6 +391,38 @@ export default function DishDetail() {
           <div className="mb-6">
             <SectionHeader title={<span className="flex items-center gap-2">📜 做菜回忆</span>} />
 
+            {/* 评分趋势：随次数变化的评分折线 */}
+            {(() => {
+              const rated = dishRecords.filter((r) => r.rating > 0).slice().reverse()
+              if (rated.length < 2) return null
+              const W = 280, H = 56, PAD = 6
+              const stepX = (W - PAD * 2) / (rated.length - 1)
+              const yFor = (rating: number) => H - PAD - ((rating - 1) / 4) * (H - PAD * 2)
+              const pts = rated.map((r, i) => `${PAD + i * stepX},${yFor(r.rating)}`).join(" ")
+              const last = rated[rated.length - 1]
+              const trendUp = last.rating >= rated[0].rating
+              return (
+                <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-4`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[13px] font-bold">📈 评分趋势</div>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${trendUp ? "bg-mint-light text-mint" : "bg-bg text-text3"}`}>
+                      最近一次 {last.rating} 分
+                    </span>
+                  </div>
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-14" preserveAspectRatio="none">
+                    <polyline points={pts} fill="none" stroke="#E8734A" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                    {rated.map((r, i) => (
+                      <circle key={i} cx={PAD + i * stepX} cy={yFor(r.rating)} r="2.5" fill="#fff" stroke="#E8734A" strokeWidth="1.5" />
+                    ))}
+                  </svg>
+                  <div className="flex justify-between text-[10px] text-text3 mt-1">
+                    <span>{rated[0].meal_date.slice(5)}</span>
+                    <span>{last.meal_date.slice(5)}</span>
+                  </div>
+                </div>
+              )
+            })()}
+
             {allPhotos.length > 0 && (
               <div className="mb-4">
                 <div className="text-[11px] text-text3 mb-2">📷 回忆照片 ({allPhotos.length})</div>

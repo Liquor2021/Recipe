@@ -4,6 +4,8 @@ import (
 	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,7 +15,16 @@ func GetFridge(c *gin.Context) {
 }
 
 type AddFridgeRequest struct {
-	ItemName string `json:"item_name" binding:"required"`
+	ItemName   string `json:"item_name" binding:"required"`
+	ExpiryDate string `json:"expiry_date"`
+}
+
+func validExpiryDate(s string) bool {
+	if s == "" {
+		return true
+	}
+	_, err := time.ParseInLocation("2006-01-02", s, time.Local)
+	return err == nil
 }
 
 func AddFridge(c *gin.Context) {
@@ -22,7 +33,17 @@ func AddFridge(c *gin.Context) {
 		utils.BadRequest(c, "请输入食材名称")
 		return
 	}
-	if !services.AddHomeInventoryItem(req.ItemName) {
+	req.ItemName = strings.TrimSpace(req.ItemName)
+	req.ExpiryDate = strings.TrimSpace(req.ExpiryDate)
+	if req.ItemName == "" {
+		utils.BadRequest(c, "请输入食材名称")
+		return
+	}
+	if !validExpiryDate(req.ExpiryDate) {
+		utils.BadRequest(c, "保质期日期格式应为 YYYY-MM-DD")
+		return
+	}
+	if !services.AddHomeInventoryItem(req.ItemName, req.ExpiryDate) {
 		utils.BadRequest(c, "请输入食材名称")
 		return
 	}
@@ -43,4 +64,8 @@ func RemoveFridge(c *gin.Context) {
 func GetFridgeRecipes(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "12"))
 	utils.Success(c, services.MatchFridgeRecipes(limit))
+}
+
+func GetUrgentInventory(c *gin.Context) {
+	utils.Success(c, services.UrgentInventoryItems())
 }

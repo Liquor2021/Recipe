@@ -18,6 +18,7 @@ import Tomorrow from "@/pages/Tomorrow"
 import Achievements from "@/pages/Achievements"
 import CookMode from "@/pages/CookMode"
 import Fridge from "@/pages/Fridge"
+import Report from "@/pages/Report"
 
 // 管理端按需加载：普通用户首屏不必下载后台代码
 const AdminLogin = lazy(() => import("@/pages/admin/Login"))
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/tomorrow" element={<Tomorrow />} />
             <Route path="/achievements" element={<Achievements />} />
             <Route path="/fridge" element={<Fridge />} />
+            <Route path="/report" element={<Report />} />
           </Route>
           <Route path="/dishes/:id/cook" element={<AppGate><CookMode /></AppGate>} />
           <Route

@@ -3,24 +3,51 @@ import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { fridgeApi } from "@/api"
 import PageHeader from "@/components/PageHeader"
+import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
 import { cardShadow } from "@/components/Card"
-import type { FridgeMatch } from "@/types"
+import type { FridgeMatch, HomeInventoryItem } from "@/types"
 import toast from "react-hot-toast"
 
 const QUICK_ITEMS = ["鸡蛋", "番茄", "土豆", "青椒", "洋葱", "豆腐", "猪肉", "鸡翅", "虾仁", "白菜", "面条", "玉米"]
 
+function todayStr(offset = 0) {
+  const d = new Date()
+  d.setDate(d.getDate() + offset)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+// daysLeft 距过期天数；null 表示未设置保质期
+function daysLeft(expiry: string): number | null {
+  if (!expiry) return null
+  const d = new Date(expiry + "T00:00:00")
+  if (Number.isNaN(d.getTime())) return null
+  const today = new Date(todayStr() + "T00:00:00")
+  return Math.round((d.getTime() - today.getTime()) / 86400000)
+}
+
+function expiryBadge(expiry: string): { text: string; cls: string } | null {
+  const left = daysLeft(expiry)
+  if (left === null) return null
+  if (left < 0) return { text: `已过期 ${-left} 天`, cls: "bg-red-light text-red" }
+  if (left === 0) return { text: "今天到期", cls: "bg-red-light text-red" }
+  if (left <= 2) return { text: `${left} 天后到期`, cls: "bg-red-light text-red" }
+  if (left <= 4) return { text: `${left} 天后到期`, cls: "bg-yellow-light text-[#C8A23C]" }
+  return { text: `${left} 天`, cls: "bg-bg text-text3" }
+}
+
 function coverageTone(coverage: number) {
-  if (coverage >= 80) return { bg: "bg-mint-light", text: "text-mint", bar: "bg-mint", label: "马上能做" }
-  if (coverage >= 50) return { bg: "bg-primary-light", text: "text-primary", bar: "bg-primary", label: "加一步就成" }
-  return { bg: "bg-yellow-light", text: "text-[#C8A23C]", bar: "bg-yellow", label: "还缺不少" }
+  if (coverage >= 80) return { bg: "bg-mint-light", text: "text-mint", bar: "bg-mint" }
+  if (coverage >= 50) return { bg: "bg-primary-light", text: "text-primary", bar: "bg-primary" }
+  return { bg: "bg-yellow-light", text: "text-[#C8A23C]", bar: "bg-yellow" }
 }
 
 function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void }) {
   const tone = coverageTone(match.coverage)
-  // 后端全命中/全缺失时字段可能为 null，统一兜底成数组
+  // 后端字段可能为 null，统一兜底成数组
   const matched = match.matched || []
   const missing = match.missing || []
+  const urgent = match.using_urgent || []
   return (
     <div
       onClick={onClick}
@@ -33,6 +60,11 @@ function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void
           <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${tone.bg} ${tone.text}`}>
             能做 {match.coverage}%
           </span>
+          {urgent.length > 0 && (
+            <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-light text-red">
+              清临期
+            </span>
+          )}
         </div>
         <div className="h-1.5 rounded-full bg-bg overflow-hidden mb-1.5">
           <div className={`h-full rounded-full ${tone.bar} transition-all`} style={{ width: `${match.coverage}%` }} />
@@ -48,10 +80,19 @@ function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void
   )
 }
 
+const EXPIRY_PRESETS = [
+  { label: "3 天", days: 3 },
+  { label: "1 周", days: 7 },
+  { label: "2 周", days: 14 },
+  { label: "1 个月", days: 30 },
+]
+
 export default function Fridge() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [input, setInput] = useState("")
+  const [editing, setEditing] = useState<HomeInventoryItem | null>(null)
+  const [editDate, setEditDate] = useState("")
 
   const { data: items = [] } = useQuery({ queryKey: ["fridge"], queryFn: () => fridgeApi.list() })
   const { data: matches } = useQuery({
@@ -66,17 +107,21 @@ export default function Fridge() {
   }
 
   const addMut = useMutation({
-    mutationFn: (name: string) => fridgeApi.add(name),
+    mutationFn: (p: { name: string; expiry?: string }) => fridgeApi.add(p.name, p.expiry),
     onSuccess: () => { invalidate(); toast.success("🧊 已放入冰箱") },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "添加失败"),
   })
   const removeMut = useMutation({
     mutationFn: (name: string) => fridgeApi.remove(name),
-    onSuccess: () => invalidate(),
+    onSuccess: () => { invalidate(); setEditing(null) },
   })
 
   const stocked = useMemo(() => new Set(items.map((i) => i.item_name)), [items])
   const quickLeft = QUICK_ITEMS.filter((n) => !stocked.has(n))
+  const urgentCount = items.filter((i) => {
+    const left = daysLeft(i.expiry_date)
+    return left !== null && left <= 2
+  }).length
 
   function handleAdd(raw: string) {
     const name = raw.trim()
@@ -86,8 +131,20 @@ export default function Fridge() {
       setInput("")
       return
     }
-    addMut.mutate(name)
+    addMut.mutate({ name })
     setInput("")
+  }
+
+  function openExpiryEditor(item: HomeInventoryItem) {
+    setEditing(item)
+    setEditDate(item.expiry_date || "")
+  }
+
+  function saveExpiry() {
+    if (!editing) return
+    // 重设保质期 = 按新日期重新放入
+    addMut.mutate({ name: editing.item_name, expiry: editDate })
+    setEditing(null)
   }
 
   return (
@@ -96,7 +153,7 @@ export default function Fridge() {
         title="冰箱库存"
         subtitle="记下家里有什么，帮你清冰箱"
         onBack={() => navigate(-1)}
-        meta={items.length > 0 ? `${items.length} 种食材` : undefined}
+        meta={urgentCount > 0 ? `${urgentCount} 样临期` : items.length > 0 ? `${items.length} 种食材` : undefined}
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
@@ -135,23 +192,37 @@ export default function Fridge() {
         {/* 已有食材 */}
         {items.length > 0 ? (
           <div className="mb-6">
-            <div className="text-[13px] font-semibold text-text3 mb-2.5">🧊 我家有 {items.length} 种</div>
+            <div className="text-[13px] font-semibold text-text3 mb-2.5">
+              🧊 我家有 {items.length} 种{urgentCount > 0 ? ` · ${urgentCount} 样临期` : ""}
+              <span className="font-normal text-text4 ml-1.5">点食材可设保质期</span>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {items.map((item) => (
-                <span
-                  key={item.id}
-                  className="inline-flex items-center gap-1.5 pl-3.5 pr-2 py-1.5 rounded-full bg-mint-light border border-mint/25 text-sm font-medium text-[#2E8577] animate-pop-soft"
-                >
-                  {item.item_name}
+              {items.map((item) => {
+                const badge = expiryBadge(item.expiry_date)
+                const isUrgent = badge?.cls.includes("red")
+                return (
                   <button
-                    onClick={() => removeMut.mutate(item.item_name)}
-                    aria-label={`移出${item.item_name}`}
-                    className="w-5 h-5 rounded-full flex items-center justify-center text-mint/70 hover:bg-mint/15 hover:text-mint transition-all active:scale-90"
+                    key={item.id}
+                    onClick={() => openExpiryEditor(item)}
+                    className={`inline-flex items-center gap-1.5 pl-3.5 pr-2.5 py-1.5 rounded-full text-sm font-medium border animate-pop-soft transition-all active:scale-95 ${
+                      isUrgent ? "bg-red-light border-red/25 text-red" : "bg-mint-light border-mint/25 text-[#2E8577]"
+                    }`}
                   >
-                    ×
+                    {item.item_name}
+                    {badge && (
+                      <span className={`px-1.5 py-px rounded-full text-[9px] font-bold ${badge.cls}`}>{badge.text}</span>
+                    )}
+                    <span
+                      role="button"
+                      aria-label={`移出${item.item_name}`}
+                      onClick={(e) => { e.stopPropagation(); removeMut.mutate(item.item_name) }}
+                      className="w-5 h-5 rounded-full flex items-center justify-center opacity-60 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90"
+                    >
+                      ×
+                    </span>
                   </button>
-                </span>
-              ))}
+                )
+              })}
             </div>
           </div>
         ) : (
@@ -170,7 +241,7 @@ export default function Fridge() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="text-lg font-bold">🍳 清冰箱推荐</div>
-              <span className="text-[11px] text-text3">按主要食材匹配 · 葱姜蒜不算</span>
+              <span className="text-[11px] text-text3">临期食材会优先用掉</span>
             </div>
             {matches && matches.length > 0 ? (
               <div className="flex flex-col gap-2.5">
@@ -188,6 +259,52 @@ export default function Fridge() {
           </div>
         )}
       </div>
+
+      {/* 保质期编辑弹层 */}
+      {editing && (
+        <AnimatedBottomSheet onClose={() => setEditing(null)} className="rounded-t-3xl p-5">
+          <div className="text-lg font-extrabold mb-0.5">{editing.item_name}</div>
+          <div className="text-xs text-text3 mb-4">设置保质期，临期时会提醒你优先吃掉</div>
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {EXPIRY_PRESETS.map((p) => {
+              const val = todayStr(p.days)
+              const active = editDate === val
+              return (
+                <button
+                  key={p.days}
+                  onClick={() => setEditDate(val)}
+                  className={`py-2.5 rounded-xl text-[13px] font-bold border-[1.5px] transition-all active:scale-95 ${active ? "border-primary bg-primary-light text-primary" : "border-border text-text2"}`}
+                >
+                  {p.label}
+                </button>
+              )
+            })}
+          </div>
+          <label className="flex items-center gap-2 text-xs text-text3 mb-4">
+            或选具体日期
+            <input
+              type="date"
+              value={editDate}
+              onChange={(e) => setEditDate(e.target.value)}
+              className="flex-1 h-9 rounded-xl border border-border bg-bg px-2.5 text-sm text-text font-medium outline-none focus:border-primary"
+            />
+          </label>
+          <div className="flex gap-2.5">
+            <button
+              onClick={() => { removeMut.mutate(editing.item_name); toast.success("已移出冰箱") }}
+              className="py-2.5 px-4 rounded-full text-sm font-semibold bg-red-light text-red active:scale-96 transition-all"
+            >
+              移出冰箱
+            </button>
+            <button
+              onClick={saveExpiry}
+              className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white active:scale-96 transition-all"
+            >
+              保存
+            </button>
+          </div>
+        </AnimatedBottomSheet>
+      )}
     </div>
   )
 }

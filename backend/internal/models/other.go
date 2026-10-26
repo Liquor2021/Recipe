@@ -92,11 +92,12 @@ type ShoppingCheck struct {
 }
 
 type HomeInventory struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
-	ItemName  string    `json:"item_name" gorm:"not null;uniqueIndex"`
-	InStock   bool      `json:"in_stock" gorm:"default:true;index"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         uint      `json:"id" gorm:"primaryKey"`
+	ItemName   string    `json:"item_name" gorm:"not null;uniqueIndex"`
+	InStock    bool      `json:"in_stock" gorm:"default:true;index"`
+	ExpiryDate string    `json:"expiry_date" gorm:"default:''"` // YYYY-MM-DD，空表示未设置
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type ShoppingItemCategory struct {

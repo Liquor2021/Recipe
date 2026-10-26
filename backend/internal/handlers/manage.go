@@ -315,13 +315,13 @@ func GetDashboard(c *gin.Context) {
 		Find(&topDishes)
 
 	type RecentRecord struct {
-		ID        uint   `json:"id"`
-		DishID    uint   `json:"dish_id"`
-		DishName  string `json:"dish_name"`
-		MealType  string `json:"meal_type"`
-		MealDate  string `json:"meal_date"`
-		Mood      string `json:"mood"`
-		Rating    int    `json:"rating"`
+		ID       uint   `json:"id"`
+		DishID   uint   `json:"dish_id"`
+		DishName string `json:"dish_name"`
+		MealType string `json:"meal_type"`
+		MealDate string `json:"meal_date"`
+		Mood     string `json:"mood"`
+		Rating   int    `json:"rating"`
 	}
 	var recentRecords []RecentRecord
 	database.DB.Model(&models.MealRecord{}).
@@ -360,16 +360,16 @@ func GetDashboard(c *gin.Context) {
 	database.DB.Model(&models.Dish{}).Select("difficulty, count(*) as count").Where("enabled = ?", true).Group("difficulty").Find(&difficultyCounts)
 
 	utils.Success(c, gin.H{
-		"total_dishes":     totalDishes,
-		"enabled_dishes":   enabledDishes,
-		"disabled_dishes":  disabledDishes,
-		"total_records":    totalRecords,
-		"today_records":    todayRecords,
-		"favorite_count":   favoriteCount,
-		"category_counts":  categoryCounts,
-		"top_dishes":       topDishes,
-		"recent_records":   recentRecords,
-		"week_trend":       weekTrend,
+		"total_dishes":      totalDishes,
+		"enabled_dishes":    enabledDishes,
+		"disabled_dishes":   disabledDishes,
+		"total_records":     totalRecords,
+		"today_records":     todayRecords,
+		"favorite_count":    favoriteCount,
+		"category_counts":   categoryCounts,
+		"top_dishes":        topDishes,
+		"recent_records":    recentRecords,
+		"week_trend":        weekTrend,
 		"difficulty_counts": difficultyCounts,
 	})
 }

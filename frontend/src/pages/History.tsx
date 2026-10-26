@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/useAuthStore"
 import type { MealRecord, DayRating } from "@/types"
 import StatCard from "@/components/StatCard"
 import SectionHeader from "@/components/SectionHeader"
-import PageHeader from "@/components/PageHeader"
+import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import PhotoViewer from "@/components/PhotoViewer"
 import SwipeDeleteRow from "@/components/SwipeDeleteRow"
 import { cardShadow } from "@/components/Card"
@@ -373,7 +373,16 @@ export default function History() {
 
   return (
     <div className="animate-fadeUp">
-      <PageHeader title="记录" subtitle="查看日历、评价和最近吃过的菜" icon={CalendarDays} />
+      <PageHeader
+        title="记录"
+        subtitle="查看日历、评价和最近吃过的菜"
+        icon={CalendarDays}
+        actions={
+          <HeaderIconButton onClick={() => navigate("/report")} aria-label="饮食报告">
+            <span className="text-base leading-none">📊</span>
+          </HeaderIconButton>
+        }
+      />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto">
         

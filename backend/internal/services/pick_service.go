@@ -1,9 +1,11 @@
 package services
 
 import (
+	"encoding/json"
 	"math/rand"
 	"ninimenu/internal/config"
 	"ninimenu/internal/database"
+	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
 	"sort"
 	"strings"
@@ -60,7 +62,7 @@ func PickDishes(mealType string, count int, excludeRecent bool) ([]models.Dish, 
 		return nil, nil
 	}
 
-	weighted := buildWeightedIndices(dishes)
+	weighted := buildWeightedIndices(dishes, loadFamilyDislikes())
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	r.Shuffle(len(weighted), func(i, j int) {
 		weighted[i], weighted[j] = weighted[j], weighted[i]
@@ -130,7 +132,7 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 		pool = filterTomorrowPool(dishes, "balanced", map[uint]bool{}, recent, false)
 	}
 
-	sortTomorrowPool(pool, profile)
+	sortTomorrowPool(pool, profile, loadFamilyDislikes())
 	if len(pool) > count {
 		pool = pool[:count]
 	}
@@ -182,14 +184,14 @@ func matchesTomorrowProfile(d models.Dish, profile string) bool {
 	}
 }
 
-func sortTomorrowPool(dishes []models.Dish, profile string) {
+func sortTomorrowPool(dishes []models.Dish, profile string, dislikes map[string]bool) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	r.Shuffle(len(dishes), func(i, j int) {
 		dishes[i], dishes[j] = dishes[j], dishes[i]
 	})
 
 	sort.SliceStable(dishes, func(i, j int) bool {
-		a, b := tomorrowDishScore(dishes[i], profile), tomorrowDishScore(dishes[j], profile)
+		a, b := tomorrowDishScore(dishes[i], profile, dislikes), tomorrowDishScore(dishes[j], profile, dislikes)
 		if a != b {
 			return a > b
 		}
@@ -197,10 +199,14 @@ func sortTomorrowPool(dishes []models.Dish, profile string) {
 	})
 }
 
-func tomorrowDishScore(d models.Dish, profile string) int {
+func tomorrowDishScore(d models.Dish, profile string, dislikes map[string]bool) int {
 	score := 0
 	if d.Favorite {
 		score += 12
+	}
+	// 命中家庭忌口的菜大幅降权，但不出局（多人就餐仍可能出现）
+	if dishHitsDislikes(d, dislikes) {
+		score -= 100
 	}
 	if matchesTomorrowProfile(d, profile) {
 		score += 40
@@ -297,11 +303,86 @@ func filterRecent(dishes []models.Dish, days int) []models.Dish {
 	return filtered
 }
 
-func buildWeightedIndices(dishes []models.Dish) []int {
+// loadFamilyDislikes 读取家庭成员忌口集合（设置键 family_members），未配置返回 nil
+func loadFamilyDislikes() map[string]bool {
+	var setting models.Setting
+	if err := database.DB.Where("`key` = ?", "family_members").First(&setting).Error; err != nil {
+		return nil
+	}
+	var members []struct {
+		Name     string   `json:"name"`
+		Dislikes []string `json:"dislikes"`
+	}
+	if json.Unmarshal([]byte(setting.Value), &members) != nil {
+		return nil
+	}
+	set := make(map[string]bool)
+	for _, m := range members {
+		for _, d := range m.Dislikes {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				set[d] = true
+			}
+		}
+	}
+	return set
+}
+
+// seafoodSigns 海鲜类食材的识别子串
+var seafoodSigns = []string{"虾", "鱼", "蟹", "贝", "鱿", "蛤", "蛏", "蚝"}
+
+// offalSigns 内脏类食材的识别子串
+var offalSigns = []string{"肝", "腰", "肚", "胗"}
+
+// dishMatchesDislike 判断菜品是否命中某项忌口：辣看口味，海鲜/内脏按食材子串，其余按食材归一化精确匹配
+func dishMatchesDislike(d models.Dish, dislike string) bool {
+	switch dislike {
+	case "辣":
+		return strings.Contains(d.Taste, "辣")
+	case "海鲜":
+		for _, ing := range ParseDishIngredientNames(d) {
+			for _, sign := range seafoodSigns {
+				if strings.Contains(ing, sign) {
+					return true
+				}
+			}
+		}
+		return false
+	case "内脏":
+		for _, ing := range ParseDishIngredientNames(d) {
+			for _, sign := range offalSigns {
+				if strings.Contains(ing, sign) {
+					return true
+				}
+			}
+		}
+		return false
+	default:
+		for _, ing := range ParseDishIngredientNames(d) {
+			if ingredients.Normalize(ing) == ingredients.Normalize(dislike) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// dishHitsDislikes 菜品是否命中任一忌口
+func dishHitsDislikes(d models.Dish, dislikes map[string]bool) bool {
+	for token := range dislikes {
+		if dishMatchesDislike(d, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// buildWeightedIndices 生成按权重重复的下标数组：命中家庭忌口的菜固定权重 1（取消收藏加权）
+func buildWeightedIndices(dishes []models.Dish, dislikes map[string]bool) []int {
 	indices := make([]int, 0)
 	for i, d := range dishes {
 		w := 1
-		if d.Favorite {
+		if d.Favorite && !dishHitsDislikes(d, dislikes) {
 			w += 2
 		}
 		for j := 0; j < w; j++ {

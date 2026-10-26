@@ -4,14 +4,72 @@ import (
 	"encoding/json"
 	"math/rand"
 	"ninimenu/internal/database"
+	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// dishMatchesKeyword 菜品名或主要食材命中关键词：食材走统一别名归一（搜"土豆"能命中写"马铃薯"的菜），
+// 关键词是食材名子串也算命中（搜"肉"命中猪肉/牛肉类）
+func dishMatchesKeyword(d models.Dish, keyword string) bool {
+	kw := strings.ToLower(strings.TrimSpace(keyword))
+	if kw == "" {
+		return false
+	}
+	if strings.Contains(strings.ToLower(d.Name), kw) {
+		return true
+	}
+	for _, ing := range services.ParseDishIngredientNames(d) {
+		if strings.Contains(strings.ToLower(ing), kw) {
+			return true
+		}
+		if ingredients.Normalize(ing) == ingredients.Normalize(kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// sortDishesInMemory 与 SQL 排序对齐的内存排序（搜索命中食材后需内存过滤再分页）
+func sortDishesInMemory(dishes []models.Dish, field, order string) {
+	sort.SliceStable(dishes, func(i, j int) bool {
+		a, b := dishes[i], dishes[j]
+		switch field {
+		case "name":
+			if order == "asc" {
+				return a.Name < b.Name
+			}
+			return a.Name > b.Name
+		case "cook_time":
+			if order == "asc" {
+				return a.CookTime < b.CookTime
+			}
+			return a.CookTime > b.CookTime
+		case "sort_order":
+			if order == "asc" {
+				return a.SortOrder < b.SortOrder
+			}
+			return a.SortOrder > b.SortOrder
+		case "difficulty":
+			if order == "asc" {
+				return a.Difficulty < b.Difficulty
+			}
+			return a.Difficulty > b.Difficulty
+		default: // created_at
+			if order == "asc" {
+				return a.CreatedAt.Before(b.CreatedAt)
+			}
+			return a.CreatedAt.After(b.CreatedAt)
+		}
+	})
+}
 
 func GetDishes(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -31,9 +89,6 @@ func GetDishes(c *gin.Context) {
 	if mealType := c.Query("meal_type"); mealType != "" {
 		query = query.Where("meal_type IN ?", []string{mealType, "all"})
 	}
-	if search := c.Query("search"); search != "" {
-		query = query.Where("name LIKE ?", "%"+search+"%")
-	}
 	if enabled := c.Query("enabled"); enabled != "" {
 		query = query.Where("enabled = ?", enabled == "1" || enabled == "true")
 	}
@@ -44,6 +99,7 @@ func GetDishes(c *gin.Context) {
 		query = query.Where("difficulty = ?", difficulty)
 	}
 
+	search := c.Query("search")
 	sort := c.DefaultQuery("sort", "created_at")
 	order := c.DefaultQuery("order", "desc")
 	isRandom := sort == "random"
@@ -56,6 +112,45 @@ func GetDishes(c *gin.Context) {
 			order = "desc"
 		}
 		query = query.Order(sort + " " + order)
+	}
+
+	// 带关键词的搜索走内存过滤：菜名或食材命中都算（"冰箱里有鸡蛋能做什么"）
+	if search != "" {
+		var all []models.Dish
+		query.Find(&all)
+		var nameHits, ingredientHits []models.Dish
+		kw := strings.ToLower(strings.TrimSpace(search))
+		for _, d := range all {
+			if strings.Contains(strings.ToLower(d.Name), kw) {
+				nameHits = append(nameHits, d)
+				continue
+			}
+			if dishMatchesKeyword(d, search) {
+				ingredientHits = append(ingredientHits, d)
+			}
+		}
+		// 菜名命中优先展示，食材命中的跟在后面
+		filtered := append(nameHits, ingredientHits...)
+		totalFiltered := len(filtered)
+		if isRandom {
+			rand.Shuffle(len(filtered), func(i, j int) { filtered[i], filtered[j] = filtered[j], filtered[i] })
+			if len(filtered) > pageSize {
+				filtered = filtered[:pageSize]
+			}
+		} else {
+			sortDishesInMemory(filtered, sort, order)
+			offset := (page - 1) * pageSize
+			if offset > len(filtered) {
+				offset = len(filtered)
+			}
+			end := offset + pageSize
+			if end > len(filtered) {
+				end = len(filtered)
+			}
+			filtered = filtered[offset:end]
+		}
+		utils.SuccessPaginated(c, filtered, int64(totalFiltered), page, pageSize)
+		return
 	}
 
 	var total int64

@@ -3,10 +3,25 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { settingsApi, shoppingCategoriesApi } from "@/api"
 import { asString } from "@/lib/utils"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
-import type { ShoppingCategoryOverride } from "@/types"
+import type { FamilyMember, ShoppingCategoryOverride } from "@/types"
 import toast from "react-hot-toast"
 
 const shoppingCategories = ["蔬菜", "肉类", "配料", "其他"]
+
+const FAMILY_TAGS = ["辣", "香菜", "海鲜", "牛肉", "羊肉", "猪肉", "内脏", "芹菜", "青椒", "洋葱"]
+
+function parseFamilyMembers(raw: unknown): FamilyMember[] {
+  // GET /settings 会把合法 JSON 内联成真对象，写入时是字符串——两种形态都要兼容
+  let v = raw
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v)
+    } catch {
+      return []
+    }
+  }
+  return Array.isArray(v) ? v.filter((m) => m && typeof m.name === "string" && m.name) : []
+}
 
 function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
   return (
@@ -28,6 +43,97 @@ function SettingRow({ label, children }: { label: string; children: React.ReactN
   )
 }
 
+// FamilyMembersCard 家庭成员忌口编辑：每次改动即时保存，推荐时对相关菜品降权
+function FamilyMembersCard({ members, onSave, saving, newMemberName, setNewMemberName }: {
+  members: FamilyMember[]
+  onSave: (members: FamilyMember[]) => void
+  saving: boolean
+  newMemberName: string
+  setNewMemberName: (v: string) => void
+}) {
+  function toggleTag(memberIdx: number, tag: string) {
+    const next = members.map((m, i) => {
+      if (i !== memberIdx) return m
+      const dislikes = m.dislikes.includes(tag)
+        ? m.dislikes.filter((d) => d !== tag)
+        : [...m.dislikes, tag]
+      return { ...m, dislikes }
+    })
+    onSave(next)
+  }
+
+  function removeMember(memberIdx: number) {
+    onSave(members.filter((_, i) => i !== memberIdx))
+  }
+
+  function addMember() {
+    const name = newMemberName.trim()
+    if (!name) { toast.error("先填成员名字"); return }
+    if (members.some((m) => m.name === name)) { toast.error("已经有这位成员啦"); return }
+    onSave([...members, { name, dislikes: [] }])
+    setNewMemberName("")
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 mt-4">
+      <div className="text-[13px] font-semibold text-text2 mb-1">家庭成员忌口</div>
+      <div className="text-[11px] text-text3 mb-3">勾选后，推荐会给相关菜品降权（不会完全屏蔽，多人就餐仍可能出现）</div>
+
+      {members.length === 0 && (
+        <div className="py-3 text-center text-xs text-text3">还没有添加成员</div>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {members.map((m, mi) => (
+          <div key={m.name} className="rounded-xl bg-bg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-bold">{m.name}</span>
+              <button
+                onClick={() => removeMember(mi)}
+                className="text-[11px] text-text3 hover:text-red transition-colors"
+              >
+                移除
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {FAMILY_TAGS.map((tag) => {
+                const active = m.dislikes.includes(tag)
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => toggleTag(mi, tag)}
+                    disabled={saving}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${active ? "border-red/30 bg-red-light text-red" : "border-border2 bg-card text-text3"}`}
+                  >
+                    不吃{tag}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2 mt-3">
+        <input
+          value={newMemberName}
+          onChange={(e) => setNewMemberName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addMember() }}
+          placeholder="成员名字，如：爸爸"
+          className="flex-1 h-9 rounded-xl border-[1.5px] border-border bg-bg px-3 text-sm outline-none transition-all focus:border-primary"
+        />
+        <button
+          onClick={addMember}
+          disabled={saving}
+          className="px-4 rounded-xl text-xs font-bold bg-primary text-white transition-all active:scale-95 disabled:opacity-60"
+        >
+          + 添加成员
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminSettings() {
   const qc = useQueryClient()
   const { data: settings, isLoading } = useQuery({ queryKey: ["settings"], queryFn: () => settingsApi.get() })
@@ -38,6 +144,7 @@ export default function AdminSettings() {
   const [appName, setAppName] = useState<string | null>(null)
   const [shoppingItemName, setShoppingItemName] = useState("")
   const [shoppingCategory, setShoppingCategory] = useState("蔬菜")
+  const [newMemberName, setNewMemberName] = useState("")
   const storedAppName = useAppInfoStore((s) => s.appName)
   const updateAppName = useAppInfoStore((s) => s.setAppName)
 
@@ -153,6 +260,15 @@ export default function AdminSettings() {
           />
         </SettingRow>
       </div>
+
+      {/* 家庭成员忌口：推荐时自动降权 */}
+      <FamilyMembersCard
+        members={parseFamilyMembers(settings?.family_members)}
+        onSave={(members) => updateMut.mutate({ family_members: JSON.stringify(members) })}
+        saving={updateMut.isPending}
+        newMemberName={newMemberName}
+        setNewMemberName={setNewMemberName}
+      />
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="text-[13px] font-semibold text-text2 mb-1">一周菜单</div>

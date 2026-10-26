@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { pickApi, dishesApi, recordsApi, dayRatingApi } from "@/api"
+import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi } from "@/api"
 import type { Dish } from "@/types"
 import DishImage from "@/components/DishImage"
 import DishCard from "@/components/DishCard"
@@ -62,6 +62,10 @@ export default function Home() {
     queryKey: ["day-rating", todayKey],
     queryFn: () => dayRatingApi.get(todayKey),
   })
+  const { data: urgentItems } = useQuery({
+    queryKey: ["fridge-urgent"],
+    queryFn: () => fridgeApi.urgent(),
+  })
 
   const [pickedRec, setPickedRec] = useState<Dish | null>(null)
   const [recQuote, setRecQuote] = useState<string>("")
@@ -70,6 +74,7 @@ export default function Home() {
   const [blindRevealed, setBlindRevealed] = useState(false)
   const [spinning, setSpinning] = useState(false)
   const [wheelResult, setWheelResult] = useState<Dish | null>(null)
+  const [urgentDismissed, setUrgentDismissed] = useState(false)
   const wheelDegRef = useRef(0)
   const wheelHighlightRef = useRef(-1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -344,6 +349,32 @@ export default function Home() {
           <div className="text-sm text-text2 mb-1">{getGreeting()}</div>
           <div className="text-[26px] font-extrabold tracking-tight leading-tight">今天<em className="not-italic text-primary">想吃什么</em>？</div>
         </div>
+
+        {/* 临期提醒：冰箱里有快过期的食材时出现，每天最多打扰一次 */}
+        {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
+          <button
+            onClick={() => navigate("/fridge")}
+            className={`w-full mb-4 rounded-2xl border border-red/15 bg-red-light/60 px-4 py-3 flex items-center gap-3 text-left transition-all active:scale-98`}
+          >
+            <span className="text-xl flex-shrink-0">⚠️</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-bold text-red">
+                冰箱里 {urgentItems.length} 样食材快过期了
+              </div>
+              <div className="text-[11px] text-text2 truncate">
+                {urgentItems.slice(0, 3).map((i) => i.item_name).join("、")}，看看能做什么消耗掉
+              </div>
+            </div>
+            <span
+              role="button"
+              aria-label="关闭提醒"
+              onClick={(e) => { e.stopPropagation(); setUrgentDismissed(true) }}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-text3 hover:bg-black/5 flex-shrink-0"
+            >
+              ×
+            </span>
+          </button>
+        )}
 
         {/* 午/晚餐入口：点击真正触发推荐并同步到下方推荐卡 */}
         <div className="grid grid-cols-2 gap-3 mb-6">

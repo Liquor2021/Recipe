@@ -73,6 +73,8 @@ func Setup(r *gin.Engine) {
 			app.POST("/fridge", handlers.AddFridge)
 			app.DELETE("/fridge/:itemName", handlers.RemoveFridge)
 			app.GET("/fridge/recipes", handlers.GetFridgeRecipes)
+			app.GET("/fridge/urgent", handlers.GetUrgentInventory)
+			app.GET("/report", handlers.GetReport)
 		}
 	}
 

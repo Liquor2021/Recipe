@@ -290,6 +290,7 @@ export interface HomeInventoryItem {
   id: number
   item_name: string
   in_stock: boolean
+  expiry_date: string
   updated_at: string
 }
 
@@ -299,4 +300,40 @@ export interface FridgeMatch {
   missing: string[]
   matched_count: number
   coverage: number
+  using_urgent: string[]
+}
+
+export interface ReportShare {
+  name: string
+  count: number
+}
+
+export interface ReportTopDish {
+  dish_id: number
+  dish_name: string
+  count: number
+}
+
+export interface DietReport {
+  range: string
+  start_date: string
+  end_date: string
+  cook_days: number
+  prev_cook_days: number
+  total_meals: number
+  lunch_count: number
+  dinner_count: number
+  distinct_dishes: number
+  repeat_rate: number
+  new_dish_rate: number
+  avg_rating: number
+  top_dishes: ReportTopDish[]
+  taste_shares: ReportShare[]
+  category_shares: ReportShare[]
+  mood_shares: ReportShare[]
+}
+
+export interface FamilyMember {
+  name: string
+  dislikes: string[]
 }

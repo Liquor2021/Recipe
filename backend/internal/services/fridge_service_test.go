@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"ninimenu/internal/models"
 	"testing"
+	"time"
 )
 
 func dishWithIngredients(id uint, name string, favorite bool, ingredients string) models.Dish {
@@ -25,14 +26,12 @@ func TestMatchDishesWithInventoryRanking(t *testing.T) {
 		dishWithIngredients(3, "红烧排骨", false, `[{"name":"排骨","amount":"500g"}]`),
 		dishWithIngredients(4, "凉拌黄瓜", false, `[]`),
 	}
-	stock := []string{"番茄", "鸡蛋", "土豆"}
+	stock := []StockItem{{Name: "番茄", DaysLeft: 999}, {Name: "鸡蛋", DaysLeft: 999}, {Name: "土豆", DaysLeft: 999}}
 
 	matches := matchDishesWithInventory(dishes, stock, 12)
 
 	got := matchNames(matches)
-	want := []string{"番茄炒蛋(100%)", "番茄牛腩(66%)", "红烧排骨(0%)"}
-	// 红烧排骨 0 命中应被排除
-	want = want[:2]
+	want := []string{"番茄炒蛋(100%)", "番茄牛腩(66%)"}
 	if len(got) != len(want) {
 		t.Fatalf("matches = %v, want %v", got, want)
 	}
@@ -49,7 +48,7 @@ func TestMatchDishesWithInventoryAlias(t *testing.T) {
 		dishWithIngredients(2, "酸辣土豆丝", false, `[{"name":"马铃薯","amount":"1个"}]`),
 	}
 	// 冰箱里记的是别名（番茄/土豆），菜谱里写的是另一个名字（西红柿/马铃薯）
-	stock := []string{"番茄", "土豆"}
+	stock := []StockItem{{Name: "番茄", DaysLeft: 999}, {Name: "土豆", DaysLeft: 999}}
 
 	matches := matchDishesWithInventory(dishes, stock, 12)
 	if len(matches) != 2 {
@@ -70,7 +69,7 @@ func TestMatchDishesWithInventoryOrdering(t *testing.T) {
 		dishWithIngredients(2, "菜B", true, `[{"name":"鸡蛋","amount":"1"},{"name":"番茄","amount":"1"},{"name":"青菜","amount":"1"}]`),
 		dishWithIngredients(3, "菜C", false, `[{"name":"鸡蛋","amount":"1"},{"name":"番茄","amount":"1"}]`),
 	}
-	stock := []string{"鸡蛋", "番茄"}
+	stock := []StockItem{{Name: "鸡蛋", DaysLeft: 999}, {Name: "番茄", DaysLeft: 999}}
 
 	matches := matchDishesWithInventory(dishes, stock, 12)
 	if len(matches) != 3 {
@@ -86,13 +85,40 @@ func TestMatchDishesWithInventoryOrdering(t *testing.T) {
 	}
 }
 
+func TestMatchDishesUrgentPriority(t *testing.T) {
+	// 同为 100% 命中，能用掉临期食材的菜排前面
+	dishes := []models.Dish{
+		dishWithIngredients(1, "青椒炒肉", false, `[{"name":"青椒","amount":"2个"},{"name":"猪肉","amount":"200g"}]`),
+		dishWithIngredients(2, "番茄炒蛋", false, `[{"name":"番茄","amount":"2个"},{"name":"鸡蛋","amount":"3个"}]`),
+	}
+	stock := []StockItem{
+		{Name: "番茄", DaysLeft: 1}, // 临期
+		{Name: "鸡蛋", DaysLeft: 999},
+		{Name: "青椒", DaysLeft: 999},
+		{Name: "猪肉", DaysLeft: 999},
+	}
+	matches := matchDishesWithInventory(dishes, stock, 12)
+	if len(matches) != 2 {
+		t.Fatalf("want 2 matches, got %v", matchNames(matches))
+	}
+	if matches[0].Dish.Name != "番茄炒蛋" {
+		t.Fatalf("urgent-using dish should rank first, got %v", matchNames(matches))
+	}
+	if len(matches[0].UsingUrgent) != 1 || matches[0].UsingUrgent[0] != "番茄" {
+		t.Fatalf("UsingUrgent = %v, want [番茄]", matches[0].UsingUrgent)
+	}
+	if len(matches[1].UsingUrgent) != 0 {
+		t.Fatalf("non-urgent dish should have empty UsingUrgent, got %v", matches[1].UsingUrgent)
+	}
+}
+
 func TestMatchDishesWithInventoryLimit(t *testing.T) {
 	dishes := []models.Dish{
 		dishWithIngredients(1, "菜A", false, `[{"name":"鸡蛋","amount":"1"}]`),
 		dishWithIngredients(2, "菜B", false, `[{"name":"鸡蛋","amount":"1"}]`),
 		dishWithIngredients(3, "菜C", false, `[{"name":"鸡蛋","amount":"1"}]`),
 	}
-	matches := matchDishesWithInventory(dishes, []string{"鸡蛋"}, 2)
+	matches := matchDishesWithInventory(dishes, []StockItem{{Name: "鸡蛋", DaysLeft: 999}}, 2)
 	if len(matches) != 2 {
 		t.Fatalf("limit=2 should return 2, got %d", len(matches))
 	}
@@ -112,12 +138,12 @@ func TestMatchDishesNullJSONSafety(t *testing.T) {
 	dishes := []models.Dish{
 		dishWithIngredients(1, "菜A", false, `[{"name":"鸡蛋","amount":"1"}]`),
 	}
-	matches := matchDishesWithInventory(dishes, []string{"鸡蛋"}, 12)
+	matches := matchDishesWithInventory(dishes, []StockItem{{Name: "鸡蛋", DaysLeft: 999}}, 12)
 	if len(matches) != 1 {
 		t.Fatalf("want 1 match, got %d", len(matches))
 	}
-	if matches[0].Missing == nil || matches[0].Matched == nil {
-		t.Fatalf("Missing/Matched must be empty slices, not nil: matched=%v missing=%v", matches[0].Matched, matches[0].Missing)
+	if matches[0].Missing == nil || matches[0].Matched == nil || matches[0].UsingUrgent == nil {
+		t.Fatalf("Missing/Matched/UsingUrgent must be empty slices, not nil: matched=%v missing=%v urgent=%v", matches[0].Matched, matches[0].Missing, matches[0].UsingUrgent)
 	}
 }
 
@@ -127,7 +153,8 @@ func TestMatchDishesStaplesExcluded(t *testing.T) {
 		dishWithIngredients(1, "番茄炒蛋", false, `[{"name":"番茄","amount":"2个"},{"name":"鸡蛋","amount":"3个"},{"name":"小葱","amount":"1根"}]`),
 		dishWithIngredients(2, "葱姜拌一切", false, `[{"name":"小葱","amount":"1把"},{"name":"姜","amount":"1块"}]`),
 	}
-	matches := matchDishesWithInventory(dishes, []string{"番茄", "鸡蛋"}, 12)
+	stock := []StockItem{{Name: "番茄", DaysLeft: 999}, {Name: "鸡蛋", DaysLeft: 999}}
+	matches := matchDishesWithInventory(dishes, stock, 12)
 	if len(matches) != 1 {
 		t.Fatalf("全常备配料的菜不应出现, got %v", matchNames(matches))
 	}
@@ -136,18 +163,21 @@ func TestMatchDishesStaplesExcluded(t *testing.T) {
 	}
 }
 
-func TestNormalizeIngredientName(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{" 番茄 ", "番茄"},
-		{"西红柿", "番茄"},
-		{"马铃薯", "土豆"},
-		{"洋芋", "土豆"},
-		{"Bacon", "bacon"},
-		{"小白菜", "小白菜"}, // 别名表里"白菜"只映射自身/大白菜，小白菜不受影响
+func TestDaysLeftFor(t *testing.T) {
+	today := time.Date(2026, 10, 27, 15, 0, 0, 0, time.Local) // 带时分，验证按自然日计算
+	tests := []struct {
+		expiry string
+		want   int
+	}{
+		{"", noExpiryDays},
+		{"not-a-date", noExpiryDays},
+		{"2026-10-27", 0},  // 今天到期
+		{"2026-10-28", 1},  // 明天
+		{"2026-10-24", -3}, // 已过期 3 天
 	}
 	for _, tt := range tests {
-		if got := normalizeIngredientName(tt.in); got != tt.want {
-			t.Fatalf("normalizeIngredientName(%q) = %q, want %q", tt.in, got, tt.want)
+		if got := daysLeftFor(tt.expiry, today); got != tt.want {
+			t.Fatalf("daysLeftFor(%q) = %d, want %d", tt.expiry, got, tt.want)
 		}
 	}
 }
