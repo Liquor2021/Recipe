@@ -14,6 +14,15 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() =>
+        // Vite 构建产物文件名带内容 hash，新版本发布后旧 hash 文件不再被引用，
+        // 激活时统一清掉，避免 cache-first 策略下只增不减
+        caches.open(CACHE_NAME).then((cache) =>
+          cache.keys().then((reqs) =>
+            Promise.all(reqs.filter((r) => new URL(r.url).pathname.startsWith("/assets/")).map((r) => cache.delete(r)))
+          )
+        )
+      )
       .then(() => self.clients.claim())
   )
 })

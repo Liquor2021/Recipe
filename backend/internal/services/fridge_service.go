@@ -62,22 +62,31 @@ func daysLeftFor(expiryDate string, today time.Time) int {
 	return int(expiry.Sub(todayMorning).Hours() / 24)
 }
 
-// matchDishesWithInventory 纯函数匹配：命中率优先，同命中率下优先用掉临期食材
+// matchDishesWithInventory 纯函数匹配：命中率优先，同命中率下优先用掉临期食材。
+// 槽位去重与命中判断都按食材大类（CategoryOf）：真别名（番茄/西红柿）和部位形态
+// （瘦肉/五花肉）不会虚增分母或命中数——一块猪肉不能同时算作两种主料。
 func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int) []FridgeMatch {
 	stockByName := make(map[string]StockItem, len(stock))
 	for _, item := range stock {
-		stockByName[ingredients.Normalize(item.Name)] = item
+		stockByName[ingredients.CategoryOf(item.Name)] = item
 	}
 
 	matches := make([]FridgeMatch, 0)
 	for _, dish := range dishes {
 		ings := ParseDishIngredientNames(dish)
-		// 只统计非常备配料的主料，葱姜蒜不进分母
+		// 只统计非常备配料的主料，葱姜蒜不进分母；按大类槽位去重（保留首个原始名展示）
 		mainIngs := make([]string, 0, len(ings))
+		seenCategory := make(map[string]bool, len(ings))
 		for _, ing := range ings {
-			if !ingredients.IsStaple(ing) {
-				mainIngs = append(mainIngs, ing)
+			if ingredients.IsStaple(ing) {
+				continue
 			}
+			cat := ingredients.CategoryOf(ing)
+			if seenCategory[cat] {
+				continue
+			}
+			seenCategory[cat] = true
+			mainIngs = append(mainIngs, ing)
 		}
 		if len(mainIngs) == 0 {
 			continue
@@ -86,13 +95,8 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 		matched := []string{}
 		missing := []string{}
 		usingUrgent := []string{}
-		seen := make(map[string]bool, len(mainIngs))
 		for _, ing := range mainIngs {
-			if seen[ing] {
-				continue
-			}
-			seen[ing] = true
-			item, ok := stockByName[ingredients.Normalize(ing)]
+			item, ok := stockByName[ingredients.CategoryOf(ing)]
 			if !ok {
 				missing = append(missing, ing)
 				continue

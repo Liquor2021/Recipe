@@ -26,14 +26,15 @@ function daysLeft(expiry: string): number | null {
   return Math.round((d.getTime() - today.getTime()) / 86400000)
 }
 
-function expiryBadge(expiry: string): { text: string; cls: string } | null {
+// expiryBadge 保质期徽章：level 用于逻辑判断（urgent=临期/过期），cls 只管样式
+function expiryBadge(expiry: string): { text: string; cls: string; level: "expired" | "urgent" | "soon" | "ok" } | null {
   const left = daysLeft(expiry)
   if (left === null) return null
-  if (left < 0) return { text: `已过期 ${-left} 天`, cls: "bg-red-light text-red" }
-  if (left === 0) return { text: "今天到期", cls: "bg-red-light text-red" }
-  if (left <= 2) return { text: `${left} 天后到期`, cls: "bg-red-light text-red" }
-  if (left <= 4) return { text: `${left} 天后到期`, cls: "bg-yellow-light text-[#C8A23C]" }
-  return { text: `${left} 天`, cls: "bg-bg text-text3" }
+  if (left < 0) return { text: `已过期 ${-left} 天`, cls: "bg-red-light text-red", level: "expired" }
+  if (left === 0) return { text: "今天到期", cls: "bg-red-light text-red", level: "urgent" }
+  if (left <= 2) return { text: `${left} 天后到期`, cls: "bg-red-light text-red", level: "urgent" }
+  if (left <= 4) return { text: `${left} 天后到期`, cls: "bg-yellow-light text-[#C8A23C]", level: "soon" }
+  return { text: `${left} 天`, cls: "bg-bg text-text3", level: "ok" }
 }
 
 function coverageTone(coverage: number) {
@@ -111,6 +112,12 @@ export default function Fridge() {
     onSuccess: () => { invalidate(); toast.success("🧊 已放入冰箱") },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "添加失败"),
   })
+  // 保质期修改与"新放入"分开提示，避免编辑已有食材时弹"已放入冰箱"的错位文案
+  const expiryMut = useMutation({
+    mutationFn: (p: { name: string; expiry?: string }) => fridgeApi.add(p.name, p.expiry),
+    onSuccess: () => { invalidate(); setEditing(null); toast.success("📅 保质期已更新") },
+    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "保存失败"),
+  })
   const removeMut = useMutation({
     mutationFn: (name: string) => fridgeApi.remove(name),
     onSuccess: () => { invalidate(); setEditing(null) },
@@ -142,9 +149,7 @@ export default function Fridge() {
 
   function saveExpiry() {
     if (!editing) return
-    // 重设保质期 = 按新日期重新放入
-    addMut.mutate({ name: editing.item_name, expiry: editDate })
-    setEditing(null)
+    expiryMut.mutate({ name: editing.item_name, expiry: editDate })
   }
 
   return (
@@ -199,7 +204,7 @@ export default function Fridge() {
             <div className="flex flex-wrap gap-2">
               {items.map((item) => {
                 const badge = expiryBadge(item.expiry_date)
-                const isUrgent = badge?.cls.includes("red")
+                const isUrgent = badge?.level === "expired" || badge?.level === "urgent"
                 return (
                   <button
                     key={item.id}

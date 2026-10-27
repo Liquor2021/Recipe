@@ -74,7 +74,10 @@ export default function Home() {
   const [blindRevealed, setBlindRevealed] = useState(false)
   const [spinning, setSpinning] = useState(false)
   const [wheelResult, setWheelResult] = useState<Dish | null>(null)
-  const [urgentDismissed, setUrgentDismissed] = useState(false)
+  // 临期提醒关闭状态按天持久化：当天关过就不再打扰，第二天重新出现
+  const [urgentDismissed, setUrgentDismissed] = useState(() => {
+    try { return localStorage.getItem("urgent_dismissed_date") === dateKey() } catch { return false }
+  })
   const wheelDegRef = useRef(0)
   const wheelHighlightRef = useRef(-1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -350,7 +353,7 @@ export default function Home() {
           <div className="text-[26px] font-extrabold tracking-tight leading-tight">今天<em className="not-italic text-primary">想吃什么</em>？</div>
         </div>
 
-        {/* 临期提醒：冰箱里有快过期的食材时出现，每天最多打扰一次 */}
+        {/* 临期提醒：冰箱里有快过期/已过期食材时出现，点关闭后当天不再打扰 */}
         {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
           <button
             onClick={() => navigate("/fridge")}
@@ -359,7 +362,9 @@ export default function Home() {
             <span className="text-xl flex-shrink-0">⚠️</span>
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-bold text-red">
-                冰箱里 {urgentItems.length} 样食材快过期了
+                {urgentItems.some((i) => (i.expiry_date ? new Date(i.expiry_date + "T00:00:00").getTime() < new Date(todayKey + "T00:00:00").getTime() : false))
+                  ? `冰箱里 ${urgentItems.length} 样食材已过期，尽快处理`
+                  : `冰箱里 ${urgentItems.length} 样食材快过期了`}
               </div>
               <div className="text-[11px] text-text2 truncate">
                 {urgentItems.slice(0, 3).map((i) => i.item_name).join("、")}，看看能做什么消耗掉
@@ -368,7 +373,11 @@ export default function Home() {
             <span
               role="button"
               aria-label="关闭提醒"
-              onClick={(e) => { e.stopPropagation(); setUrgentDismissed(true) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setUrgentDismissed(true)
+                try { localStorage.setItem("urgent_dismissed_date", todayKey) } catch { /* 隐私模式忽略 */ }
+              }}
               className="w-6 h-6 rounded-full flex items-center justify-center text-text3 hover:bg-black/5 flex-shrink-0"
             >
               ×

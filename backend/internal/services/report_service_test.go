@@ -57,10 +57,6 @@ func TestBuildDietReport(t *testing.T) {
 	end := start.AddDate(0, 0, 6)
 	rngStart, rngEnd := start.Format("2006-01-02"), end.Format("2006-01-02")
 
-	mk := func(id uint, name, taste, category, date string, rating int) models.Dish {
-		return models.Dish{}
-	}
-	_ = mk
 	dishA := models.Dish{ID: 1, Name: "番茄炒蛋", Taste: "酸甜", Category: "家常菜"}
 	dishB := models.Dish{ID: 2, Name: "红烧排骨", Taste: "酱香,咸鲜", Category: "家常菜"}
 	dishC := models.Dish{ID: 3, Name: "冬阴功汤", Taste: "酸辣", Category: "泰国菜"}

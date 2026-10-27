@@ -334,11 +334,16 @@ var seafoodSigns = []string{"虾", "鱼", "蟹", "贝", "鱿", "蛤", "蛏", "�
 // offalSigns 内脏类食材的识别子串
 var offalSigns = []string{"肝", "腰", "肚", "胗"}
 
-// dishMatchesDislike 判断菜品是否命中某项忌口：辣看口味，海鲜/内脏按食材子串，其余按食材归一化精确匹配
+// dishMatchesDislike 判断菜品是否命中某项忌口：
+// 辣看口味/菜名/菜系（与 spicy profile 口径对齐，"辣子鸡丁"漏不掉），
+// 海鲜/内脏按食材子串（偏好过滤够用；过敏场景请以实际食材为准），
+// 其余按食材大类匹配（不吃猪肉 → 瘦肉/五花肉/排骨全部命中）。
 func dishMatchesDislike(d models.Dish, dislike string) bool {
 	switch dislike {
 	case "辣":
-		return strings.Contains(d.Taste, "辣")
+		return strings.Contains(d.Taste, "辣") ||
+			strings.Contains(d.Name, "辣") ||
+			strings.Contains(d.Category, "辣")
 	case "海鲜":
 		for _, ing := range ParseDishIngredientNames(d) {
 			for _, sign := range seafoodSigns {
@@ -359,7 +364,7 @@ func dishMatchesDislike(d models.Dish, dislike string) bool {
 		return false
 	default:
 		for _, ing := range ParseDishIngredientNames(d) {
-			if ingredients.Normalize(ing) == ingredients.Normalize(dislike) {
+			if ingredients.CategoryOf(ing) == ingredients.CategoryOf(dislike) {
 				return true
 			}
 		}

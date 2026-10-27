@@ -200,8 +200,6 @@ func GetDietReport(rng string) *DietReport {
 		periodStart = start.AddDate(0, 0, -30)
 	}
 	end := today
-	days := int(end.Sub(start).Hours()/24) + 1
-
 	var records []models.MealRecord
 	database.DB.Where("meal_date >= ? AND meal_date <= ?", start.Format("2006-01-02"), end.Format("2006-01-02")).
 		Order("meal_date ASC, created_at ASC").Find(&records)
@@ -227,10 +225,11 @@ func GetDietReport(rng string) *DietReport {
 	}
 
 	var prevCookDays int64
+	// 环比口径：上一个"等长周期"（周报=前 7 天，月报=前 30 天），不是上一个自然周/自然月。
+	// 好处是滚动对比总是整周期；前端文案"比上期"即按此口径。
 	database.DB.Model(&models.MealRecord{}).
 		Where("meal_date >= ? AND meal_date < ?", periodStart.Format("2006-01-02"), start.Format("2006-01-02")).
 		Distinct("meal_date").Count(&prevCookDays)
-	_ = days
 
 	var dayRatings []models.DayRating
 	database.DB.Where("meal_date >= ? AND meal_date <= ? AND mood != ''",

@@ -16,8 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// dishMatchesKeyword 菜品名或主要食材命中关键词：食材走统一别名归一（搜"土豆"能命中写"马铃薯"的菜），
-// 关键词是食材名子串也算命中（搜"肉"命中猪肉/牛肉类）
+// dishMatchesKeyword 菜品名或主要食材命中关键词：食材走统一别名归一（搜"土豆"能命中写"马铃薯"的菜）
+// 并加宽到大类（搜"牛肉"能命中写"牛腩"的菜）；关键词是食材名子串也算命中（搜"排骨"命中）
 func dishMatchesKeyword(d models.Dish, keyword string) bool {
 	kw := strings.ToLower(strings.TrimSpace(keyword))
 	if kw == "" {
@@ -31,6 +31,9 @@ func dishMatchesKeyword(d models.Dish, keyword string) bool {
 			return true
 		}
 		if ingredients.Normalize(ing) == ingredients.Normalize(kw) {
+			return true
+		}
+		if ingredients.CategoryOf(ing) == ingredients.CategoryOf(kw) {
 			return true
 		}
 	}
@@ -115,11 +118,12 @@ func GetDishes(c *gin.Context) {
 	}
 
 	// 带关键词的搜索走内存过滤：菜名或食材命中都算（"冰箱里有鸡蛋能做什么"）
-	if search != "" {
+	searchTrimmed := strings.TrimSpace(search)
+	if searchTrimmed != "" {
 		var all []models.Dish
 		query.Find(&all)
 		var nameHits, ingredientHits []models.Dish
-		kw := strings.ToLower(strings.TrimSpace(search))
+		kw := strings.ToLower(searchTrimmed)
 		for _, d := range all {
 			if strings.Contains(strings.ToLower(d.Name), kw) {
 				nameHits = append(nameHits, d)

@@ -8,11 +8,13 @@ import (
 func TestDishMatchesDislike(t *testing.T) {
 	spicyDish := dishWithIngredients(1, "麻辣火锅", false, `[{"name":"牛肉","amount":"500g"}]`)
 	spicyDish.Taste = "麻辣"
-	cilantroDish := dishWithIngredients(2, "香菜拌牛肉", false, `[{"name":"香菜","amount":"1把"},{"name":"牛肉","amount":"200g"}]`)
-	porkByAlias := dishWithIngredients(3, "青椒肉丝", false, `[{"name":"瘦肉","amount":"200g"},{"name":"青椒","amount":"2个"}]`)
-	seafoodDish := dishWithIngredients(4, "白灼虾", false, `[{"name":"虾仁","amount":"300g"}]`)
-	offalDish := dishWithIngredients(5, "卤猪肝", false, `[{"name":"猪肝","amount":"300g"}]`)
-	plainDish := dishWithIngredients(6, "清炒土豆丝", false, `[{"name":"马铃薯","amount":"1个"}]`)
+	spicyByName := dishWithIngredients(2, "辣子鸡丁", false, `[{"name":"鸡腿","amount":"300g"}]`)
+	spicyByName.Taste = "咸鲜"
+	cilantroDish := dishWithIngredients(3, "香菜拌牛肉", false, `[{"name":"香菜","amount":"1把"},{"name":"牛肉","amount":"200g"}]`)
+	porkByCategory := dishWithIngredients(4, "青椒肉丝", false, `[{"name":"瘦肉","amount":"200g"},{"name":"青椒","amount":"2个"}]`)
+	seafoodDish := dishWithIngredients(5, "白灼虾", false, `[{"name":"虾仁","amount":"300g"}]`)
+	offalDish := dishWithIngredients(6, "卤猪肝", false, `[{"name":"猪肝","amount":"300g"}]`)
+	plainDish := dishWithIngredients(7, "清炒土豆丝", false, `[{"name":"马铃薯","amount":"1个"}]`)
 
 	tests := []struct {
 		dish    models.Dish
@@ -21,9 +23,11 @@ func TestDishMatchesDislike(t *testing.T) {
 		note    string
 	}{
 		{spicyDish, "辣", true, "口味含辣"},
+		{spicyByName, "辣", true, "菜名含辣（Taste 没写辣也不漏判）"},
 		{spicyDish, "牛肉", true, "食材命中"},
 		{cilantroDish, "香菜", true, "香菜命中"},
-		{porkByAlias, "猪肉", true, "瘦肉经别名命中猪肉"},
+		{porkByCategory, "猪肉", true, "瘦肉经大类命中猪肉"},
+		{porkByCategory, "五花肉", true, "不吃五花肉也应命中写瘦肉的菜（同大类）"},
 		{seafoodDish, "海鲜", true, "虾仁算海鲜"},
 		{offalDish, "内脏", true, "猪肝算内脏"},
 		{plainDish, "辣", false, "清淡菜不命中辣"},

@@ -163,6 +163,36 @@ func TestMatchDishesStaplesExcluded(t *testing.T) {
 	}
 }
 
+func TestMatchDishesSlotDedup(t *testing.T) {
+	// 真别名重复写（番茄+西红柿）与部位重复写（瘦肉+五花肉）都只算一个槽位，
+	// 不虚增分母和命中数
+	dishes := []models.Dish{
+		// 菜A：番茄和西红柿是同一食材 → 槽位 [番茄,青椒]，冰箱有番茄 → 50%
+		dishWithIngredients(1, "菜A", false, `[{"name":"番茄","amount":"1"},{"name":"西红柿","amount":"1"},{"name":"青椒","amount":"1"}]`),
+		// 菜B：瘦肉和五花肉同属猪肉大类 → 槽位 [瘦肉,青椒]，冰箱有猪肉 → 50%（不是 67%）
+		dishWithIngredients(2, "菜B", false, `[{"name":"瘦肉","amount":"1"},{"name":"五花肉","amount":"1"},{"name":"青椒","amount":"1"}]`),
+	}
+	stock := []StockItem{{Name: "番茄", DaysLeft: 999}, {Name: "猪肉", DaysLeft: 999}}
+	matches := matchDishesWithInventory(dishes, stock, 12)
+	if len(matches) != 2 {
+		t.Fatalf("want 2 matches, got %v", matchNames(matches))
+	}
+	byName := map[string]FridgeMatch{}
+	for _, m := range matches {
+		byName[m.Dish.Name] = m
+	}
+	if m := byName["菜A"]; m.Coverage != 50 {
+		t.Fatalf("菜A coverage = %d, want 50 (番茄/西红柿去重后 1/2)", m.Coverage)
+	}
+	if m := byName["菜B"]; m.Coverage != 50 {
+		t.Fatalf("菜B coverage = %d, want 50 (瘦肉/五花肉同属猪肉槽，1/2 而非 67%%)", m.Coverage)
+	}
+	// 菜B 的 matched 展示保留原始名"瘦肉"，缺失显示青椒
+	if m := byName["菜B"]; len(m.Matched) != 1 || m.Matched[0] != "瘦肉" || len(m.Missing) != 1 || m.Missing[0] != "青椒" {
+		t.Fatalf("菜B matched=%v missing=%v, want [瘦肉] / [青椒]", m.Matched, m.Missing)
+	}
+}
+
 func TestDaysLeftFor(t *testing.T) {
 	today := time.Date(2026, 10, 27, 15, 0, 0, 0, time.Local) // 带时分，验证按自然日计算
 	tests := []struct {
