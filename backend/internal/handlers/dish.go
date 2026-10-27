@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"math/rand"
 	"ninimenu/internal/database"
 	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
+	"ninimenu/internal/search"
 	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
 	"sort"
@@ -17,13 +19,23 @@ import (
 )
 
 // dishMatchesKeyword 菜品名或主要食材命中关键词：食材走统一别名归一（搜"土豆"能命中写"马铃薯"的菜）
-// 并加宽到大类（搜"牛肉"能命中写"牛腩"的菜）；关键词是食材名子串也算命中（搜"排骨"命中）
+// 并加宽到大类（搜"牛肉"能命中写"牛腩"的菜）；关键词是食材名子串也算命中（搜"排骨"命中）。
+// 另支持拼音搜索：关键词去掉非 ASCII 字母后若仍有 ≥2 个字母（如 fqcd、fanqie、tudou），
+// 再按菜名全拼/首字母匹配（大小写不敏感）；单字母不参与拼音匹配，避免全拼 Contains 全库误召回。
+// 纯中文关键词剥完字母为空、跳过拼音路径仍走原有路径；
+// 中英文混合输入（如"fanqie蛋"）原有字面匹配照跑，拼音串按剥完的字母参与匹配。
 func dishMatchesKeyword(d models.Dish, keyword string) bool {
 	kw := strings.ToLower(strings.TrimSpace(keyword))
 	if kw == "" {
 		return false
 	}
 	if strings.Contains(strings.ToLower(d.Name), kw) {
+		return true
+	}
+	// 拼音路径：仅当关键词剥掉非 ASCII 字母后仍有至少 2 个字母才检查（"番茄"剥完为空，跳过）。
+	// 单字母不走拼音路径：全拼/首字母 Contains 下 "e/a/i/n" 这类高频字母会命中几乎所有
+	// 中文菜名，误召回全库（旧行为下单字母 ASCII 本来匹配不到任何东西）。
+	if ascii := asciiLettersOnly(kw); len(ascii) >= 2 && search.PinyinMatch(d.Name, ascii) {
 		return true
 	}
 	for _, ing := range services.ParseDishIngredientNames(d) {
@@ -38,6 +50,18 @@ func dishMatchesKeyword(d models.Dish, keyword string) bool {
 		}
 	}
 	return false
+}
+
+// asciiLettersOnly 只保留 ASCII 小写字母（入参已小写），其余（汉字/数字/标点/重音字母）全部丢弃
+func asciiLettersOnly(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // sortDishesInMemory 与 SQL 排序对齐的内存排序（搜索命中食材后需内存过滤再分页）
@@ -95,14 +119,16 @@ func GetDishes(c *gin.Context) {
 	if enabled := c.Query("enabled"); enabled != "" {
 		query = query.Where("enabled = ?", enabled == "1" || enabled == "true")
 	}
-	if taste := c.Query("taste"); taste != "" {
+	// 「全部」是前端筛选项的哨兵值（DishList.tsx 只在前端挡掉），直连 API 传「全部」时
+	// 若按字面 LIKE 过滤会因不存在分类为「全部」的菜而返回 0 条，这里与前端语义对齐直接忽略
+	if taste := c.Query("taste"); taste != "" && taste != "全部" {
 		query = query.Where("taste LIKE ?", "%"+taste+"%")
 	}
 	if difficulty := c.Query("difficulty"); difficulty != "" {
 		query = query.Where("difficulty = ?", difficulty)
 	}
 
-	search := c.Query("search")
+	searchRaw := c.Query("search")
 	sort := c.DefaultQuery("sort", "created_at")
 	order := c.DefaultQuery("order", "desc")
 	isRandom := sort == "random"
@@ -118,10 +144,20 @@ func GetDishes(c *gin.Context) {
 	}
 
 	// 带关键词的搜索走内存过滤：菜名或食材命中都算（"冰箱里有鸡蛋能做什么"）
-	searchTrimmed := strings.TrimSpace(search)
+	searchTrimmed := strings.TrimSpace(searchRaw)
 	if searchTrimmed != "" {
 		var all []models.Dish
-		query.Find(&all)
+		if err := query.Find(&all).Error; err != nil {
+			utils.InternalError(c, "搜索菜品失败")
+			return
+		}
+		// 拼音索引按全局版本戳刷新（不带任何筛选的 MAX(updated_at)）：未变复用、变了全量重建。
+		// 版本戳不能取自下方筛选后的子集：主列表搜索常带 category/taste（DishList.tsx:69-77），
+		// 子集 max(updated_at) 随筛选组合漂移，会让缓存在常用路径上被击穿（见 search.Refresh 注释）。
+		// 子集未入索引的菜名由 PinyinMatch 现算兜底，正确性不受影响。
+		var maxUpdated sql.NullTime
+		database.DB.Model(&models.Dish{}).Select("MAX(updated_at)").Scan(&maxUpdated)
+		search.Refresh(maxUpdated.Time.UTC().Format(time.RFC3339Nano), all)
 		var nameHits, ingredientHits []models.Dish
 		kw := strings.ToLower(searchTrimmed)
 		for _, d := range all {
@@ -129,7 +165,7 @@ func GetDishes(c *gin.Context) {
 				nameHits = append(nameHits, d)
 				continue
 			}
-			if dishMatchesKeyword(d, search) {
+			if dishMatchesKeyword(d, searchRaw) {
 				ingredientHits = append(ingredientHits, d)
 			}
 		}

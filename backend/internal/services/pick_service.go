@@ -62,7 +62,14 @@ func PickDishes(mealType string, count int, excludeRecent bool) ([]models.Dish, 
 		return nil, nil
 	}
 
-	weighted := buildWeightedIndices(dishes, loadFamilyDislikes())
+	cfg := loadFamilyDislikeConfig()
+	// strict 模式：命中忌口的菜直接出局，全部被过滤时宁可返回空
+	dishes = applyDislikeMode(dishes, cfg)
+	if len(dishes) == 0 {
+		return nil, nil
+	}
+
+	weighted := buildWeightedIndices(dishes, cfg.tokens)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	r.Shuffle(len(weighted), func(i, j int) {
 		weighted[i], weighted[j] = weighted[j], weighted[i]
@@ -113,6 +120,14 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 		return nil, nil
 	}
 
+	// strict 模式：先整体剔除命中忌口的菜，下面所有 fallback 层都基于这个已过滤的池子，
+	// 全部被过滤时宁可返回空
+	cfg := loadFamilyDislikeConfig()
+	dishes = applyDislikeMode(dishes, cfg)
+	if len(dishes) == 0 {
+		return nil, nil
+	}
+
 	excluded := make(map[uint]bool, len(opts.ExcludeIDs))
 	for _, id := range opts.ExcludeIDs {
 		if id > 0 {
@@ -132,7 +147,7 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 		pool = filterTomorrowPool(dishes, "balanced", map[uint]bool{}, recent, false)
 	}
 
-	sortTomorrowPool(pool, profile, loadFamilyDislikes())
+	sortTomorrowPool(pool, profile, cfg.tokens)
 	if len(pool) > count {
 		pool = pool[:count]
 	}
@@ -303,17 +318,24 @@ func filterRecent(dishes []models.Dish, days int) []models.Dish {
 	return filtered
 }
 
-// loadFamilyDislikes 读取家庭成员忌口集合（设置键 family_members），未配置返回 nil
-func loadFamilyDislikes() map[string]bool {
-	var setting models.Setting
-	if err := database.DB.Where("`key` = ?", "family_members").First(&setting).Error; err != nil {
+// familyDislikeConfig 家庭忌口完整配置
+type familyDislikeConfig struct {
+	tokens map[string]bool // 忌口集合（来自 family_members）
+	strict bool            // true=严格过滤（命中即排除），false=温和降权（默认）
+}
+
+// parseFamilyDislikeTokens 解析 family_members 的 JSON 数组，汇总所有成员的忌口集合。
+// 兼容旧格式：family_members 一直是 [{name,dislikes:[...]}] 数组；
+// 空值、非法 JSON 或没有有效忌口时返回 nil。
+func parseFamilyDislikeTokens(raw string) map[string]bool {
+	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
 	var members []struct {
 		Name     string   `json:"name"`
 		Dislikes []string `json:"dislikes"`
 	}
-	if json.Unmarshal([]byte(setting.Value), &members) != nil {
+	if json.Unmarshal([]byte(raw), &members) != nil {
 		return nil
 	}
 	set := make(map[string]bool)
@@ -325,7 +347,48 @@ func loadFamilyDislikes() map[string]bool {
 			}
 		}
 	}
+	if len(set) == 0 {
+		return nil
+	}
 	return set
+}
+
+// loadFamilyDislikes 读取家庭成员忌口集合（设置键 family_members），未配置返回 nil
+func loadFamilyDislikes() map[string]bool {
+	var setting models.Setting
+	if err := database.DB.Where("`key` = ?", "family_members").First(&setting).Error; err != nil {
+		return nil
+	}
+	return parseFamilyDislikeTokens(setting.Value)
+}
+
+// loadFamilyDislikeConfig 读取家庭忌口完整配置：
+// 忌口集合来自 family_members（仍是 JSON 数组，兼容旧格式），
+// 模式来自 family_dislike_mode：avoid=温和降权（默认）/ strict=严格过滤，缺失或其他值按 avoid 处理。
+func loadFamilyDislikeConfig() familyDislikeConfig {
+	var cfg familyDislikeConfig
+	var modeSetting models.Setting
+	if err := database.DB.Where("`key` = ?", "family_dislike_mode").First(&modeSetting).Error; err == nil {
+		cfg.strict = strings.TrimSpace(modeSetting.Value) == "strict"
+	}
+	cfg.tokens = loadFamilyDislikes()
+	return cfg
+}
+
+// applyDislikeMode 按家庭忌口模式处理候选池（avoid/strict 的选择逻辑，纯函数便于单测）：
+// strict 模式剔除命中忌口的菜（可能返回空——全被过滤时宁可空推荐）；
+// avoid 模式或未配置忌口时原样返回，由调用方降权。
+func applyDislikeMode(dishes []models.Dish, cfg familyDislikeConfig) []models.Dish {
+	if !cfg.strict || len(cfg.tokens) == 0 {
+		return dishes
+	}
+	out := make([]models.Dish, 0, len(dishes))
+	for _, d := range dishes {
+		if !dishHitsDislikes(d, cfg.tokens) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // seafoodSigns 海鲜类食材的识别子串

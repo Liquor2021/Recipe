@@ -207,5 +207,5 @@ NiniMenu/
 | DELETE | `/api/upload/image` | 图片删除 |
 | CRUD | `/api/quotes` | 语录管理 |
 | CRUD | `/api/achievements` | 成就管理 |
-| PUT | `/api/settings` | 系统设置 |
+| PUT | `/api/settings` | 系统设置（请求体须包裹为 `{"settings":{"key":"value"}}`，扁平键值体会被 400 拒绝） |
 | GET | `/api/admin/dashboard` | 仪表盘 |

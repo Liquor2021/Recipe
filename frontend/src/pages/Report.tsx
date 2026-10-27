@@ -1,10 +1,15 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
+import { Download, Share2 } from "lucide-react"
+import toast from "react-hot-toast"
 import { reportApi } from "@/api"
-import PageHeader from "@/components/PageHeader"
+import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
+import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import { cardShadow } from "@/components/Card"
-import type { ReportShare } from "@/types"
+import { renderReportImage } from "@/lib/reportImage"
+import { useAppInfoStore } from "@/store/useAppInfoStore"
+import type { DietReport, ReportShare } from "@/types"
 
 const MOOD_EMOJI: Record<string, string> = { yum: "😋", ok: "😐", no: "😒" }
 const MOOD_LABEL: Record<string, string> = { yum: "吃得美滋滋", ok: "还行", no: "不太满意" }
@@ -32,9 +37,99 @@ function ShareBars({ shares, tone }: { shares: ReportShare[]; tone: "primary" | 
   )
 }
 
+// 分享长图弹层：内嵌 canvas 预览 + 保存图片
+function ReportShareSheet({ report, appName, onClose }: { report: DietReport; appName: string; onClose: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [saving, setSaving] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  // 弹层打开后生成分享长图，并复制到预览画布
+  useEffect(() => {
+    const target = canvasRef.current
+    if (!target) return
+    try {
+      const rendered = renderReportImage(report, appName)
+      target.width = rendered.width
+      target.height = rendered.height
+      const ctx = target.getContext("2d")
+      if (ctx) ctx.drawImage(rendered, 0, 0)
+    } catch (err) {
+      // 生成失败不让弹层崩溃：提示用户并禁用保存
+      console.error("生成分享图失败:", err)
+      // 经微任务延后 setState：effect 内同步 setFailed 会触发 react-hooks 静态检查报错
+      queueMicrotask(() => {
+        setFailed(true)
+        toast.error("生成图片失败，请重试")
+      })
+    }
+  }, [report, appName])
+
+  // canvas.toBlob 导出 PNG，用临时 <a download> 触发下载
+  const handleSave = () => {
+    const canvas = canvasRef.current
+    if (!canvas || saving) return
+    setSaving(true)
+    try {
+      canvas.toBlob((blob) => {
+        setSaving(false)
+        if (!blob) {
+          toast.error("生成图片失败，请重试")
+          return
+        }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `NiniMenu-${report.range === "month" ? "month" : "week"}报告-${report.end_date || ""}.png`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        // 稍后释放临时 URL，等浏览器启动下载
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        toast.success("图片已保存")
+      }, "image/png")
+    } catch (err) {
+      console.error("导出分享图失败:", err)
+      setSaving(false)
+      toast.error("保存失败，请重试")
+    }
+  }
+
+  return (
+    <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5 pb-8 shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
+      {({ close }) => (
+        <>
+          <div className="w-10 h-1 rounded-full bg-border2 mx-auto mb-4" />
+          <div className="text-lg font-bold mb-1">分享饮食报告</div>
+          <div className="text-xs text-text2 mb-4">保存长图，分享这段时间的下厨成果</div>
+          <div className="max-h-[52vh] overflow-y-auto scrollbar-none rounded-2xl border border-border bg-bg p-2">
+            {failed ? (
+              <div className="w-full h-44 flex items-center justify-center text-sm text-text3">图片生成失败，请关闭后重试</div>
+            ) : (
+              <canvas ref={canvasRef} className="w-full rounded-xl block" />
+            )}
+          </div>
+          <div className="flex gap-3 mt-4">
+            <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">关闭</button>
+            <button
+              onClick={handleSave}
+              disabled={saving || failed}
+              className={`flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 flex items-center justify-center gap-1.5 ${(saving || failed) ? "opacity-60 pointer-events-none" : ""}`}
+            >
+              <Download size={16} strokeWidth={2.4} />
+              {saving ? "保存中..." : "保存图片"}
+            </button>
+          </div>
+        </>
+      )}
+    </AnimatedBottomSheet>
+  )
+}
+
 export default function Report() {
   const navigate = useNavigate()
+  const appName = useAppInfoStore((s) => s.appName)
   const [range, setRange] = useState<"week" | "month">("week")
+  const [shareOpen, setShareOpen] = useState(false)
   const { data: report } = useQuery({
     queryKey: ["report", range],
     queryFn: () => reportApi.get(range),
@@ -49,16 +144,27 @@ export default function Report() {
         subtitle="看看这段时间吃得怎么样"
         onBack={() => navigate(-1)}
         actions={
-          <div className="flex rounded-full bg-bg border border-border p-0.5">
-            {(["week", "month"] as const).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRange(r)}
-                className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${range === r ? "bg-primary text-white" : "text-text2"}`}
-              >
-                {r === "week" ? "本周" : "本月"}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-full bg-bg border border-border p-0.5">
+              {(["week", "month"] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${range === r ? "bg-primary text-white" : "text-text2"}`}
+                >
+                  {r === "week" ? "本周" : "本月"}
+                </button>
+              ))}
+            </div>
+            {/* report 未加载完时禁用，避免空数据生成 */}
+            <HeaderIconButton
+              onClick={() => setShareOpen(true)}
+              disabled={!report}
+              aria-label="分享报告"
+              className="disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <Share2 size={17} strokeWidth={2.4} />
+            </HeaderIconButton>
           </div>
         }
       />
@@ -156,6 +262,10 @@ export default function Report() {
           </>
         )}
       </div>
+
+      {shareOpen && report && (
+        <ReportShareSheet report={report} appName={appName} onClose={() => setShareOpen(false)} />
+      )}
     </div>
   )
 }

@@ -26,6 +26,20 @@ func TestDishMatchesKeyword(t *testing.T) {
 		{tomatoEgg, "牛肉", false, "番茄炒蛋没有牛肉"},
 		{tomatoEgg, "", false, "空关键词不命中"},
 		{tomatoEgg, "   ", false, "空白关键词不命中"},
+
+		// —— 拼音路径（规格核心验收：茄按餐饮语境覆盖为 qie，缺了覆盖 fqcd 会全部失效）——
+		{tomatoEgg, "fqcd", true, "菜名首字母拼音命中"},
+		{tomatoEgg, "FQCD", true, "拼音大小写不敏感"},
+		{tomatoEgg, "fanqie", true, "菜名全拼命中"},
+		{tomatoEgg, "qcd", true, "全拼子串 Contains 命中（不必从头全等）"},
+		{tomatoEgg, "fanqie蛋", true, "中英文混合输入：原有字面路径跑完后按剥出的字母走拼音路径"},
+		{potatoBeef, "tudou", true, "菜名全拼子串命中（tudoushaoniunan）"},
+		{potatoBeef, "tdsnn", true, "菜名首字母命中（土豆烧牛腩=tdsnn；原规格 tqn 系笔误，不存在 q 读音）"},
+		{potatoBeef, "niunan", true, "全拼子串命中，验证 Contains 而非全等"},
+		{tomatoEgg, "xyz", false, "无意义 ASCII 关键词不得误命中拼音或食材"},
+		{tomatoEgg, "e", false, "单字母不走拼音路径（fanqiechaodan 含 e，否则全库误召回）"},
+		{tomatoEgg, "a", false, "单字母不走拼音路径（fanqiechaodan 含 a）"},
+		{tomatoEgg, "n", false, "单字母不走拼音路径（fanqiechaodan 含 n）"},
 	}
 	for _, tt := range tests {
 		if got := dishMatchesKeyword(tt.dish, tt.keyword); got != tt.want {

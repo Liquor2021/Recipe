@@ -20,9 +20,9 @@ async function api(method, path, body) {
 async function main() {
   console.log("== 冰箱库存 API E2E ==")
 
-  // 0. 快照现有库存（非破坏性：测试结束后恢复原样）
+  // 0. 快照现有库存（非破坏性：测试结束后恢复原样；批次模型下同食材可多批，逐批快照含数量）
   const before = await api("GET", "/fridge")
-  const snapshot = (before.data || []).map(i => ({ item_name: i.item_name, expiry_date: i.expiry_date }))
+  const snapshot = (before.data || []).map(i => ({ item_name: i.item_name, quantity: i.quantity, expiry_date: i.expiry_date }))
   for (const it of snapshot) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
   const cleaned = await api("GET", "/fridge")
   check("清场后为空", Array.isArray(cleaned.data) && cleaned.data.length === 0, JSON.stringify(cleaned))
@@ -40,10 +40,12 @@ async function main() {
   check("列表含 4 项", r.data.length === 4, JSON.stringify(names))
   check("番茄已去空格存储", names.includes("番茄"), JSON.stringify(names))
 
-  // 3. 重复添加不产生重复行
+  // 3. 重复添加：批次模型（12867fe）起同食材追加新批次而非合并，条目数 +1
   await api("POST", "/fridge", { item_name: "番茄" })
   r = await api("GET", "/fridge")
-  check("重复添加仍为 4 项", r.data.length === 4, `got ${r.data.length}`)
+  const tomatoBatches = (r.data || []).filter((i) => i.item_name === "番茄")
+  check("重复添加追加新批次，共 5 项", r.data.length === 5, `got ${r.data.length}`)
+  check("番茄共 2 个批次", tomatoBatches.length === 2, `got ${tomatoBatches.length}`)
 
   // 4. 空名拒绝
   r = await api("POST", "/fridge", { item_name: "   " })
@@ -69,11 +71,11 @@ async function main() {
     check("按命中率降序", matches[0].coverage >= matches[1].coverage)
   }
 
-  // 6. 移出冰箱
+  // 6. 移出冰箱（按食材名移出该食材全部批次）
   r = await api("DELETE", `/fridge/${encodeURIComponent("土豆")}`)
   check("移出 土豆 成功", r.code === 0, JSON.stringify(r))
   r = await api("GET", "/fridge")
-  check("移出后剩 3 项", r.data.length === 3, `got ${r.data.length}`)
+  check("移出后剩 4 项（番茄 2 批 + 鸡蛋 + 青椒）", r.data.length === 4, `got ${r.data.length}`)
   r = await api("GET", "/fridge/recipes?limit=50")
   const after = r.data.find((m) => m.dish.name === "酸辣土豆丝")
   check("移出土豆后 酸辣土豆丝 不再 100%", !after || after.coverage < 100, after ? `${after.coverage}%` : "未匹配(也合理)")
@@ -85,7 +87,7 @@ async function main() {
   // 8. 恢复测试前的库存快照
   const current = await api("GET", "/fridge")
   for (const it of current.data || []) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
-  for (const it of snapshot) await api("POST", "/fridge", { item_name: it.item_name, expiry_date: it.expiry_date })
+  for (const it of snapshot) await api("POST", "/fridge", { item_name: it.item_name, quantity: it.quantity, expiry_date: it.expiry_date })
   const restored = await api("GET", "/fridge")
   check("恢复原有库存", (restored.data || []).length === snapshot.length, `got ${(restored.data || []).length}, want ${snapshot.length}`)
 

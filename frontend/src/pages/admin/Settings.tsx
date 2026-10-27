@@ -10,6 +10,24 @@ const shoppingCategories = ["蔬菜", "肉类", "配料", "其他"]
 
 const FAMILY_TAGS = ["辣", "香菜", "海鲜", "牛肉", "羊肉", "猪肉", "内脏", "芹菜", "青椒", "洋葱"]
 
+// DislikeMode 忌口推荐模式：avoid=温和降权（默认），strict=严格过滤
+type DislikeMode = "avoid" | "strict"
+
+const DISLIKE_MODES: { value: DislikeMode; icon: string; label: string }[] = [
+  { value: "avoid", icon: "🛡", label: "温和降权" },
+  { value: "strict", icon: "⛔", label: "严格过滤" },
+]
+
+// 兜底：接口未返回或返回非法值时按温和降权处理
+function parseDislikeMode(raw: unknown): DislikeMode {
+  return raw === "strict" ? "strict" : "avoid"
+}
+
+const DISLIKE_MODE_DESC: Record<DislikeMode, string> = {
+  avoid: "温和降权：命中忌口的菜会大幅减少出现，但多人就餐时仍可能出现。",
+  strict: "严格过滤：命中忌口的菜绝不出现；如果所有菜都被过滤，宁可返回空推荐。",
+}
+
 function parseFamilyMembers(raw: unknown): FamilyMember[] {
   // GET /settings 会把合法 JSON 内联成真对象，写入时是字符串——两种形态都要兼容
   let v = raw
@@ -43,9 +61,12 @@ function SettingRow({ label, children }: { label: string; children: React.ReactN
   )
 }
 
-// FamilyMembersCard 家庭成员忌口编辑：每次改动即时保存，推荐时对相关菜品降权
-function FamilyMembersCard({ members, onSave, saving, newMemberName, setNewMemberName }: {
+// FamilyMembersCard 家庭成员忌口编辑：每次改动即时保存；
+// 顶部可切换推荐模式——温和降权（少出现）或严格过滤（绝不出现）
+function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMemberName, setNewMemberName }: {
   members: FamilyMember[]
+  mode: DislikeMode
+  onModeChange: (mode: DislikeMode) => void
   onSave: (members: FamilyMember[]) => void
   saving: boolean
   newMemberName: string
@@ -76,8 +97,25 @@ function FamilyMembersCard({ members, onSave, saving, newMemberName, setNewMembe
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 mt-4">
-      <div className="text-[13px] font-semibold text-text2 mb-1">家庭成员忌口</div>
-      <div className="text-[11px] text-text3 mb-3">勾选后，推荐会给相关菜品降权（不会完全屏蔽，多人就餐仍可能出现）</div>
+      <div className="text-[13px] font-semibold text-text2 mb-2">家庭成员忌口</div>
+
+      {/* 模式切换：温和降权 / 严格过滤，存 settings key family_dislike_mode */}
+      <div className="flex gap-1.5 mb-2">
+        {DISLIKE_MODES.map((m) => {
+          const active = mode === m.value
+          return (
+            <button
+              key={m.value}
+              onClick={() => { if (!active) onModeChange(m.value) }}
+              disabled={saving}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${active ? "border-primary/40 bg-primary-light text-primary" : "border-border2 bg-card text-text3"}`}
+            >
+              {m.icon} {m.label}
+            </button>
+          )
+        })}
+      </div>
+      <div className="text-[11px] text-text3 mb-3">{DISLIKE_MODE_DESC[mode]}</div>
 
       {members.length === 0 && (
         <div className="py-3 text-center text-xs text-text3">还没有添加成员</div>
@@ -157,6 +195,8 @@ export default function AdminSettings() {
       }
       toast.success("已保存")
     },
+    // 忌口模式等开关型设置失败时按钮会静默弹回，必须给用户明确反馈
+    onError: () => toast.error("保存失败"),
   })
 
   const { data: categoryOverrides = [] } = useQuery({
@@ -261,9 +301,11 @@ export default function AdminSettings() {
         </SettingRow>
       </div>
 
-      {/* 家庭成员忌口：推荐时自动降权 */}
+      {/* 家庭成员忌口：模式（温和降权/严格过滤）与成员即时保存 */}
       <FamilyMembersCard
         members={parseFamilyMembers(settings?.family_members)}
+        mode={parseDislikeMode(settings?.family_dislike_mode)}
+        onModeChange={(m) => updateMut.mutate({ family_dislike_mode: m })}
         onSave={(members) => updateMut.mutate({ family_members: JSON.stringify(members) })}
         saving={updateMut.isPending}
         newMemberName={newMemberName}

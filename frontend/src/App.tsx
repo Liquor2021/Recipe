@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast"
 import { lazy, Suspense, useEffect } from "react"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import AppGate from "@/components/AppGate"
+import OfflineBanner from "@/components/OfflineBanner"
 import MainLayout from "@/layouts/MainLayout"
 import AdminLayout from "@/layouts/AdminLayout"
 import SubPageLayout from "@/layouts/SubPageLayout"
@@ -55,6 +56,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        <OfflineBanner />
         <Routes>
           <Route element={<AppGate><Suspense fallback={<RouteLoading />}><MainLayout /></Suspense></AppGate>}>
             <Route path="/" element={<Home />} />
