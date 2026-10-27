@@ -5,6 +5,7 @@ import (
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,32 @@ func ToggleHomeInventoryHandler(c *gin.Context) {
 	services.ToggleHomeInventory(req.ItemName, req.InStock)
 	services.QueueAutoAchievementSync()
 	utils.SuccessMsg(c, "已更新")
+}
+
+type AddShoppingItemsRequest struct {
+	DishID   uint   `json:"dish_id"`
+	DishName string `json:"dish_name"`
+	MealDate string `json:"meal_date"`
+	Items    []struct {
+		Name   string `json:"name" binding:"required"`
+		Amount string `json:"amount"`
+	} `json:"items" binding:"required,min=1"`
+}
+
+// AddShoppingItemsHandler 清冰箱推荐"补料"等场景：手动往买菜清单加条目
+func AddShoppingItemsHandler(c *gin.Context) {
+	var req AddShoppingItemsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	items := make([]services.ShoppingItem, 0, len(req.Items))
+	for _, it := range req.Items {
+		items = append(items, services.ShoppingItem{Name: it.Name, Amount: it.Amount})
+	}
+	added := services.AddShoppingListItems(items, req.DishID, req.DishName, strings.TrimSpace(req.MealDate))
+	// 前端按 added 数值组织提示文案（0 = 清单里已存在）
+	utils.Success(c, gin.H{"added": added})
 }
 
 func GetShoppingCategories(c *gin.Context) {

@@ -95,6 +95,8 @@ export const shoppingListApi = {
     api<null>("POST", "/shopping-list/toggle", data),
   setInventory: (data: { item_name: string; in_stock: boolean }) =>
     api<null>("POST", "/shopping-list/inventory", data),
+  addItems: (p: { dish_id?: number; dish_name?: string; items: { name: string; amount?: string }[] }) =>
+    api<null>("POST", "/shopping-list/items", p),
 }
 
 export const shoppingCategoriesApi = {

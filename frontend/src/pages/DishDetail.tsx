@@ -10,6 +10,7 @@ import PhotoViewer from "@/components/PhotoViewer"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import SectionHeader from "@/components/SectionHeader"
 import DishCard from "@/components/DishCard"
+import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import { cardShadow } from "@/components/Card"
 import type { Dish, DishRecordsStats } from "@/types"
 import toast from "react-hot-toast"
@@ -114,6 +115,7 @@ export default function DishDetail() {
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
   const [viewerIdx, setViewerIdx] = useState(0)
   const [showViewer, setShowViewer] = useState(false)
+  const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
 
   const { data: dish, isLoading } = useQuery({
     queryKey: ["dish", dishId],
@@ -163,6 +165,7 @@ export default function DishDetail() {
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       qc.invalidateQueries({ queryKey: ["dish-records", dishId] })
+      if (dish) setConsumeDish(dish)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
@@ -538,6 +541,8 @@ export default function DishDetail() {
         <PhotoViewer photos={viewerPhotos} idx={viewerIdx} setIdx={setViewerIdx} onClose={() => setShowViewer(false)} />,
         document.body
       )}
+
+      <ConsumeInventorySheet dish={consumeDish} onClose={() => setConsumeDish(null)} />
     </div>
   )
 }

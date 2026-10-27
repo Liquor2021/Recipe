@@ -14,6 +14,7 @@ import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { gsap, motionDuration, scrollToElement, useGSAP } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
+import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import toast from "react-hot-toast"
 import { Home as HomeIcon, Settings } from "lucide-react"
 
@@ -74,6 +75,9 @@ export default function Home() {
   const [blindRevealed, setBlindRevealed] = useState(false)
   const [spinning, setSpinning] = useState(false)
   const [wheelResult, setWheelResult] = useState<Dish | null>(null)
+  // 记录一餐后提示清库存：记录时先记住做的哪道菜，成功回调里弹出
+  const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
+  const consumeDishRef = useRef<Dish | null>(null)
   // 临期提醒关闭状态按天持久化：当天关过就不再打扰，第二天重新出现
   const [urgentDismissed, setUrgentDismissed] = useState(() => {
     try { return localStorage.getItem("urgent_dismissed_date") === dateKey() } catch { return false }
@@ -134,6 +138,10 @@ export default function Home() {
       launchConfetti(confettiRef.current)
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      if (consumeDishRef.current) {
+        setConsumeDish(consumeDishRef.current)
+        consumeDishRef.current = null
+      }
     },
     onError: (err: unknown) => {
       const msg = (err instanceof Error ? err.message : "") || "记录失败"
@@ -288,6 +296,7 @@ export default function Home() {
       toast.error(`${dish.name} 已在今日${mealType === "lunch" ? "午餐" : "晚餐"}中记录过啦~`)
       return
     }
+    consumeDishRef.current = dish
     recordMut.mutate({
       dish_id: dish.id,
       dish_name: dish.name,
@@ -544,6 +553,9 @@ export default function Home() {
           <span className="text-text3 text-sm">›</span>
         </button>
       </div>
+
+      {/* 做完菜清库存弹层 */}
+      <ConsumeInventorySheet dish={consumeDish} onClose={() => setConsumeDish(null)} />
 
       {/* 转盘结果弹层 */}
       {wheelResult && (

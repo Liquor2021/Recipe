@@ -435,6 +435,57 @@ func shoppingItemPriority(item ShoppingItem) int {
 	}
 }
 
+// AddShoppingListItems 手动往买菜清单补料（如清冰箱推荐里缺的食材）。
+// mealDate 为空默认今天；同日同名条目已存在则跳过去重；返回实际新增条数。
+// mealType 用 "extra" 与菜品联动条目隔离，避免删菜时被误清。
+func AddShoppingListItems(items []ShoppingItem, dishID uint, dishName string, mealDate string) int {
+	today := time.Now().Format("2006-01-02")
+	if mealDate == "" {
+		mealDate = today
+	}
+
+	var existing []string
+	database.DB.Model(&models.ShoppingCheck{}).
+		Where("meal_date = ? AND item_name IN ?", mealDate, itemNames(items)).
+		Pluck("item_name", &existing)
+	exists := make(map[string]bool, len(existing))
+	for _, name := range existing {
+		exists[name] = true
+	}
+
+	rows := make([]models.ShoppingCheck, 0, len(items))
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" || exists[name] {
+			continue
+		}
+		exists[name] = true
+		rows = append(rows, models.ShoppingCheck{
+			MealDate:   mealDate,
+			MealType:   "extra",
+			DishID:     dishID,
+			DishName:   dishName,
+			ItemName:   name,
+			ItemAmount: item.Amount,
+		})
+	}
+	if len(rows) == 0 {
+		return 0
+	}
+	if err := database.DB.Create(&rows).Error; err != nil {
+		return 0
+	}
+	return len(rows)
+}
+
+func itemNames(items []ShoppingItem) []string {
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		names = append(names, item.Name)
+	}
+	return names
+}
+
 func BuildShoppingList(dates []string) []ShoppingCategory {
 	if len(dates) == 0 {
 		return []ShoppingCategory{}

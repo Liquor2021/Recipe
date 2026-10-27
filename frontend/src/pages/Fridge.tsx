@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fridgeApi } from "@/api"
+import { fridgeApi, shoppingListApi } from "@/api"
 import PageHeader from "@/components/PageHeader"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
@@ -43,7 +43,7 @@ function coverageTone(coverage: number) {
   return { bg: "bg-yellow-light", text: "text-[#C8A23C]", bar: "bg-yellow" }
 }
 
-function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void }) {
+function MatchCard({ match, onClick, onAddMissing }: { match: FridgeMatch; onClick: () => void; onAddMissing?: () => void }) {
   const tone = coverageTone(match.coverage)
   // 后端字段可能为 null，统一兜底成数组
   const matched = match.matched || []
@@ -72,10 +72,21 @@ function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void
         <div className="h-1.5 rounded-full bg-bg overflow-hidden mb-1.5">
           <div className={`h-full rounded-full ${tone.bar} transition-all`} style={{ width: `${match.coverage}%` }} />
         </div>
-        <div className="text-[11px] leading-relaxed text-text2">
-          <span className="text-mint font-medium">有 {matched.join("、")}</span>
-          {missing.length > 0 && (
-            <span className="text-text3"> · 缺 {missing.slice(0, 3).join("、")}{missing.length > 3 ? "…" : ""}</span>
+        <div className="text-[11px] leading-relaxed text-text2 flex items-center gap-1.5">
+          <span className="min-w-0 truncate">
+            <span className="text-mint font-medium">有 {matched.join("、")}</span>
+            {missing.length > 0 && (
+              <span className="text-text3"> · 缺 {missing.slice(0, 3).join("、")}{missing.length > 3 ? "…" : ""}</span>
+            )}
+          </span>
+          {missing.length > 0 && onAddMissing && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAddMissing() }}
+              className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-light text-[#C8A23C] transition-all active:scale-95"
+            >
+              🛒 补料
+            </button>
           )}
         </div>
       </div>
@@ -125,6 +136,22 @@ export default function Fridge() {
   const removeMut = useMutation({
     mutationFn: (name: string) => fridgeApi.remove(name),
     onSuccess: () => { invalidate(); setEditing(null) },
+  })
+
+  // 缺料一键补入买菜清单（今天去买，做今天的菜）
+  const addMissingMut = useMutation({
+    mutationFn: (p: { dish_id: number; dish_name: string; missing: string[] }) =>
+      shoppingListApi.addItems({
+        dish_id: p.dish_id,
+        dish_name: p.dish_name,
+        items: p.missing.map((name) => ({ name })),
+      }),
+    onSuccess: (result) => {
+      const added = (result as { added?: number } | null)?.added ?? 0
+      toast.success(added > 0 ? `🛒 已加入买菜清单 ${added} 项` : "买菜清单里已经有了")
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+    },
+    onError: () => toast.error("加入失败，稍后再试"),
   })
 
   const stocked = useMemo(() => new Set(items.map((i) => i.item_name)), [items])
@@ -260,7 +287,12 @@ export default function Fridge() {
             ) : matches && matches.length > 0 ? (
               <div className="flex flex-col gap-2.5">
                 {matches.map((m) => (
-                  <MatchCard key={m.dish.id} match={m} onClick={() => navigate(`/dishes/${m.dish.id}`)} />
+                  <MatchCard
+                    key={m.dish.id}
+                    match={m}
+                    onClick={() => navigate(`/dishes/${m.dish.id}`)}
+                    onAddMissing={() => addMissingMut.mutate({ dish_id: m.dish.id, dish_name: m.dish.name, missing: m.missing || [] })}
+                  />
                 ))}
               </div>
             ) : (
