@@ -69,7 +69,7 @@ func PickMood(c *gin.Context) {
 		var dishes []models.Dish
 		database.DB.Where("enabled = ? AND difficulty = ?", true, "easy").Find(&dishes)
 		if len(dishes) > 0 {
-			shuffled := shuffleDishes(dishes)
+			shuffled := shuffleDishes(services.ExcludeDisliked(dishes))
 			if len(shuffled) > count {
 				shuffled = shuffled[:count]
 			}
@@ -82,7 +82,7 @@ func PickMood(c *gin.Context) {
 		var dishes []models.Dish
 		database.DB.Where("enabled = ? AND taste = ?", true, "辣").Find(&dishes)
 		if len(dishes) > 0 {
-			shuffled := shuffleDishes(dishes)
+			shuffled := shuffleDishes(services.ExcludeDisliked(dishes))
 			if len(shuffled) > count {
 				shuffled = shuffled[:count]
 			}
@@ -95,7 +95,7 @@ func PickMood(c *gin.Context) {
 		var dishes []models.Dish
 		database.DB.Where("enabled = ? AND taste IN ?", true, []string{"清淡", "鲜"}).Find(&dishes)
 		if len(dishes) > 0 {
-			shuffled := shuffleDishes(dishes)
+			shuffled := shuffleDishes(services.ExcludeDisliked(dishes))
 			if len(shuffled) > count {
 				shuffled = shuffled[:count]
 			}
@@ -144,6 +144,8 @@ func PickTomorrow(c *gin.Context) {
 func PickBlindBox(c *gin.Context) {
 	var dishes []models.Dish
 	database.DB.Where("enabled = ?", true).Find(&dishes)
+	// 盲盒是给全家看的单菜惊喜，直接排除命中家庭忌口的菜
+	dishes = services.ExcludeDisliked(dishes)
 	if len(dishes) == 0 {
 		utils.NotFound(c, "没有可推荐的菜品")
 		return

@@ -225,10 +225,12 @@ func GetDietReport(rng string) *DietReport {
 	}
 
 	var prevCookDays int64
-	// 环比口径：上一个"等长周期"（周报=前 7 天，月报=前 30 天），不是上一个自然周/自然月。
-	// 好处是滚动对比总是整周期；前端文案"比上期"即按此口径。
+	// 环比口径：对比"相同已过天数"。本期是部分周期（如周三打开周报只过了 3 天），
+	// 上期也只取上一周期的前 3 天，否则周初/月初会系统性显示"比上期少"。
+	elapsed := int(today.Sub(start).Hours()/24) + 1
+	prevEnd := periodStart.AddDate(0, 0, elapsed-1)
 	database.DB.Model(&models.MealRecord{}).
-		Where("meal_date >= ? AND meal_date < ?", periodStart.Format("2006-01-02"), start.Format("2006-01-02")).
+		Where("meal_date >= ? AND meal_date <= ?", periodStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).
 		Distinct("meal_date").Count(&prevCookDays)
 
 	var dayRatings []models.DayRating

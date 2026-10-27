@@ -20,9 +20,10 @@ async function api(method, path, body) {
 async function main() {
   console.log("== 冰箱库存 API E2E ==")
 
-  // 0. 清场：移出现有全部条目
+  // 0. 快照现有库存（非破坏性：测试结束后恢复原样）
   const before = await api("GET", "/fridge")
-  for (const it of before.data || []) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
+  const snapshot = (before.data || []).map(i => ({ item_name: i.item_name, expiry_date: i.expiry_date }))
+  for (const it of snapshot) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
   const cleaned = await api("GET", "/fridge")
   check("清场后为空", Array.isArray(cleaned.data) && cleaned.data.length === 0, JSON.stringify(cleaned))
 
@@ -80,6 +81,13 @@ async function main() {
   // 7. 鉴权：无 token 应 401
   const noAuth = await fetch(BASE + "/fridge")
   check("无 token 返回 401", noAuth.status === 401, `got ${noAuth.status}`)
+
+  // 8. 恢复测试前的库存快照
+  const current = await api("GET", "/fridge")
+  for (const it of current.data || []) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
+  for (const it of snapshot) await api("POST", "/fridge", { item_name: it.item_name, expiry_date: it.expiry_date })
+  const restored = await api("GET", "/fridge")
+  check("恢复原有库存", (restored.data || []).length === snapshot.length, `got ${(restored.data || []).length}, want ${snapshot.length}`)
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败`)
   process.exit(failed > 0 ? 1 : 0)

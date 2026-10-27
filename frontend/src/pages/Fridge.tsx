@@ -49,6 +49,8 @@ function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void
   const matched = match.matched || []
   const missing = match.missing || []
   const urgent = match.using_urgent || []
+  // 只有 100% 才叫"可以做"，其余是部分匹配，不夸大
+  const badgeText = match.coverage === 100 ? "可以做" : `匹配 ${match.coverage}%`
   return (
     <div
       onClick={onClick}
@@ -59,7 +61,7 @@ function MatchCard({ match, onClick }: { match: FridgeMatch; onClick: () => void
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[15px] font-bold truncate">{match.dish.name}</span>
           <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${tone.bg} ${tone.text}`}>
-            能做 {match.coverage}%
+            {badgeText}
           </span>
           {urgent.length > 0 && (
             <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-light text-red">
@@ -96,7 +98,7 @@ export default function Fridge() {
   const [editDate, setEditDate] = useState("")
 
   const { data: items = [] } = useQuery({ queryKey: ["fridge"], queryFn: () => fridgeApi.list() })
-  const { data: matches } = useQuery({
+  const { data: matches, isLoading: matchesLoading } = useQuery({
     queryKey: ["fridge-recipes"],
     queryFn: () => fridgeApi.recipes(20),
     enabled: items.length > 0,
@@ -105,6 +107,8 @@ export default function Fridge() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["fridge"] })
     qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
+    // 首页临期提醒条用的缓存也要失效，否则返回首页会显示旧提醒
+    qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
   }
 
   const addMut = useMutation({
@@ -206,10 +210,11 @@ export default function Fridge() {
                 const badge = expiryBadge(item.expiry_date)
                 const isUrgent = badge?.level === "expired" || badge?.level === "urgent"
                 return (
-                  <button
+                  // 外层用 div 而非 button，避免"按钮里嵌按钮"的可访问性问题
+                  <div
                     key={item.id}
                     onClick={() => openExpiryEditor(item)}
-                    className={`inline-flex items-center gap-1.5 pl-3.5 pr-2.5 py-1.5 rounded-full text-sm font-medium border animate-pop-soft transition-all active:scale-95 ${
+                    className={`inline-flex items-center gap-1.5 pl-3.5 pr-2.5 py-1.5 rounded-full text-sm font-medium border animate-pop-soft transition-all active:scale-95 cursor-pointer ${
                       isUrgent ? "bg-red-light border-red/25 text-red" : "bg-mint-light border-mint/25 text-[#2E8577]"
                     }`}
                   >
@@ -217,15 +222,15 @@ export default function Fridge() {
                     {badge && (
                       <span className={`px-1.5 py-px rounded-full text-[9px] font-bold ${badge.cls}`}>{badge.text}</span>
                     )}
-                    <span
-                      role="button"
+                    <button
+                      type="button"
                       aria-label={`移出${item.item_name}`}
                       onClick={(e) => { e.stopPropagation(); removeMut.mutate(item.item_name) }}
                       className="w-5 h-5 rounded-full flex items-center justify-center opacity-60 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90"
                     >
                       ×
-                    </span>
-                  </button>
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -248,7 +253,11 @@ export default function Fridge() {
               <div className="text-lg font-bold">🍳 清冰箱推荐</div>
               <span className="text-[11px] text-text3">临期食材会优先用掉</span>
             </div>
-            {matches && matches.length > 0 ? (
+            {matchesLoading ? (
+              <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center`}>
+                <div className="text-sm text-text3">正在看你的冰箱…</div>
+              </div>
+            ) : matches && matches.length > 0 ? (
               <div className="flex flex-col gap-2.5">
                 {matches.map((m) => (
                   <MatchCard key={m.dish.id} match={m} onClick={() => navigate(`/dishes/${m.dish.id}`)} />

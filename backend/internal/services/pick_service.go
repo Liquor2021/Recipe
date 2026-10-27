@@ -382,6 +382,22 @@ func dishHitsDislikes(d models.Dish, dislikes map[string]bool) bool {
 	return false
 }
 
+// ExcludeDisliked 过滤命中家庭忌口的菜品。
+// 用于心情推荐、盲盒这类"单菜推荐"场景：没有多人就餐的分摊余地，直接排除。
+func ExcludeDisliked(dishes []models.Dish) []models.Dish {
+	dislikes := loadFamilyDislikes()
+	if len(dislikes) == 0 {
+		return dishes
+	}
+	out := make([]models.Dish, 0, len(dishes))
+	for _, d := range dishes {
+		if !dishHitsDislikes(d, dislikes) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
 // buildWeightedIndices 生成按权重重复的下标数组：命中家庭忌口的菜固定权重 1（取消收藏加权）
 func buildWeightedIndices(dishes []models.Dish, dislikes map[string]bool) []int {
 	indices := make([]int, 0)

@@ -27,26 +27,40 @@ type StockItem struct {
 
 const noExpiryDays = 999
 
-// ParseDishIngredientNames 取菜品主要食材名（保持顺序、去重），调料不参与匹配
+// ParseDishIngredientNames 取菜品主要食材名（保持顺序、去重），调料不参与匹配。
+// 兼容两种存储格式：标准对象数组 [{"name":"鸡蛋","amount":"3个"}]，
+// 以及旧数据/手工录入的字符串数组 ["鸡蛋","番茄"]（字符串即名字，无数量）。
 func ParseDishIngredientNames(dish models.Dish) []string {
 	var ings []struct {
 		Name   string `json:"name"`
 		Amount string `json:"amount"`
 	}
 	if err := json.Unmarshal([]byte(dish.Ingredients), &ings); err != nil {
-		return nil
+		var names []string
+		if err := json.Unmarshal([]byte(dish.Ingredients), &names); err != nil {
+			return nil
+		}
+		return dedupeNames(names)
 	}
-	seen := make(map[string]bool, len(ings))
-	names := make([]string, 0, len(ings))
+	out := make([]string, 0, len(ings))
 	for _, ing := range ings {
-		name := strings.TrimSpace(ing.Name)
+		out = append(out, ing.Name)
+	}
+	return dedupeNames(out)
+}
+
+func dedupeNames(names []string) []string {
+	seen := make(map[string]bool, len(names))
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
 		if name == "" || seen[name] {
 			continue
 		}
 		seen[name] = true
-		names = append(names, name)
+		out = append(out, name)
 	}
-	return names
+	return out
 }
 
 // daysLeftFor 计算某食材距过期的天数；未设置保质期返回 noExpiryDays
@@ -199,7 +213,9 @@ func UrgentInventoryItems() []models.HomeInventory {
 	return urgent
 }
 
-// MatchFridgeRecipes 用冰箱现有食材推荐能做的菜
+// MatchFridgeRecipes 用冰箱现有食材推荐能做的菜。
+// 已过期食材不进推荐池（只在临期提醒里出现，避免推荐用户吃过期食材）；
+// 同一大类的多条库存只保留最早到期的一条，临期优先不会被无保质期的同类覆盖。
 func MatchFridgeRecipes(limit int) []FridgeMatch {
 	if limit <= 0 || limit > 50 {
 		limit = 12
@@ -208,10 +224,23 @@ func MatchFridgeRecipes(limit int) []FridgeMatch {
 	database.DB.Where("enabled = ?", true).Find(&dishes)
 	items := ListHomeInventoryItems()
 	today := time.Now()
-	stock := make([]StockItem, 0, len(items))
+	bestByCategory := make(map[string]StockItem)
 	for _, item := range items {
-		stock = append(stock, StockItem{Name: item.ItemName, DaysLeft: daysLeftFor(item.ExpiryDate, today)})
+		daysLeft := daysLeftFor(item.ExpiryDate, today)
+		if daysLeft < 0 {
+			continue
+		}
+		si := StockItem{Name: item.ItemName, DaysLeft: daysLeft}
+		cat := ingredients.CategoryOf(item.ItemName)
+		if cur, ok := bestByCategory[cat]; !ok || daysLeft < cur.DaysLeft {
+			bestByCategory[cat] = si
+		}
 	}
+	stock := make([]StockItem, 0, len(bestByCategory))
+	for _, si := range bestByCategory {
+		stock = append(stock, si)
+	}
+	sort.Slice(stock, func(i, j int) bool { return stock[i].Name < stock[j].Name })
 	matches := matchDishesWithInventory(dishes, stock, limit)
 	if matches == nil {
 		return []FridgeMatch{}

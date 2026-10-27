@@ -7,18 +7,20 @@ import AppGate from "@/components/AppGate"
 import MainLayout from "@/layouts/MainLayout"
 import AdminLayout from "@/layouts/AdminLayout"
 import SubPageLayout from "@/layouts/SubPageLayout"
-import Home from "@/pages/Home"
-import DishList from "@/pages/DishList"
-import DishDetail from "@/pages/DishDetail"
-import History from "@/pages/History"
-import Favorites from "@/pages/Favorites"
-import PhotoWall from "@/pages/PhotoWall"
-import More from "@/pages/More"
-import Tomorrow from "@/pages/Tomorrow"
-import Achievements from "@/pages/Achievements"
-import CookMode from "@/pages/CookMode"
-import Fridge from "@/pages/Fridge"
-import Report from "@/pages/Report"
+
+// 页面组件全部按需加载：首屏只拉当前路由 + 布局壳的代码
+const Home = lazy(() => import("@/pages/Home"))
+const DishList = lazy(() => import("@/pages/DishList"))
+const DishDetail = lazy(() => import("@/pages/DishDetail"))
+const History = lazy(() => import("@/pages/History"))
+const Favorites = lazy(() => import("@/pages/Favorites"))
+const PhotoWall = lazy(() => import("@/pages/PhotoWall"))
+const More = lazy(() => import("@/pages/More"))
+const Tomorrow = lazy(() => import("@/pages/Tomorrow"))
+const Achievements = lazy(() => import("@/pages/Achievements"))
+const CookMode = lazy(() => import("@/pages/CookMode"))
+const Fridge = lazy(() => import("@/pages/Fridge"))
+const Report = lazy(() => import("@/pages/Report"))
 
 // 管理端按需加载：普通用户首屏不必下载后台代码
 const AdminLogin = lazy(() => import("@/pages/admin/Login"))
@@ -29,6 +31,10 @@ const AdminSettings = lazy(() => import("@/pages/admin/Settings"))
 const AdminAchievements = lazy(() => import("@/pages/admin/Achievements"))
 const AdminQuotes = lazy(() => import("@/pages/admin/Quotes"))
 const AdminRecords = lazy(() => import("@/pages/admin/Records"))
+
+function RouteLoading() {
+  return <div className="h-full flex items-center justify-center text-sm text-text3">加载中…</div>
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,7 +56,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route element={<AppGate><MainLayout /></AppGate>}>
+          <Route element={<AppGate><Suspense fallback={<RouteLoading />}><MainLayout /></Suspense></AppGate>}>
             <Route path="/" element={<Home />} />
             <Route path="/dishes" element={<DishList />} />
             <Route path="/history" element={<History />} />
@@ -58,14 +64,14 @@ export default function App() {
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/more" element={<More />} />
           </Route>
-          <Route element={<AppGate><SubPageLayout /></AppGate>}>
+          <Route element={<AppGate><Suspense fallback={<RouteLoading />}><SubPageLayout /></Suspense></AppGate>}>
             <Route path="/dishes/:id" element={<DishDetail />} />
             <Route path="/tomorrow" element={<Tomorrow />} />
             <Route path="/achievements" element={<Achievements />} />
             <Route path="/fridge" element={<Fridge />} />
             <Route path="/report" element={<Report />} />
           </Route>
-          <Route path="/dishes/:id/cook" element={<AppGate><CookMode /></AppGate>} />
+          <Route path="/dishes/:id/cook" element={<AppGate><Suspense fallback={<RouteLoading />}><CookMode /></Suspense></AppGate>} />
           <Route
             path="/admin"
             element={

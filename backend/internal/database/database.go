@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"fmt"
 	"ninimenu/internal/achievements"
 	"ninimenu/internal/config"
 	"ninimenu/internal/dishes"
@@ -56,12 +57,69 @@ func Init() error {
 }
 
 // migrateMealRecordUniqueIndex 把同菜同餐同日的普通索引升级为唯一索引。
-// SQLite 无法直接修改已有索引，需先清理历史重复数据再重建；
-// 若建唯一索引失败（如仍存在无法删除的重复行），保留普通索引兜底。
+// SQLite 无法直接修改已有索引，需要先处理历史重复数据。为避免静默丢数据：
+//   - 不直接删除重复行，而是把重复行的评分/备注/照片/心情合并进最早一条（只补空缺，不覆盖已有值）；
+//   - 合并与删除放在同一事务，任何一步失败整体回滚（仅放弃索引升级，数据原样保留）；
+//   - 建唯一索引失败时降级为普通索引兜底。
 func migrateMealRecordUniqueIndex() {
-	DB.Exec(`DELETE FROM meal_records WHERE id NOT IN (
-		SELECT MIN(id) FROM meal_records GROUP BY dish_id, meal_type, meal_date
-	)`)
+	type keyRow struct {
+		DishID   uint
+		MealType string
+		MealDate string
+	}
+	var keys []keyRow
+	DB.Model(&models.MealRecord{}).
+		Select("dish_id, meal_type, meal_date").
+		Group("dish_id, meal_type, meal_date").
+		Having("count(*) > 1").
+		Scan(&keys)
+
+	if len(keys) > 0 {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			for _, k := range keys {
+				var rows []models.MealRecord
+				if err := tx.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", k.DishID, k.MealType, k.MealDate).
+					Order("id ASC").Find(&rows).Error; err != nil {
+					return err
+				}
+				if len(rows) < 2 {
+					continue
+				}
+				keeper := rows[0]
+				for _, dup := range rows[1:] {
+					if keeper.Rating == 0 && dup.Rating > 0 {
+						keeper.Rating = dup.Rating
+					}
+					if keeper.Remark == "" && dup.Remark != "" {
+						keeper.Remark = dup.Remark
+					}
+					if keeper.Photo == "" && dup.Photo != "" {
+						keeper.Photo = dup.Photo
+					}
+					if keeper.Mood == "" && dup.Mood != "" {
+						keeper.Mood = dup.Mood
+					}
+				}
+				if err := tx.Save(&keeper).Error; err != nil {
+					return err
+				}
+				ids := make([]uint, 0, len(rows)-1)
+				for _, dup := range rows[1:] {
+					ids = append(ids, dup.ID)
+				}
+				if err := tx.Delete(&models.MealRecord{}, ids).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Printf("[migrate] 用餐记录重复合并失败，跳过唯一索引升级（数据保持原样）: %v\n", err)
+			return
+		}
+		fmt.Printf("[migrate] 已合并 %d 组重复用餐记录并重建唯一索引\n", len(keys))
+	}
+
 	DB.Exec(`DROP INDEX IF EXISTS idx_meal_records_unique_day`)
 	if err := DB.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meal_records_unique_day
 		ON meal_records(dish_id, meal_type, meal_date)`).Error; err != nil {

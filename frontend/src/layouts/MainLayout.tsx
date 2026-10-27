@@ -1,13 +1,15 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
-import { useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useRef, useState } from "react"
 import { CalendarDays, Heart, Home as HomeIcon, Images, Menu, UtensilsCrossed } from "lucide-react"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
-import Home from "@/pages/Home"
-import DishList from "@/pages/DishList"
-import History from "@/pages/History"
-import PhotoWall from "@/pages/PhotoWall"
-import Favorites from "@/pages/Favorites"
-import More from "@/pages/More"
+
+// 六个 tab 页懒加载：首屏只下载当前页代码
+const Home = lazy(() => import("@/pages/Home"))
+const DishList = lazy(() => import("@/pages/DishList"))
+const History = lazy(() => import("@/pages/History"))
+const PhotoWall = lazy(() => import("@/pages/PhotoWall"))
+const Favorites = lazy(() => import("@/pages/Favorites"))
+const More = lazy(() => import("@/pages/More"))
 
 const tabs = [
   { path: "/", Component: Home, icon: HomeIcon, label: "首页", exact: true },
@@ -23,6 +25,12 @@ const STEP_PCT = 100 / TAB_COUNT
 
 const EDGE_ZONE = 36
 const SWIPE_MIN = 30
+
+function TabLoading() {
+  return (
+    <div className="h-full flex items-center justify-center text-sm text-text3">加载中…</div>
+  )
+}
 
 export default function MainLayout() {
   const location = useLocation()
@@ -197,7 +205,9 @@ export default function MainLayout() {
         >
           {tabs.map((tab) => (
             <div key={tab.path} className="h-full overflow-y-auto overscroll-y-contain pb-[calc(60px+env(safe-area-inset-bottom))]" style={{ width: `${STEP_PCT}%`, flexShrink: 0 }}>
-              <tab.Component />
+              <Suspense fallback={<TabLoading />}>
+                <tab.Component />
+              </Suspense>
             </div>
           ))}
         </div>

@@ -633,9 +633,9 @@ func ToggleHomeInventory(itemName string, inStock bool) {
 		return
 	}
 
-	database.DB.Where("item_name = ?", itemName).
-		Assign(models.HomeInventory{InStock: true}).
-		FirstOrCreate(&models.HomeInventory{ItemName: itemName})
+	// 复用冰箱添加逻辑：按食材字典自动设默认保质期，与冰箱页行为一致，
+	// 从买菜清单点"家中有"的食材同样能产生临期提醒
+	AddHomeInventoryItem(itemName, "")
 }
 
 func hasKeyword(s string, keywords []string) bool {

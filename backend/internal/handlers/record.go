@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
@@ -19,54 +20,61 @@ type nameAmount struct {
 	Amount string `json:"amount"`
 }
 
-func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string, mealDate string) {
+func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string, mealDate string) error {
 	var dish models.Dish
 	if err := db.Unscoped().First(&dish, dishID).Error; err != nil {
-		return
+		// 菜品不存在（可能已被删）不阻塞记录创建，只跳过买菜清单联动
+		return nil
 	}
 
 	var items []models.ShoppingCheck
 
 	var ingredients []nameAmount
-	if err := json.Unmarshal([]byte(dish.Ingredients), &ingredients); err == nil {
-		for _, ing := range ingredients {
-			if ing.Name != "" {
-				items = append(items, models.ShoppingCheck{
-					MealDate:   mealDate,
-					MealType:   mealType,
-					DishID:     dishID,
-					DishName:   dishName,
-					ItemName:   ing.Name,
-					ItemAmount: ing.Amount,
-				})
-			}
+	if err := json.Unmarshal([]byte(dish.Ingredients), &ingredients); err != nil {
+		ingredients = nil
+	}
+	for _, ing := range ingredients {
+		if ing.Name != "" {
+			items = append(items, models.ShoppingCheck{
+				MealDate:   mealDate,
+				MealType:   mealType,
+				DishID:     dishID,
+				DishName:   dishName,
+				ItemName:   ing.Name,
+				ItemAmount: ing.Amount,
+			})
 		}
 	}
 
 	var seasonings []nameAmount
-	if err := json.Unmarshal([]byte(dish.Seasonings), &seasonings); err == nil {
-		for _, s := range seasonings {
-			if s.Name != "" {
-				items = append(items, models.ShoppingCheck{
-					MealDate:   mealDate,
-					MealType:   mealType,
-					DishID:     dishID,
-					DishName:   dishName,
-					ItemName:   s.Name,
-					ItemAmount: s.Amount,
-				})
-			}
+	if err := json.Unmarshal([]byte(dish.Seasonings), &seasonings); err != nil {
+		seasonings = nil
+	}
+	for _, s := range seasonings {
+		if s.Name != "" {
+			items = append(items, models.ShoppingCheck{
+				MealDate:   mealDate,
+				MealType:   mealType,
+				DishID:     dishID,
+				DishName:   dishName,
+				ItemName:   s.Name,
+				ItemAmount: s.Amount,
+			})
 		}
 	}
 
 	if len(items) > 0 {
-		db.Create(&items)
+		// 错误必须传播给外层事务，否则记录会提交而买菜清单缺失，联动失效
+		if err := db.Create(&items).Error; err != nil {
+			return fmt.Errorf("写入买菜清单失败: %w", err)
+		}
 	}
+	return nil
 }
 
-func removeShoppingItems(db *gorm.DB, dishID uint, mealType string, mealDate string) {
-	db.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
-		Delete(&models.ShoppingCheck{})
+func removeShoppingItems(db *gorm.DB, dishID uint, mealType string, mealDate string) error {
+	return db.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
+		Delete(&models.ShoppingCheck{}).Error
 }
 
 type MealRecordResponse struct {
@@ -246,8 +254,7 @@ func CreateRecord(c *gin.Context) {
 		if err := tx.Create(&record).Error; err != nil {
 			return err
 		}
-		addShoppingItems(tx, req.DishID, req.DishName, req.MealType, req.MealDate)
-		return nil
+		return addShoppingItems(tx, req.DishID, req.DishName, req.MealType, req.MealDate)
 	})
 	if err != nil {
 		// 唯一索引冲突说明并发下已记录过，视为重复而非错误
@@ -306,8 +313,7 @@ func BatchCreateRecords(c *gin.Context) {
 			if err := tx.Create(&record).Error; err != nil {
 				return err
 			}
-			addShoppingItems(tx, r.DishID, r.DishName, r.MealType, r.MealDate)
-			return nil
+			return addShoppingItems(tx, r.DishID, r.DishName, r.MealType, r.MealDate)
 		})
 		if err == nil {
 			created = append(created, record)
@@ -365,8 +371,7 @@ func DeleteRecord(c *gin.Context) {
 		if err := tx.Delete(&record).Error; err != nil {
 			return err
 		}
-		removeShoppingItems(tx, record.DishID, record.MealType, record.MealDate)
-		return nil
+		return removeShoppingItems(tx, record.DishID, record.MealType, record.MealDate)
 	})
 	if err != nil {
 		utils.InternalError(c, "删除记录失败")

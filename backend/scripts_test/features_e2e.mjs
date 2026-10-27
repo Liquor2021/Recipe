@@ -21,9 +21,10 @@ function dayStr(offset) {
 
 async function main() {
   console.log("== 临期管理 ==")
-  // 清场
+  // 快照现有库存（非破坏性：结束后恢复原样）
   const before = await api("GET", "/fridge")
-  for (const it of before.data || []) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
+  const fridgeSnapshot = (before.data || []).map(i => ({ item_name: i.item_name, expiry_date: i.expiry_date }))
+  for (const it of fridgeSnapshot) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
 
   let r = await api("POST", "/fridge", { item_name: "番茄", expiry_date: dayStr(1) })
   check("添加番茄(明天到期)", r.code === 0, JSON.stringify(r))
@@ -90,6 +91,11 @@ async function main() {
   check("明日菜单忌口降权不崩", r.code === 0, JSON.stringify(r).slice(0, 120))
   // 清掉测试设置，避免影响真实使用
   await adminApi("PUT", "/settings", { settings: { family_members: "" } })
+
+  // 恢复测试前的冰箱快照（家庭设置已在上一步恢复为空）
+  const after = await api("GET", "/fridge")
+  for (const it of after.data || []) await api("DELETE", `/fridge/${encodeURIComponent(it.item_name)}`)
+  for (const it of fridgeSnapshot) await api("POST", "/fridge", { item_name: it.item_name, expiry_date: it.expiry_date })
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败`)
   process.exit(failed > 0 ? 1 : 0)
