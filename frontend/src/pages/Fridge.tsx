@@ -6,7 +6,7 @@ import PageHeader from "@/components/PageHeader"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
 import { cardShadow } from "@/components/Card"
-import type { FridgeMatch, HomeInventoryItem } from "@/types"
+import type { FridgeMatch, InventoryBatch } from "@/types"
 import toast from "react-hot-toast"
 
 const QUICK_ITEMS = ["鸡蛋", "番茄", "土豆", "青椒", "洋葱", "豆腐", "猪肉", "鸡翅", "虾仁", "白菜", "面条", "玉米"]
@@ -105,7 +105,10 @@ export default function Fridge() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [input, setInput] = useState("")
-  const [editing, setEditing] = useState<HomeInventoryItem | null>(null)
+  const [quantityInput, setQuantityInput] = useState("")
+  // 编辑某一批次：数量 + 保质期
+  const [editing, setEditing] = useState<InventoryBatch | null>(null)
+  const [editQuantity, setEditQuantity] = useState("")
   const [editDate, setEditDate] = useState("")
 
   const { data: items = [] } = useQuery({ queryKey: ["fridge"], queryFn: () => fridgeApi.list() })
@@ -123,19 +126,19 @@ export default function Fridge() {
   }
 
   const addMut = useMutation({
-    mutationFn: (p: { name: string; expiry?: string }) => fridgeApi.add(p.name, p.expiry),
+    mutationFn: (p: { name: string; quantity?: string; expiry?: string }) => fridgeApi.add(p.name, p.quantity, p.expiry),
     onSuccess: () => { invalidate(); toast.success("🧊 已放入冰箱") },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "添加失败"),
   })
-  // 保质期修改与"新放入"分开提示，避免编辑已有食材时弹"已放入冰箱"的错位文案
-  const expiryMut = useMutation({
-    mutationFn: (p: { name: string; expiry?: string }) => fridgeApi.add(p.name, p.expiry),
-    onSuccess: () => { invalidate(); setEditing(null); toast.success("📅 保质期已更新") },
-    onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "保存失败"),
+  // 批次编辑（数量/保质期）与"新放入"分开提示
+  const batchMut = useMutation({
+    mutationFn: (p: { id: number; quantity: string; expiry: string }) => fridgeApi.updateBatch(p.id, p.quantity, p.expiry),
+    onSuccess: () => { invalidate(); setEditing(null); toast.success("📅 批次已更新") },
+    onError: () => toast.error("保存失败"),
   })
-  const removeMut = useMutation({
-    mutationFn: (name: string) => fridgeApi.remove(name),
-    onSuccess: () => { invalidate(); setEditing(null) },
+  const removeBatchMut = useMutation({
+    mutationFn: (id: number) => fridgeApi.removeBatch(id),
+    onSuccess: () => { invalidate(); setEditing(null); toast.success("已移出冰箱") },
   })
 
   // 缺料一键补入买菜清单（今天去买，做今天的菜）
@@ -154,6 +157,17 @@ export default function Fridge() {
     onError: () => toast.error("加入失败，稍后再试"),
   })
 
+  // 按食材名分组：组 = 一种食材，组内可能多批次
+  const groups = useMemo(() => {
+    const m = new Map<string, InventoryBatch[]>()
+    for (const b of items) {
+      const arr = m.get(b.item_name) || []
+      arr.push(b)
+      m.set(b.item_name, arr)
+    }
+    return [...m.entries()]
+  }, [items])
+
   const stocked = useMemo(() => new Set(items.map((i) => i.item_name)), [items])
   const quickLeft = QUICK_ITEMS.filter((n) => !stocked.has(n))
   const urgentCount = items.filter((i) => {
@@ -164,23 +178,21 @@ export default function Fridge() {
   function handleAdd(raw: string) {
     const name = raw.trim()
     if (!name) return
-    if (stocked.has(name)) {
-      toast("冰箱里已经有啦~")
-      setInput("")
-      return
-    }
-    addMut.mutate({ name })
+    // 同食材再添加 = 追加一个新批次（如今天又买了一袋）
+    addMut.mutate({ name, quantity: quantityInput.trim() })
     setInput("")
+    setQuantityInput("")
   }
 
-  function openExpiryEditor(item: HomeInventoryItem) {
-    setEditing(item)
-    setEditDate(item.expiry_date || "")
+  function openBatchEditor(batch: InventoryBatch) {
+    setEditing(batch)
+    setEditQuantity(batch.quantity || "")
+    setEditDate(batch.expiry_date || "")
   }
 
-  function saveExpiry() {
+  function saveBatch() {
     if (!editing) return
-    expiryMut.mutate({ name: editing.item_name, expiry: editDate })
+    batchMut.mutate({ id: editing.id, quantity: editQuantity, expiry: editDate })
   }
 
   return (
@@ -189,12 +201,12 @@ export default function Fridge() {
         title="冰箱库存"
         subtitle="记下家里有什么，帮你清冰箱"
         onBack={() => navigate(-1)}
-        meta={urgentCount > 0 ? `${urgentCount} 样临期` : items.length > 0 ? `${items.length} 种食材` : undefined}
+        meta={urgentCount > 0 ? `${urgentCount} 批临期` : items.length > 0 ? `${items.length} 批` : undefined}
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
-        {/* 添加食材 */}
-        <form onSubmit={(e) => { e.preventDefault(); handleAdd(input) }} className="flex gap-2.5 mb-3">
+        {/* 添加食材：同食材再添加 = 追加新批次 */}
+        <form onSubmit={(e) => { e.preventDefault(); handleAdd(input) }} className="flex gap-2 mb-2.5">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -209,6 +221,12 @@ export default function Fridge() {
             放入
           </button>
         </form>
+        <input
+          value={quantityInput}
+          onChange={(e) => setQuantityInput(e.target.value)}
+          placeholder="数量（可选），如：3个、半袋"
+          className="w-full h-9 mb-3 rounded-xl border border-border bg-bg px-3.5 text-xs text-text2 outline-none transition-all focus:border-primary"
+        />
 
         {/* 快速添加 */}
         {quickLeft.length > 0 && (
@@ -225,42 +243,57 @@ export default function Fridge() {
           </div>
         )}
 
-        {/* 已有食材 */}
-        {items.length > 0 ? (
-          <div className="mb-6">
-            <div className="text-[13px] font-semibold text-text3 mb-2.5">
-              🧊 我家有 {items.length} 种{urgentCount > 0 ? ` · ${urgentCount} 样临期` : ""}
-              <span className="font-normal text-text4 ml-1.5">点食材可设保质期</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {items.map((item) => {
-                const badge = expiryBadge(item.expiry_date)
-                const isUrgent = badge?.level === "expired" || badge?.level === "urgent"
-                return (
-                  // 外层用 div 而非 button，避免"按钮里嵌按钮"的可访问性问题
-                  <div
-                    key={item.id}
-                    onClick={() => openExpiryEditor(item)}
-                    className={`inline-flex items-center gap-1.5 pl-3.5 pr-2.5 py-1.5 rounded-full text-sm font-medium border animate-pop-soft transition-all active:scale-95 cursor-pointer ${
-                      isUrgent ? "bg-red-light border-red/25 text-red" : "bg-mint-light border-mint/25 text-[#2E8577]"
-                    }`}
-                  >
-                    {item.item_name}
-                    {badge && (
-                      <span className={`px-1.5 py-px rounded-full text-[9px] font-bold ${badge.cls}`}>{badge.text}</span>
+        {/* 已有食材（按食材分组，组内批次） */}
+        {groups.length > 0 ? (
+          <div className="flex flex-col gap-2.5 mb-6">
+            {groups.map(([name, batches]) => {
+              const hasUrgent = batches.some((b) => {
+                const l = daysLeft(b.expiry_date)
+                return l !== null && l <= 2
+              })
+              return (
+                <div
+                  key={name}
+                  className={`bg-card rounded-2xl border ${cardShadow} p-3.5 ${hasUrgent ? "border-red/20" : "border-border"}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[15px] font-bold ${hasUrgent ? "text-red" : ""}`}>{name}</span>
+                    {batches.length > 1 && (
+                      <span className="text-[10px] font-semibold text-text3 bg-bg px-2 py-0.5 rounded-full">{batches.length} 批</span>
                     )}
-                    <button
-                      type="button"
-                      aria-label={`移出${item.item_name}`}
-                      onClick={(e) => { e.stopPropagation(); removeMut.mutate(item.item_name) }}
-                      className="w-5 h-5 rounded-full flex items-center justify-center opacity-60 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90"
-                    >
-                      ×
-                    </button>
                   </div>
-                )
-              })}
-            </div>
+                  <div className="flex flex-col gap-1.5">
+                    {batches.map((b) => {
+                      const badge = expiryBadge(b.expiry_date)
+                      return (
+                        <div
+                          key={b.id}
+                          onClick={() => openBatchEditor(b)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm cursor-pointer transition-all active:scale-[.98] ${
+                            badge?.level === "expired" || badge?.level === "urgent"
+                              ? "bg-red-light/60 border-red/20 text-red"
+                              : "bg-bg border-border text-text"
+                          }`}
+                        >
+                          {b.quantity && <span className="font-semibold">{b.quantity}</span>}
+                          {badge && (
+                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${badge.cls}`}>{badge.text}</span>
+                          )}
+                          <button
+                            type="button"
+                            aria-label={`移出${name}该批`}
+                            onClick={(e) => { e.stopPropagation(); removeBatchMut.mutate(b.id) }}
+                            className="ml-auto w-5 h-5 rounded-full flex items-center justify-center opacity-50 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90 text-base leading-none"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         ) : (
           <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-6`}>
@@ -278,7 +311,7 @@ export default function Fridge() {
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="text-lg font-bold">🍳 清冰箱推荐</div>
-              <span className="text-[11px] text-text3">临期食材会优先用掉</span>
+              <span className="text-[11px] text-text3">临期批次会优先用掉</span>
             </div>
             {matchesLoading ? (
               <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center`}>
@@ -306,11 +339,17 @@ export default function Fridge() {
         )}
       </div>
 
-      {/* 保质期编辑弹层 */}
+      {/* 批次编辑弹层 */}
       {editing && (
         <AnimatedBottomSheet onClose={() => setEditing(null)} className="rounded-t-3xl p-5">
           <div className="text-lg font-extrabold mb-0.5">{editing.item_name}</div>
-          <div className="text-xs text-text3 mb-4">设置保质期，临期时会提醒你优先吃掉</div>
+          <div className="text-xs text-text3 mb-4">编辑这一批的数量和保质期</div>
+          <input
+            value={editQuantity}
+            onChange={(e) => setEditQuantity(e.target.value)}
+            placeholder="数量（可选），如：3个、半袋"
+            className="w-full h-10 mb-3 rounded-xl border-[1.5px] border-border bg-bg px-3.5 text-sm outline-none transition-all focus:border-primary"
+          />
           <div className="grid grid-cols-4 gap-2 mb-3">
             {EXPIRY_PRESETS.map((p) => {
               const val = todayStr(p.days)
@@ -318,6 +357,7 @@ export default function Fridge() {
               return (
                 <button
                   key={p.days}
+                  type="button"
                   onClick={() => setEditDate(val)}
                   className={`py-2.5 rounded-xl text-[13px] font-bold border-[1.5px] transition-all active:scale-95 ${active ? "border-primary bg-primary-light text-primary" : "border-border text-text2"}`}
                 >
@@ -337,13 +377,15 @@ export default function Fridge() {
           </label>
           <div className="flex gap-2.5">
             <button
-              onClick={() => { removeMut.mutate(editing.item_name); toast.success("已移出冰箱") }}
+              type="button"
+              onClick={() => { removeBatchMut.mutate(editing.id); toast.success("已移出冰箱") }}
               className="py-2.5 px-4 rounded-full text-sm font-semibold bg-red-light text-red active:scale-96 transition-all"
             >
-              移出冰箱
+              移出该批
             </button>
             <button
-              onClick={saveExpiry}
+              type="button"
+              onClick={saveBatch}
               className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white active:scale-96 transition-all"
             >
               保存

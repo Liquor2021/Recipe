@@ -286,10 +286,11 @@ export interface DishRecordsResponse {
   stats: DishRecordsStats
 }
 
-export interface HomeInventoryItem {
+export interface InventoryBatch {
   id: number
   item_name: string
   in_stock: boolean
+  quantity: string
   expiry_date: string
   updated_at: string
 }
@@ -301,6 +302,7 @@ export interface FridgeMatch {
   matched_count: number
   coverage: number
   using_urgent: string[]
+  matched_batch_ids: number[]
 }
 
 export interface ReportShare {

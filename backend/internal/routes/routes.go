@@ -72,6 +72,8 @@ func Setup(r *gin.Engine) {
 			app.GET("/holidays/upcoming", handlers.GetUpcomingHolidays)
 			app.GET("/fridge", handlers.GetFridge)
 			app.POST("/fridge", handlers.AddFridge)
+			app.PUT("/fridge/batch/:id", handlers.UpdateFridgeBatch)
+			app.DELETE("/fridge/batch/:id", handlers.RemoveFridgeBatch)
 			app.DELETE("/fridge/:itemName", handlers.RemoveFridge)
 			app.GET("/fridge/recipes", handlers.GetFridgeRecipes)
 			app.GET("/fridge/urgent", handlers.GetUrgentInventory)

@@ -516,7 +516,7 @@ func BuildShoppingList(dates []string) []ShoppingCategory {
 		}
 	}
 
-	var inventory []models.HomeInventory
+	var inventory []models.InventoryBatch
 	database.DB.Where("in_stock = ?", true).Find(&inventory)
 	inStockByName := make(map[string]bool, len(inventory))
 	for _, inv := range inventory {
@@ -680,13 +680,13 @@ func ToggleHomeInventory(itemName string, inStock bool) {
 	}
 
 	if !inStock {
-		database.DB.Where("item_name = ?", itemName).Delete(&models.HomeInventory{})
+		database.DB.Where("item_name = ?", itemName).Delete(&models.InventoryBatch{})
 		return
 	}
 
 	// 复用冰箱添加逻辑：按食材字典自动设默认保质期，与冰箱页行为一致，
 	// 从买菜清单点"家中有"的食材同样能产生临期提醒
-	AddHomeInventoryItem(itemName, "")
+	CreateInventoryBatch(itemName, "", "")
 }
 
 func hasKeyword(s string, keywords []string) bool {

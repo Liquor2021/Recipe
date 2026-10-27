@@ -18,11 +18,17 @@ type FridgeMatch struct {
 	MatchedCount int         `json:"matched_count"`
 	Coverage     int         `json:"coverage"` // 0-100，主要食材命中率
 	UsingUrgent  []string    `json:"using_urgent"`
+	// MatchedBatchIDs 命中食材对应的库存批次 ID（同品类多批次时为最早到期的那批），
+	// 供"做完菜扣库存"按批次先进先出移除
+	MatchedBatchIDs []uint `json:"matched_batch_ids"`
 }
 
+// StockItem 参与匹配的一批库存
 type StockItem struct {
-	Name     string
-	DaysLeft int // 距过期的天数；999 表示未设置保质期
+	BatchID   uint
+	Name      string
+	DaysLeft  int // 距过期的天数；999 表示未设置保质期
+	CreatedAt time.Time
 }
 
 const noExpiryDays = 999
@@ -63,7 +69,7 @@ func dedupeNames(names []string) []string {
 	return out
 }
 
-// daysLeftFor 计算某食材距过期的天数；未设置保质期返回 noExpiryDays
+// daysLeftFor 计算某批次距过期的天数；未设置保质期返回 noExpiryDays
 func daysLeftFor(expiryDate string, today time.Time) int {
 	if expiryDate == "" {
 		return noExpiryDays
@@ -79,6 +85,7 @@ func daysLeftFor(expiryDate string, today time.Time) int {
 // matchDishesWithInventory 纯函数匹配：命中率优先，同命中率下优先用掉临期食材。
 // 槽位去重与命中判断都按食材大类（CategoryOf）：真别名（番茄/西红柿）和部位形态
 // （瘦肉/五花肉）不会虚增分母或命中数——一块猪肉不能同时算作两种主料。
+// 同品类多批次库存由调用方折叠为最早到期的一批（stock 传入前已保证）。
 func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int) []FridgeMatch {
 	stockByName := make(map[string]StockItem, len(stock))
 	for _, item := range stock {
@@ -109,6 +116,7 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 		matched := []string{}
 		missing := []string{}
 		usingUrgent := []string{}
+		matchedBatchIDs := []uint{}
 		for _, ing := range mainIngs {
 			item, ok := stockByName[ingredients.CategoryOf(ing)]
 			if !ok {
@@ -116,6 +124,7 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 				continue
 			}
 			matched = append(matched, ing)
+			matchedBatchIDs = append(matchedBatchIDs, item.BatchID)
 			if item.DaysLeft <= 4 {
 				usingUrgent = append(usingUrgent, ing)
 			}
@@ -124,12 +133,13 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 			continue
 		}
 		matches = append(matches, FridgeMatch{
-			Dish:         dish,
-			Matched:      matched,
-			Missing:      missing,
-			MatchedCount: len(matched),
-			Coverage:     len(matched) * 100 / len(mainIngs),
-			UsingUrgent:  usingUrgent,
+			Dish:            dish,
+			Matched:         matched,
+			Missing:         missing,
+			MatchedCount:    len(matched),
+			Coverage:        len(matched) * 100 / len(mainIngs),
+			UsingUrgent:     usingUrgent,
+			MatchedBatchIDs: matchedBatchIDs,
 		})
 	}
 
@@ -157,82 +167,104 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 	return matches
 }
 
-// ListHomeInventoryItems 当前冰箱里的食材：临期的排前面（按到期日升序），未设置的按最近更新
-func ListHomeInventoryItems() []models.HomeInventory {
-	items := []models.HomeInventory{}
-	database.DB.Where("in_stock = ?", true).Find(&items)
+// ListInventoryBatches 冰箱全部批次：按食材名分组有序（组内临期在前，未设置的最后）
+func ListInventoryBatches() []models.InventoryBatch {
+	batches := []models.InventoryBatch{}
+	database.DB.Where("in_stock = ?", true).
+		Order("item_name ASC, updated_at DESC").Find(&batches)
 	today := time.Now()
-	sort.SliceStable(items, func(i, j int) bool {
-		di, dj := daysLeftFor(items[i].ExpiryDate, today), daysLeftFor(items[j].ExpiryDate, today)
-		if (di == noExpiryDays) != (dj == noExpiryDays) {
-			return di != noExpiryDays
+	sort.SliceStable(batches, func(i, j int) bool {
+		if batches[i].ItemName != batches[j].ItemName {
+			return batches[i].ItemName < batches[j].ItemName
 		}
-		if di != dj {
-			return di < dj
-		}
-		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+		di, dj := daysLeftFor(batches[i].ExpiryDate, today), daysLeftFor(batches[j].ExpiryDate, today)
+		return di < dj
 	})
-	return items
+	return batches
 }
 
-// AddHomeInventoryItem 放入冰箱：空名拒绝；expiryDate 为空时按食材字典自动设默认保质期
-func AddHomeInventoryItem(itemName string, expiryDate string) bool {
+// CreateInventoryBatch 新增一批食材：空名拒绝；expiryDate 为空时按食材字典自动设默认保质期
+func CreateInventoryBatch(itemName string, quantity string, expiryDate string) bool {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
 		return false
 	}
+	quantity = strings.TrimSpace(quantity)
 	if expiryDate == "" {
 		expiry := time.Now().AddDate(0, 0, ingredients.ShelfLifeFor(itemName))
 		expiryDate = expiry.Format("2006-01-02")
 	}
-	database.DB.Where("item_name = ?", itemName).
-		Assign(models.HomeInventory{InStock: true, ExpiryDate: expiryDate}).
-		FirstOrCreate(&models.HomeInventory{ItemName: itemName})
+	batch := models.InventoryBatch{
+		ItemName:   itemName,
+		InStock:    true,
+		Quantity:   quantity,
+		ExpiryDate: expiryDate,
+	}
+	database.DB.Create(&batch)
 	return true
 }
 
-// RemoveHomeInventoryItem 移出冰箱（硬删除，与购物清单「家中有」下线语义一致）
-func RemoveHomeInventoryItem(itemName string) {
+// UpdateInventoryBatch 更新某批次的质量字段（数量/保质期），返回是否找到
+func UpdateInventoryBatch(id uint, quantity string, expiryDate string) bool {
+	var batch models.InventoryBatch
+	if err := database.DB.First(&batch, id).Error; err != nil {
+		return false
+	}
+	batch.Quantity = strings.TrimSpace(quantity)
+	batch.ExpiryDate = strings.TrimSpace(expiryDate)
+	database.DB.Save(&batch)
+	return true
+}
+
+// RemoveInventoryBatch 移出单批食材
+func RemoveInventoryBatch(id uint) bool {
+	res := database.DB.Delete(&models.InventoryBatch{}, id)
+	return res.Error == nil && res.RowsAffected > 0
+}
+
+// RemoveInventoryItem 移出某食材的全部批次（购物清单"家中有"下线语义）
+func RemoveInventoryItem(itemName string) {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
 		return
 	}
-	database.DB.Where("item_name = ?", itemName).Delete(&models.HomeInventory{})
+	database.DB.Where("item_name = ?", itemName).Delete(&models.InventoryBatch{})
 }
 
-// UrgentInventoryItems 临期食材（含今天过期），供首页提醒条使用
-func UrgentInventoryItems() []models.HomeInventory {
-	items := ListHomeInventoryItems()
+// UrgentInventoryItems 临期/已过期批次（含今天过期），供首页提醒条使用
+func UrgentInventoryItems() []models.InventoryBatch {
+	batches := ListInventoryBatches()
 	today := time.Now()
-	urgent := []models.HomeInventory{}
-	for _, item := range items {
-		if daysLeftFor(item.ExpiryDate, today) <= 2 {
-			urgent = append(urgent, item)
+	urgent := []models.InventoryBatch{}
+	for _, b := range batches {
+		if daysLeftFor(b.ExpiryDate, today) <= 2 {
+			urgent = append(urgent, b)
 		}
 	}
 	return urgent
 }
 
-// MatchFridgeRecipes 用冰箱现有食材推荐能做的菜。
-// 已过期食材不进推荐池（只在临期提醒里出现，避免推荐用户吃过期食材）；
-// 同一大类的多条库存只保留最早到期的一条，临期优先不会被无保质期的同类覆盖。
-func MatchFridgeRecipes(limit int) []FridgeMatch {
-	if limit <= 0 || limit > 50 {
-		limit = 12
-	}
-	var dishes []models.Dish
-	database.DB.Where("enabled = ?", true).Find(&dishes)
-	items := ListHomeInventoryItems()
-	today := time.Now()
+// foldBatchesByCategory 纯函数：把库存批次折叠成参与匹配的库存项。
+// 已过期批次排除（只提醒不推荐）；同大类多批次保留最早到期的一批，
+// 同日到期时保留更早买入的一批（严格先进先出）。
+func foldBatchesByCategory(batches []models.InventoryBatch, today time.Time) []StockItem {
 	bestByCategory := make(map[string]StockItem)
-	for _, item := range items {
-		daysLeft := daysLeftFor(item.ExpiryDate, today)
+	for _, b := range batches {
+		daysLeft := daysLeftFor(b.ExpiryDate, today)
 		if daysLeft < 0 {
 			continue
 		}
-		si := StockItem{Name: item.ItemName, DaysLeft: daysLeft}
-		cat := ingredients.CategoryOf(item.ItemName)
-		if cur, ok := bestByCategory[cat]; !ok || daysLeft < cur.DaysLeft {
+		si := StockItem{BatchID: b.ID, Name: b.ItemName, DaysLeft: daysLeft, CreatedAt: b.CreatedAt}
+		cat := ingredients.CategoryOf(b.ItemName)
+		keep := false
+		if cur, ok := bestByCategory[cat]; !ok {
+			keep = true
+		} else if daysLeft < cur.DaysLeft {
+			keep = true
+		} else if daysLeft == cur.DaysLeft && b.CreatedAt.Before(cur.CreatedAt) {
+			keep = true
+		}
+		if keep {
 			bestByCategory[cat] = si
 		}
 	}
@@ -241,6 +273,18 @@ func MatchFridgeRecipes(limit int) []FridgeMatch {
 		stock = append(stock, si)
 	}
 	sort.Slice(stock, func(i, j int) bool { return stock[i].Name < stock[j].Name })
+	return stock
+}
+
+// MatchFridgeRecipes 用冰箱现有食材推荐能做的菜
+func MatchFridgeRecipes(limit int) []FridgeMatch {
+	if limit <= 0 || limit > 50 {
+		limit = 12
+	}
+	var dishes []models.Dish
+	database.DB.Where("enabled = ?", true).Find(&dishes)
+	batches := ListInventoryBatches()
+	stock := foldBatchesByCategory(batches, time.Now())
 	matches := matchDishesWithInventory(dishes, stock, limit)
 	if matches == nil {
 		return []FridgeMatch{}

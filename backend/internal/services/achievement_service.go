@@ -375,7 +375,7 @@ func buildAchievementSnapshot() achievementSnapshot {
 	s.favoriteCount = int(n)
 	database.DB.Model(&models.ShoppingCheck{}).Where("checked = ?", true).Count(&n)
 	s.shoppingChecked = int(n)
-	database.DB.Model(&models.HomeInventory{}).Where("in_stock = ?", true).Count(&n)
+	database.DB.Model(&models.InventoryBatch{}).Where("in_stock = ?", true).Count(&n)
 	s.inventoryCount = int(n)
 
 	type eventCount struct {

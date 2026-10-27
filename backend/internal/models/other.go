@@ -91,14 +91,20 @@ type ShoppingCheck struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-type HomeInventory struct {
+// InventoryBatch 冰箱里的一个食材批次：同一种食材可以有多批
+// （如三天前买的番茄还没吃完、今天又买了一袋），各自有数量和到期日。
+// 表沿用旧的 home_inventory（历史单条记录天然成为单批次），通过 TableName 指定。
+type InventoryBatch struct {
 	ID         uint      `json:"id" gorm:"primaryKey"`
-	ItemName   string    `json:"item_name" gorm:"not null;uniqueIndex"`
-	InStock    bool      `json:"in_stock" gorm:"default:true;index"`
-	ExpiryDate string    `json:"expiry_date" gorm:"default:''"` // YYYY-MM-DD，空表示未设置
+	ItemName   string    `json:"item_name" gorm:"not null;index"`
+	InStock    bool      `json:"in_stock" gorm:"default:true;index"` // 兼容旧数据：批次即"在库"，恒为 true
+	Quantity   string    `json:"quantity" gorm:"default:''"`         // 自由文本数量："3个"、"半袋"
+	ExpiryDate string    `json:"expiry_date" gorm:"default:''"`      // YYYY-MM-DD，空表示未设置
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
+
+func (InventoryBatch) TableName() string { return "home_inventory" }
 
 type ShoppingItemCategory struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`

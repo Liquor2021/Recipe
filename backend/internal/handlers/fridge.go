@@ -11,11 +11,12 @@ import (
 )
 
 func GetFridge(c *gin.Context) {
-	utils.Success(c, services.ListHomeInventoryItems())
+	utils.Success(c, services.ListInventoryBatches())
 }
 
 type AddFridgeRequest struct {
 	ItemName   string `json:"item_name" binding:"required"`
+	Quantity   string `json:"quantity"`
 	ExpiryDate string `json:"expiry_date"`
 }
 
@@ -27,6 +28,7 @@ func validExpiryDate(s string) bool {
 	return err == nil
 }
 
+// AddFridge 新增一批食材：同一食材可以有多批
 func AddFridge(c *gin.Context) {
 	var req AddFridgeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -43,12 +45,54 @@ func AddFridge(c *gin.Context) {
 		utils.BadRequest(c, "保质期日期格式应为 YYYY-MM-DD")
 		return
 	}
-	if !services.AddHomeInventoryItem(req.ItemName, req.ExpiryDate) {
+	if !services.CreateInventoryBatch(req.ItemName, req.Quantity, req.ExpiryDate) {
 		utils.BadRequest(c, "请输入食材名称")
 		return
 	}
 	services.QueueAutoAchievementSync()
 	utils.SuccessMsg(c, "已放入冰箱")
+}
+
+type UpdateFridgeBatchRequest struct {
+	Quantity   string `json:"quantity"`
+	ExpiryDate string `json:"expiry_date"`
+}
+
+// UpdateFridgeBatch 编辑某批次的质量字段
+func UpdateFridgeBatch(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	var req UpdateFridgeBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	if !validExpiryDate(strings.TrimSpace(req.ExpiryDate)) {
+		utils.BadRequest(c, "保质期日期格式应为 YYYY-MM-DD")
+		return
+	}
+	if !services.UpdateInventoryBatch(uint(id), req.Quantity, req.ExpiryDate) {
+		utils.NotFound(c, "批次不存在")
+		return
+	}
+	utils.SuccessMsg(c, "已更新")
+}
+
+// RemoveFridgeBatch 移出单批食材（扣库存先进先出用）
+func RemoveFridgeBatch(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	if !services.RemoveInventoryBatch(uint(id)) {
+		utils.NotFound(c, "批次不存在")
+		return
+	}
+	utils.SuccessMsg(c, "已移出冰箱")
 }
 
 func RemoveFridge(c *gin.Context) {
@@ -57,7 +101,7 @@ func RemoveFridge(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	services.RemoveHomeInventoryItem(itemName)
+	services.RemoveInventoryItem(itemName)
 	utils.SuccessMsg(c, "已移出冰箱")
 }
 

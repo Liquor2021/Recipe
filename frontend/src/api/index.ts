@@ -1,6 +1,6 @@
 import { api, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
-import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, HomeInventoryItem, FridgeMatch, DietReport } from "@/types"
+import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, DietReport } from "@/types"
 
 export const dishesApi = {
   list: (params?: Record<string, string>) =>
@@ -135,11 +135,15 @@ export const dashboardApi = {
 }
 
 export const fridgeApi = {
-  list: () => api<HomeInventoryItem[]>("GET", "/fridge"),
-  add: (item_name: string, expiry_date?: string) => api<null>("POST", "/fridge", { item_name, expiry_date: expiry_date || "" }),
+  list: () => api<InventoryBatch[]>("GET", "/fridge"),
+  add: (item_name: string, quantity?: string, expiry_date?: string) =>
+    api<null>("POST", "/fridge", { item_name, quantity: quantity || "", expiry_date: expiry_date || "" }),
+  updateBatch: (id: number, quantity: string, expiry_date: string) =>
+    api<null>("PUT", `/fridge/batch/${id}`, { quantity, expiry_date }),
+  removeBatch: (id: number) => api<null>("DELETE", `/fridge/batch/${id}`),
   remove: (itemName: string) => api<null>("DELETE", `/fridge/${encodeURIComponent(itemName)}`),
   recipes: (limit = 12) => api<FridgeMatch[]>("GET", `/fridge/recipes?limit=${limit}`),
-  urgent: () => api<HomeInventoryItem[]>("GET", "/fridge/urgent"),
+  urgent: () => api<InventoryBatch[]>("GET", "/fridge/urgent"),
 }
 
 export const reportApi = {

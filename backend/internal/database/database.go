@@ -44,16 +44,24 @@ func Init() error {
 		&models.Setting{},
 		&models.DayRating{},
 		&models.ShoppingCheck{},
-		&models.HomeInventory{},
+		&models.InventoryBatch{},
 		&models.ShoppingItemCategory{},
 	); err != nil {
 		return err
 	}
 
 	migrateMealRecordUniqueIndex()
+	migrateInventoryBatches()
 
 	seedData()
 	return nil
+}
+
+// migrateInventoryBatches 把库存表从"一食材一行（唯一索引）"升级为"多批次"模型：
+// 去掉 item_name 唯一索引，允许同一食材并存多个批次（各自数量与到期日）。
+// 旧数据每食材恰好一行，天然成为该食材的首个批次，无需合并。
+func migrateInventoryBatches() {
+	DB.Exec(`DROP INDEX IF EXISTS idx_home_inventory_item_name`)
 }
 
 // migrateMealRecordUniqueIndex 把同菜同餐同日的普通索引升级为唯一索引。
