@@ -124,6 +124,43 @@ func RemoveShoppingItemHandler(c *gin.Context) {
 	utils.Success(c, gin.H{"removed": removed})
 }
 
+type StockInRequest struct {
+	Items []struct {
+		ItemName string `json:"item_name"`
+		Quantity string `json:"quantity"`
+	} `json:"items"`
+}
+
+// StockInShoppingItemsHandler 把买菜清单里已买的食材放进冰箱（保质期按食材字典自动设置）
+func StockInShoppingItemsHandler(c *gin.Context) {
+	var req StockInRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	if len(req.Items) == 0 || len(req.Items) > 50 {
+		utils.BadRequest(c, "请选择要放进冰箱的食材（一次最多 50 样）")
+		return
+	}
+	items := make([]services.StockInItem, 0, len(req.Items))
+	for _, it := range req.Items {
+		name := strings.TrimSpace(it.ItemName)
+		qty := strings.TrimSpace(it.Quantity)
+		if name == "" || len([]rune(name)) > 50 || len([]rune(qty)) > 50 {
+			utils.BadRequest(c, "食材名称或数量无效")
+			return
+		}
+		items = append(items, services.StockInItem{ItemName: name, Quantity: qty})
+	}
+	added, err := services.StockInShoppingItems(items)
+	if err != nil {
+		utils.InternalError(c, "放进冰箱失败")
+		return
+	}
+	services.QueueAutoAchievementSync()
+	utils.Success(c, gin.H{"added": added})
+}
+
 func GetShoppingCategories(c *gin.Context) {
 	utils.Success(c, services.ListShoppingCategoryOverrides())
 }

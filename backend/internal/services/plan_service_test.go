@@ -181,6 +181,49 @@ func TestShoppingListSkipsTapWater(t *testing.T) {
 	}
 }
 
+func TestStockInShoppingItems(t *testing.T) {
+	setupTestDB(t, &models.ShoppingCheck{}, &models.InventoryBatch{}, &models.ShoppingItemCategory{})
+	today := dateFromNow(0)
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 1, ItemName: "排骨", ItemAmount: "500g", Checked: true})
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 1, ItemName: "番茄", ItemAmount: "2个", Checked: true})
+	database.DB.Create(&models.ShoppingCheck{MealDate: dateFromNow(-2), MealType: "dinner", DishID: 1, ItemName: "排骨", Checked: true}) // 历史条目不动
+
+	added, err := StockInShoppingItems([]StockInItem{{ItemName: "排骨", Quantity: "500g"}, {ItemName: " 番茄 ", Quantity: "2个"}})
+	if err != nil || added != 2 {
+		t.Fatalf("added=%d err=%v, want 2 nil", added, err)
+	}
+	var batches []models.InventoryBatch
+	database.DB.Order("id ASC").Find(&batches)
+	// 保质期按食材字典：排骨归猪肉 3 天，番茄 7 天
+	if len(batches) != 2 || batches[0].Quantity != "500g" || batches[0].ExpiryDate != dateFromNow(3) || batches[1].ItemName != "番茄" || batches[1].ExpiryDate != dateFromNow(7) {
+		t.Fatalf("批次不符: %+v", batches)
+	}
+	items := shoppingItemsByName(t, today)
+	if it := items["排骨"]; !it.Stocked || !it.InStock {
+		t.Fatalf("放进冰箱后应标记已放入且家中有, got %+v", it)
+	}
+	var oldStocked int64
+	database.DB.Model(&models.ShoppingCheck{}).Where("meal_date = ? AND stocked = ?", dateFromNow(-2), true).Count(&oldStocked)
+	if oldStocked != 0 {
+		t.Fatalf("历史日期的条目不应被标记")
+	}
+
+	// 批次用完后，清单里仍记得"已放入过"，不会再提示放一次
+	database.DB.Where("item_name = ?", "排骨").Delete(&models.InventoryBatch{})
+	if it := shoppingItemsByName(t, today)["排骨"]; !it.Stocked || it.InStock {
+		t.Fatalf("批次用完后应仍是已放入、但家中没有, got %+v", it)
+	}
+
+	if _, err := StockInShoppingItems([]StockInItem{{ItemName: "鸡蛋"}, {ItemName: "  "}}); err != ErrEmptyItemName {
+		t.Fatalf("有空名时应整体拒绝, got %v", err)
+	}
+	var n int64
+	database.DB.Model(&models.InventoryBatch{}).Where("item_name = ?", "鸡蛋").Count(&n)
+	if n != 0 {
+		t.Fatalf("整体拒绝时不应写入任何一批")
+	}
+}
+
 func TestToggleHomeInventoryOffRemovesOnlyAvailableBatches(t *testing.T) {
 	setupTestDB(t, &models.InventoryBatch{})
 	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(3)})

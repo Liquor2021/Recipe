@@ -6,6 +6,7 @@ import { useAuthStore } from "@/store/useAuthStore"
 import { asString } from "@/lib/utils"
 import { Flip, gsap, motionDuration, useGSAP } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
+import StockInSheet, { type StockInCandidate } from "@/components/StockInSheet"
 import PageHeader from "@/components/PageHeader"
 import { cardShadow } from "@/components/Card"
 import type { Achievement, WeekDayPlan, ShoppingCategory, MealRecord } from "@/types"
@@ -145,6 +146,7 @@ export default function More() {
 
   const [showAllWeekDays, setShowAllWeekDays] = useState(false)
   const [modalDay, setModalDay] = useState<WeekDayPlan | null>(null)
+  const [showStockIn, setShowStockIn] = useState(false)
   const weekListRef = useRef<HTMLDivElement>(null)
   const flipStateRef = useRef<ReturnType<typeof Flip.getState> | null>(null)
 
@@ -270,6 +272,14 @@ export default function More() {
   const totalInStock = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.filter((item) => item.in_stock).length, 0)
   const totalItems = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.length, 0)
   const needBuyItems = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.filter((item) => !item.checked && !item.in_stock).length, 0)
+  // 已买、还没放进冰箱的食材（调料不放冰箱）：买菜回来一键入库
+  const stockInCandidates: StockInCandidate[] = shoppingList.flatMap((cat: ShoppingCategory) =>
+    cat.category === "配料"
+      ? []
+      : cat.items
+        .filter((item) => item.checked && !item.stocked && !item.in_stock)
+        .map((item) => ({ name: item.name, amount: item.amount, category: cat.category })),
+  )
 
   const days = (weekPlan?.days || []).slice().sort((a: WeekDayPlan, b: WeekDayPlan) => (dayOrder[a.day_name] || 0) - (dayOrder[b.day_name] || 0))
   const todayStr = getTodayStr()
@@ -430,6 +440,15 @@ export default function More() {
             ))
           )}
         </div>
+        {stockInCandidates.length > 0 && (
+          <button
+            onClick={() => setShowStockIn(true)}
+            className="w-full -mt-4 mb-7 py-2.5 rounded-xl text-sm font-bold text-[#2E8577] bg-mint-light transition-all active:scale-98"
+          >
+            🧊 把已买的 {stockInCandidates.length} 样放进冰箱
+          </button>
+        )}
+        {showStockIn && <StockInSheet candidates={stockInCandidates} onClose={() => setShowStockIn(false)} />}
 
         <button
           onClick={() => navigate("/fridge")}

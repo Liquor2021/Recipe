@@ -148,6 +148,7 @@ export interface ShoppingItem {
   in_stock: boolean
   stock_batches: number // 冰箱里未过期的批次数；取消"家中有"会一并移出
   removable: boolean // 只来自补料，可以直接删掉
+  stocked: boolean // 已买且已经放进冰箱
 }
 
 export interface ShoppingCategoryOverride {

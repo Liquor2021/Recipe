@@ -101,6 +101,9 @@ export const shoppingListApi = {
   // 删掉补料条目（菜品联动的条目跟着用餐记录走，不受影响）
   removeItem: (itemName: string) =>
     api<{ removed: number }>("DELETE", `/shopping-list/items/${encodeURIComponent(itemName)}`),
+  // 已买的放进冰箱：每样建一批，保质期按食材字典自动设置
+  stockIn: (items: { item_name: string; quantity: string }[]) =>
+    api<{ added: number }>("POST", "/shopping-list/stock-in", { items }),
 }
 
 export const shoppingCategoriesApi = {

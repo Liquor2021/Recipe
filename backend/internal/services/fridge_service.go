@@ -212,23 +212,26 @@ func ListInventoryBatches() []models.InventoryBatch {
 // ErrEmptyItemName 食材名为空（调用方应按参数错误处理）
 var ErrEmptyItemName = errors.New("食材名称为空")
 
+// newInventoryBatch 组装一批库存；expiryDate 为空时按食材字典自动设默认保质期
+func newInventoryBatch(itemName, quantity, expiryDate string) models.InventoryBatch {
+	if expiryDate == "" {
+		expiryDate = time.Now().AddDate(0, 0, ingredients.ShelfLifeFor(itemName)).Format("2006-01-02")
+	}
+	return models.InventoryBatch{
+		ItemName:   itemName,
+		InStock:    true,
+		Quantity:   strings.TrimSpace(quantity),
+		ExpiryDate: expiryDate,
+	}
+}
+
 // CreateInventoryBatch 新增一批食材：空名返回 ErrEmptyItemName；expiryDate 为空时按食材字典自动设默认保质期
 func CreateInventoryBatch(itemName string, quantity string, expiryDate string) error {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
 		return ErrEmptyItemName
 	}
-	quantity = strings.TrimSpace(quantity)
-	if expiryDate == "" {
-		expiry := time.Now().AddDate(0, 0, ingredients.ShelfLifeFor(itemName))
-		expiryDate = expiry.Format("2006-01-02")
-	}
-	batch := models.InventoryBatch{
-		ItemName:   itemName,
-		InStock:    true,
-		Quantity:   quantity,
-		ExpiryDate: expiryDate,
-	}
+	batch := newInventoryBatch(itemName, quantity, expiryDate)
 	return database.DB.Create(&batch).Error
 }
 

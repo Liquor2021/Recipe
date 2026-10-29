@@ -79,16 +79,18 @@ type DayRating struct {
 }
 
 type ShoppingCheck struct {
-	ID         uint      `json:"id" gorm:"primaryKey"`
-	MealDate   string    `json:"meal_date" gorm:"not null;index;index:idx_shopping_checks_date_checked,priority:1"`
-	MealType   string    `json:"meal_type" gorm:"not null"`
-	DishID     uint      `json:"dish_id" gorm:"not null"`
-	DishName   string    `json:"dish_name"`
-	ItemName   string    `json:"item_name" gorm:"not null"`
-	ItemAmount string    `json:"item_amount"`
-	Checked    bool      `json:"checked" gorm:"default:false;index;index:idx_shopping_checks_date_checked,priority:2"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID         uint   `json:"id" gorm:"primaryKey"`
+	MealDate   string `json:"meal_date" gorm:"not null;index;index:idx_shopping_checks_date_checked,priority:1"`
+	MealType   string `json:"meal_type" gorm:"not null"`
+	DishID     uint   `json:"dish_id" gorm:"not null"`
+	DishName   string `json:"dish_name"`
+	ItemName   string `json:"item_name" gorm:"not null"`
+	ItemAmount string `json:"item_amount"`
+	Checked    bool   `json:"checked" gorm:"default:false;index;index:idx_shopping_checks_date_checked,priority:2"`
+	// Stocked 已买的已经放进冰箱：不再出现在"放进冰箱"的候选里（之后批次被用完也不会再提示放一次）
+	Stocked   bool      `json:"stocked" gorm:"default:false"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // InventoryBatch 冰箱里的一个食材批次：同一种食材可以有多批

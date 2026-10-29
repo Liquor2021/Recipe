@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type WeekDayPlan struct {
@@ -425,6 +427,8 @@ type ShoppingItem struct {
 	StockBatches int `json:"stock_batches"`
 	// Removable 只来自补料（没有菜品联动条目）：可以直接从清单删掉
 	Removable bool `json:"removable"`
+	// Stocked 已买且已经放进冰箱
+	Stocked bool `json:"stocked"`
 }
 
 type ShoppingCategoryOverride struct {
@@ -718,6 +722,7 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	type nameAccum struct {
 		amounts   []string
 		checked   bool
+		stocked   bool
 		hasLinked bool // 有菜品联动条目（删记录才会消失）
 	}
 	merged := make(map[string]*nameAccum)
@@ -737,6 +742,9 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 		}
 		if ch.Checked {
 			entry.checked = true
+		}
+		if ch.Stocked {
+			entry.stocked = true
 		}
 		if ch.MealType != "extra" {
 			entry.hasLinked = true
@@ -760,7 +768,7 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	for name, entry := range merged {
 		amountStr := compactShoppingAmounts(entry.amounts)
 		stock := stockCounts[ingredients.Normalize(name)]
-		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked}
+		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked, Stocked: entry.stocked}
 		category := classifyShoppingItem(name, categoryByName)
 		if _, ok := grouped[category]; !ok {
 			category = "其他"
@@ -907,6 +915,42 @@ func ToggleShoppingCheck(itemName string, checked bool) error {
 	return database.DB.Model(&models.ShoppingCheck{}).
 		Where("item_name = ? AND meal_date IN ?", itemName, ShoppingListDates()).
 		Update("checked", checked).Error
+}
+
+// StockInItem 买菜清单里一样已买的食材，放进冰箱时的数量（取自清单用量，可为空）
+type StockInItem struct {
+	ItemName string
+	Quantity string
+}
+
+// StockInShoppingItems 把买菜清单里已买的食材放进冰箱：每样新建一批（保质期按食材字典），
+// 并把清单里对应条目（今天+明天）标记为已放入；同一事务，要么全部生效要么都不生效。
+func StockInShoppingItems(items []StockInItem) (int, error) {
+	batches := make([]models.InventoryBatch, 0, len(items))
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		name := strings.TrimSpace(it.ItemName)
+		if name == "" {
+			return 0, ErrEmptyItemName
+		}
+		batches = append(batches, newInventoryBatch(name, it.Quantity, ""))
+		names = append(names, name)
+	}
+	if len(batches) == 0 {
+		return 0, nil
+	}
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&batches).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.ShoppingCheck{}).
+			Where("item_name IN ? AND meal_date IN ?", names, ShoppingListDates()).
+			Update("stocked", true).Error
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(batches), nil
 }
 
 // RemoveShoppingExtraItem 从买菜清单删掉某食材的补料条目（今天+明天），返回删除条数。
