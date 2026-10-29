@@ -65,6 +65,7 @@ func Setup(r *gin.Engine) {
 			app.GET("/settings", handlers.GetSettings)
 			app.GET("/week-plan", handlers.GetWeekPlan)
 			app.POST("/week-plan/regenerate", handlers.RegenerateWeekPlanHandler)
+			app.POST("/week-plan/swap", handlers.SwapWeekPlanDishHandler)
 			app.GET("/shopping-list", handlers.GetShoppingList)
 			app.POST("/shopping-list/items", handlers.AddShoppingItemsHandler)
 			app.DELETE("/shopping-list/items/:itemName", handlers.RemoveShoppingItemHandler)

@@ -87,6 +87,9 @@ export const achievementsApi = {
 export const weekPlanApi = {
   get: () => api<WeekPlan>("GET", "/week-plan"),
   regenerate: () => api<WeekPlan>("POST", "/week-plan/regenerate"),
+  // 只换某天某餐的一道菜：返回换好的整份菜单和换上的菜
+  swap: (data: { date: string; meal_type: "lunch" | "dinner"; dish_id: number }) =>
+    api<{ plan: WeekPlan; dish: Dish }>("POST", "/week-plan/swap", data),
 }
 
 export const shoppingListApi = {

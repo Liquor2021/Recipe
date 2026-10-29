@@ -1,7 +1,7 @@
 import { useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi } from "@/api"
+import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import { asString } from "@/lib/utils"
 import { Flip, gsap, motionDuration, useGSAP } from "@/lib/gsap"
@@ -55,45 +55,68 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function QuickRecordModal({ day, todayStr, tomorrowStr, onConfirm, onClose }: {
+type MealKey = "lunch" | "dinner"
+
+const MEAL_SECTIONS: { key: MealKey; label: string; titleClass: string; rowClass: string }[] = [
+  { key: "lunch", label: "🍳 午餐", titleClass: "text-primary", rowClass: "bg-primary-light text-primary" },
+  { key: "dinner", label: "🍲 晚餐", titleClass: "text-mint", rowClass: "bg-mint-light text-[#2E8577]" },
+]
+
+// 某一天的菜单：每道菜都能单独换；今天、明天还能一键点菜（记成用餐、进买菜清单）
+function WeekDaySheet({ day, dateLabel, canRecord, swappingKey, recording, onSwap, onConfirm, onClose }: {
   day: WeekDayPlan
-  todayStr: string
-  tomorrowStr: string
+  dateLabel: string
+  canRecord: boolean
+  swappingKey: string | null // 正在换的那道菜 `${meal}-${dishId}`，换菜进行中时其余按钮也禁用
+  recording: boolean
+  onSwap: (meal: MealKey, dishId: number) => void
   onConfirm: () => void
   onClose: () => void
 }) {
-  const dateLabel = day.date === todayStr ? "今天" : day.date === tomorrowStr ? "明天" : day.day_name
+  const busy = swappingKey !== null
   return (
     <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5 pb-8 shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
       {({ close }) => (
       <>
         <div className="w-10 h-1 rounded-full bg-border2 mx-auto mb-4" />
-        <div className="text-lg font-bold mb-1">快速点菜 · {dateLabel}</div>
-        <div className="text-xs text-text2 mb-4">{day.date.slice(5)} {day.day_name}</div>
-        {day.lunch.length > 0 && (
-          <div className="mb-3">
-            <div className="text-xs font-semibold text-primary mb-1.5">🍳 午餐</div>
-            <div className="flex flex-wrap gap-1.5">
-              {day.lunch.map((d) => (
-                <span key={d.id} className="px-2.5 py-1 rounded-[8px] text-xs bg-primary-light text-primary font-medium">{d.name}</span>
+        <div className="text-lg font-bold mb-1">{canRecord ? `快速点菜 · ${dateLabel}` : `${dateLabel}的菜单`}</div>
+        <div className="text-xs text-text2 mb-4">{day.date.slice(5)} {day.day_name} · 不想吃哪道，点「换一道」</div>
+        {MEAL_SECTIONS.map(({ key, label, titleClass, rowClass }) => day[key].length > 0 && (
+          <div key={key} className="mb-4">
+            <div className={`text-xs font-semibold mb-1.5 ${titleClass}`}>{label}</div>
+            <div className="flex flex-col gap-1.5">
+              {day[key].map((d) => (
+                <div key={d.id} className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl ${rowClass}`}>
+                  <span className="flex-1 min-w-0 truncate text-sm font-medium">{d.name}</span>
+                  <button
+                    onClick={() => onSwap(key, d.id)}
+                    disabled={busy || recording}
+                    className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold bg-card text-text2 border border-border transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {swappingKey === `${key}-${d.id}` ? "换菜中…" : "换一道"}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
-        )}
-        {day.dinner.length > 0 && (
-          <div className="mb-4">
-            <div className="text-xs font-semibold text-mint mb-1.5">🍲 晚餐</div>
-            <div className="flex flex-wrap gap-1.5">
-              {day.dinner.map((d) => (
-                <span key={d.id} className="px-2.5 py-1 rounded-[8px] text-xs bg-mint-light text-mint font-medium">{d.name}</span>
-              ))}
-            </div>
+        ))}
+        {canRecord ? (
+          <div className="flex gap-3">
+            <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">取消</button>
+            <button
+              onClick={onConfirm}
+              disabled={busy || recording}
+              className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-60"
+            >
+              {recording ? "记录中…" : "确认点菜"}
+            </button>
           </div>
+        ) : (
+          <>
+            <div className="text-xs text-text3 text-center mb-3">到了前一天就能一键点菜，食材会进买菜清单</div>
+            <button onClick={close} className="w-full py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">好了</button>
+          </>
         )}
-        <div className="flex gap-3">
-          <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">取消</button>
-          <button onClick={onConfirm} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96">确认点菜</button>
-        </div>
       </>
       )}
     </AnimatedBottomSheet>
@@ -107,18 +130,19 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
   navigate: (path: string) => void
   onCardClick: () => void
 }) {
-  const isTodayOrTomorrow = day.date === todayStr || day.date === tomorrowStr
+  // 今天及以后的菜单可以点开换菜（日期是 YYYY-MM-DD，可以直接按字符串比较）
+  const canOpen = day.date >= todayStr && (day.lunch.length > 0 || day.dinner.length > 0)
   return (
     <div
-      onClick={() => { if (isTodayOrTomorrow) onCardClick() }}
-      className={`bg-card rounded-2xl p-3.5 px-4 shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border ${isTodayOrTomorrow ? "cursor-pointer active:scale-98" : ""}`}
+      onClick={() => { if (canOpen) onCardClick() }}
+      className={`bg-card rounded-2xl p-3.5 px-4 shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border ${canOpen ? "cursor-pointer active:scale-98" : ""}`}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-bold">
           {day.day_name}{" "}
           {day.date === todayStr ? <span className="text-primary text-xs">今天</span> : day.date === tomorrowStr ? <span className="text-mint text-xs">明天</span> : null}
         </div>
-        <div className="text-[11px] text-text2">{day.date.slice(5)}</div>
+        <div className="text-[11px] text-text2">{day.date.slice(5)}{canOpen && <span className="ml-1 text-text3">›</span>}</div>
       </div>
       <div className="flex flex-col gap-1.5">
         {day.lunch.length > 0 && (
@@ -174,7 +198,8 @@ export default function More() {
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => settingsApi.get() })
 
   const [showAllWeekDays, setShowAllWeekDays] = useState(false)
-  const [modalDay, setModalDay] = useState<WeekDayPlan | null>(null)
+  // 记日期而不是那天的快照：换菜后弹层直接显示最新菜单
+  const [sheetDate, setSheetDate] = useState<string | null>(null)
   const [showStockIn, setShowStockIn] = useState(false)
   // 常备调料（生抽、白糖……）默认收起；展开状态记在本机
   const [showStaples, setShowStaples] = useState(() => {
@@ -201,6 +226,20 @@ export default function More() {
     onError: () => toast.error("重新生成失败"),
   })
 
+  const swapMut = useMutation({
+    mutationFn: (v: { date: string; meal_type: MealKey; dish_id: number }) => weekPlanApi.swap(v),
+    onSuccess: ({ plan, dish }) => {
+      qc.setQueryData(["week-plan"], plan)
+      toast.success(`换成了「${dish.name}」`)
+    },
+    onError: (err: unknown) => {
+      // 菜单在别处变过（重新生成、停用了菜……）：刷新成最新的再换
+      qc.invalidateQueries({ queryKey: ["week-plan"] })
+      toast.error(getUploadErrorMessage(err, "换菜失败，稍后再试"))
+    },
+  })
+  const swappingKey = swapMut.isPending && swapMut.variables ? `${swapMut.variables.meal_type}-${swapMut.variables.dish_id}` : null
+
   const recordMut = useMutation({
     mutationFn: (data: Partial<MealRecord>[]) => recordsApi.batchCreate(data),
     onSuccess: ({ created, skipped, failed }) => {
@@ -216,7 +255,7 @@ export default function More() {
         if (failed > 0) toast.error(`已记录 ${n} 道，${extra}`)
         else toast.success(extra ? `❤ 已记录 ${n} 道（${extra}）` : "❤ 已记录！")
       }
-      setModalDay(null)
+      setSheetDate(null)
     },
     onError: () => toast.error("记录失败"),
   })
@@ -391,6 +430,7 @@ export default function More() {
   const defaultDays = days.filter((d: WeekDayPlan) => d.date === todayStr || d.date === tomorrowStr)
   const collapsedDays = defaultDays.length > 0 ? defaultDays : days.slice(0, 2)
   const displayDays = showAllWeekDays ? days : collapsedDays
+  const sheetDay = sheetDate ? days.find((d: WeekDayPlan) => d.date === sheetDate) : undefined
 
   useGSAP(() => {
     const state = flipStateRef.current
@@ -455,7 +495,10 @@ export default function More() {
         </button>
 
         <div className="flex items-center justify-between mb-3.5">
-          <div className="text-lg font-bold">📅 一周菜单</div>
+          <div>
+            <div className="text-lg font-bold">📅 一周菜单</div>
+            {days.length > 0 && <div className="text-xs text-text3 mt-0.5">点开某一天，可以只换其中一道</div>}
+          </div>
           <button
             onClick={() => regenerateMut.mutate()}
             disabled={regenerateMut.isPending}
@@ -475,7 +518,7 @@ export default function More() {
               key={day.date}
               className="week-day-card"
             >
-              <WeekDayCard day={day} todayStr={todayStr} tomorrowStr={tomorrowStr} navigate={navigate} onCardClick={() => setModalDay(day)} />
+              <WeekDayCard day={day} todayStr={todayStr} tomorrowStr={tomorrowStr} navigate={navigate} onCardClick={() => setSheetDate(day.date)} />
             </div>
           ))}
         </div>
@@ -601,13 +644,16 @@ export default function More() {
         )}
       </div>
 
-      {modalDay && (
-        <QuickRecordModal
-          day={modalDay}
-          todayStr={todayStr}
-          tomorrowStr={tomorrowStr}
-          onConfirm={() => handleConfirmRecord(modalDay)}
-          onClose={() => setModalDay(null)}
+      {sheetDay && (
+        <WeekDaySheet
+          day={sheetDay}
+          dateLabel={sheetDay.date === todayStr ? "今天" : sheetDay.date === tomorrowStr ? "明天" : sheetDay.day_name}
+          canRecord={sheetDay.date === todayStr || sheetDay.date === tomorrowStr}
+          swappingKey={swappingKey}
+          recording={recordMut.isPending}
+          onSwap={(meal, dishId) => swapMut.mutate({ date: sheetDay.date, meal_type: meal, dish_id: dishId })}
+          onConfirm={() => handleConfirmRecord(sheetDay)}
+          onClose={() => setSheetDate(null)}
         />
       )}
     </div>

@@ -204,6 +204,7 @@ NiniMenu/
 | GET | `/api/photo-wall` | 照片墙 |
 | GET/POST | `/api/shopping-list` | 购物清单 |
 | GET | `/api/week-plan` | 周计划 |
+| POST | `/api/week-plan/swap` | 周计划只换一道菜（`{date, meal_type, dish_id}`；菜单已变化返回 409） |
 | GET | `/api/achievements` | 成就列表 |
 | GET | `/api/stats` | 统计数据 |
 

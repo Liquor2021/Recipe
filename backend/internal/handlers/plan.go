@@ -26,6 +26,36 @@ func RegenerateWeekPlanHandler(c *gin.Context) {
 	utils.Success(c, plan)
 }
 
+type SwapWeekPlanDishRequest struct {
+	Date     string `json:"date" binding:"required"`
+	MealType string `json:"meal_type" binding:"required,oneof=lunch dinner"`
+	DishID   uint   `json:"dish_id" binding:"required"`
+}
+
+// SwapWeekPlanDishHandler 周菜单只换一道菜（不算一次"生成一周菜单"，不计成就）
+func SwapWeekPlanDishHandler(c *gin.Context) {
+	var req SwapWeekPlanDishRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	if _, err := time.Parse("2006-01-02", req.Date); err != nil {
+		utils.BadRequest(c, "日期格式无效")
+		return
+	}
+	plan, dish, err := services.SwapWeekPlanDish(req.Date, req.MealType, req.DishID)
+	switch {
+	case errors.Is(err, services.ErrWeekPlanChanged):
+		utils.Conflict(c, "菜单已经更新过了，刷新后再换")
+	case errors.Is(err, services.ErrNoSwapCandidate):
+		utils.BadRequest(c, "没有别的菜可以换了")
+	case err != nil:
+		utils.InternalError(c, "换菜失败")
+	default:
+		utils.Success(c, gin.H{"plan": plan, "dish": dish})
+	}
+}
+
 func GetShoppingList(c *gin.Context) {
 	list, err := services.BuildShoppingList(services.ShoppingListDates())
 	if err != nil {

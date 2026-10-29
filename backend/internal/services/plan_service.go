@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -138,6 +139,93 @@ func RegenerateWeekPlan() *WeekPlan {
 	return plan
 }
 
+var (
+	// ErrWeekPlanChanged 要换的菜已经不在本周菜单里（菜单失效重排过、过了一周、或已经换掉了）
+	ErrWeekPlanChanged = errors.New("周菜单已变化")
+	// ErrNoSwapCandidate 没有别的菜可以换（候选池里的菜当天都已经排上了）
+	ErrNoSwapCandidate = errors.New("没有可换的菜")
+)
+
+// SwapWeekPlanDish 只把本周菜单里某天某餐的一道菜换成另一道，其余不动；返回换好的菜单和换上的菜。
+// 新菜从同一餐的候选池里抽（strict 忌口过滤、avoid 降权与生成时一致），优先选本周还没排过的；
+// 都排过了就退一步，只避开当天已有的菜。缓存已失效（菜被停用、改了忌口等）时不顺手重排，
+// 返回 ErrWeekPlanChanged，让前端刷新后再换。
+func SwapWeekPlanDish(date, mealType string, dishID uint) (*WeekPlan, models.Dish, error) {
+	weekPlanMu.Lock()
+	defer weekPlanMu.Unlock()
+
+	cfg := loadWeekPlanConfig()
+	if cachedRecord == nil {
+		cachedRecord = loadWeekPlanRecord()
+	}
+	plan, ok := rehydrateWeekPlan(cachedRecord, getCurrentWeekKey(), cfg)
+	if !ok {
+		return nil, models.Dish{}, ErrWeekPlanChanged
+	}
+
+	dayIdx, pos := -1, -1
+	for i, day := range plan.Days {
+		if day.Date != date {
+			continue
+		}
+		meal := day.Lunch
+		if mealType == "dinner" {
+			meal = day.Dinner
+		}
+		for j, d := range meal {
+			if d.ID == dishID {
+				dayIdx, pos = i, j
+				break
+			}
+		}
+		break
+	}
+	if pos < 0 {
+		return nil, models.Dish{}, ErrWeekPlanChanged
+	}
+
+	lunchPool, dinnerPool, ok := weekPlanPools(cfg)
+	if !ok {
+		return nil, models.Dish{}, ErrNoSwapCandidate
+	}
+	pool := lunchPool
+	if mealType == "dinner" {
+		pool = dinnerPool
+	}
+
+	weekUsed := dishIDSet(plan.Days...)
+	dayUsed := dishIDSet(plan.Days[dayIdx])
+	// 被换掉的菜一定在当天里，两种口径都不会再抽回它
+	candidates := filterAvailableBoth(pool, weekUsed, dayUsed)
+	if len(candidates) == 0 {
+		return nil, models.Dish{}, ErrNoSwapCandidate
+	}
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	picked := candidates[weightedPick(candidates, weekPlanWeight(cfg, candidates), r)]
+	if mealType == "dinner" {
+		plan.Days[dayIdx].Dinner[pos] = picked
+	} else {
+		plan.Days[dayIdx].Lunch[pos] = picked
+	}
+	saveWeekPlanRecord(plan, cfg)
+	return plan, picked, nil
+}
+
+// dishIDSet 这几天午晚餐里出现过的菜品 ID
+func dishIDSet(days ...WeekDayPlan) map[uint]bool {
+	set := make(map[uint]bool)
+	for _, day := range days {
+		for _, d := range day.Lunch {
+			set[d.ID] = true
+		}
+		for _, d := range day.Dinner {
+			set[d.ID] = true
+		}
+	}
+	return set
+}
+
 // loadWeekPlanRecord 从 settings 读周菜单缓存；不存在或无法解析返回 nil
 func loadWeekPlanRecord() *weekPlanRecord {
 	var setting models.Setting
@@ -255,21 +343,19 @@ func GenerateWeekPlan() *WeekPlan {
 	return generateWeekPlan(loadWeekPlanConfig())
 }
 
-func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
+// weekPlanPools 周菜单的午/晚餐候选池：启用的菜按 strict 忌口过滤后，按餐别/标签分池；
+// 某一餐没有对应的菜就用全部菜。过滤后没有菜时 ok=false（宁可空菜单）
+func weekPlanPools(cfg weekPlanConfig) (lunchPool, dinnerPool []models.Dish, ok bool) {
 	var dishes []models.Dish
 	if err := database.DB.Where("enabled = ?", true).Find(&dishes).Error; err != nil {
-		return &WeekPlan{}
+		return nil, nil, false
 	}
 	// strict 忌口：命中的菜整体出局（与日推荐口径一致），全被过滤时宁可返回空菜单
 	dishes = applyDislikeMode(dishes, cfg.dislikes)
 	if len(dishes) == 0 {
-		return &WeekPlan{}
+		return nil, nil, false
 	}
 
-	lunchCount := cfg.lunchCount
-	dinnerCount := cfg.dinnerCount
-
-	var lunchPool, dinnerPool []models.Dish
 	for _, d := range dishes {
 		tags := parseTags(d.Tags)
 		mt := d.MealType
@@ -286,6 +372,37 @@ func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
 	if len(dinnerPool) == 0 {
 		dinnerPool = dishes
 	}
+	return lunchPool, dinnerPool, true
+}
+
+// weekPlanWeight 周菜单抽签权重。avoid 温和降权：命中忌口的菜被抽中的概率是普通菜的 1/3
+// （strict 下已整体出局）。周菜单不做收藏加权，保持原来的均匀抽取。
+// 命中判定要解析食材 JSON，每道菜只算一次
+func weekPlanWeight(cfg weekPlanConfig, pools ...[]models.Dish) func(models.Dish) int {
+	hitsDislike := make(map[uint]bool)
+	for _, pool := range pools {
+		for _, d := range pool {
+			if _, done := hitsDislike[d.ID]; !done {
+				hitsDislike[d.ID] = dishHitsDislikes(d, cfg.dislikes.tokens)
+			}
+		}
+	}
+	return func(d models.Dish) int {
+		if hitsDislike[d.ID] {
+			return dislikedDishWeight
+		}
+		return normalDishWeight
+	}
+}
+
+func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
+	lunchPool, dinnerPool, ok := weekPlanPools(cfg)
+	if !ok {
+		return &WeekPlan{}
+	}
+
+	lunchCount := cfg.lunchCount
+	dinnerCount := cfg.dinnerCount
 
 	dayNames := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 	now := time.Now()
@@ -296,18 +413,7 @@ func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
 	monday := now.AddDate(0, 0, 1-weekday)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	// avoid 温和降权：命中忌口的菜被抽中的概率是普通菜的 1/3（strict 下已整体出局）。
-	// 周菜单不做收藏加权，保持原来的均匀抽取。命中判定要解析食材 JSON，每道菜只算一次
-	hitsDislike := make(map[uint]bool, len(dishes))
-	for _, d := range dishes {
-		hitsDislike[d.ID] = dishHitsDislikes(d, cfg.dislikes.tokens)
-	}
-	weight := func(d models.Dish) int {
-		if hitsDislike[d.ID] {
-			return dislikedDishWeight
-		}
-		return normalDishWeight
-	}
+	weight := weekPlanWeight(cfg, lunchPool, dinnerPool)
 
 	var days []WeekDayPlan
 	usedAllIDs := make(map[uint]bool)

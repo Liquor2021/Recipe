@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"testing"
@@ -162,6 +163,97 @@ func TestWeekPlanLegacyFormatChecksDailyCounts(t *testing.T) {
 	plan := GetCachedWeekPlan()
 	if len(plan.Days) != 7 || len(plan.Days[0].Lunch) != 2 {
 		t.Fatalf("旧格式缓存的每天道数与当前设置不符时应重排, got lunch=%d", len(plan.Days[0].Lunch))
+	}
+}
+
+func TestSwapWeekPlanDishReplacesOnlyTarget(t *testing.T) {
+	setupWeekPlanTestDB(t)
+	seedPlanDishes(t)
+	seedWeekPlanRecord(t, 1, 2)
+	dates := weekDates()
+
+	plan, picked, err := SwapWeekPlanDish(dates[2], "lunch", 1)
+	if err != nil {
+		t.Fatalf("换菜失败: %v", err)
+	}
+	if picked.ID == 1 || picked.ID == 2 || picked.Name == "" {
+		t.Fatalf("应换成本周还没排过的菜（带完整信息）, got %+v", picked)
+	}
+	for i, day := range plan.Days {
+		wantLunch := uint(1)
+		if i == 2 {
+			wantLunch = picked.ID
+		}
+		if day.Lunch[0].ID != wantLunch || day.Dinner[0].ID != 2 {
+			t.Fatalf("只应换掉周三午餐, 第 %d 天 got 午 %d 晚 %d", i, day.Lunch[0].ID, day.Dinner[0].ID)
+		}
+	}
+
+	// 换完已落库：模拟重启后读回的是换过的菜单
+	weekPlanMu.Lock()
+	cachedRecord = nil
+	weekPlanMu.Unlock()
+	if p := GetCachedWeekPlan(); p.Days[2].Lunch[0].ID != picked.ID || p.Days[3].Lunch[0].ID != 1 {
+		t.Fatalf("重启后应读回换过的菜单, got %v", planDishIDs(p))
+	}
+}
+
+func TestSwapWeekPlanDishMealPoolAndStrictDislike(t *testing.T) {
+	setupWeekPlanTestDB(t)
+	// 1-4 只做午餐、5-8 只做晚餐；6、7 是辣菜
+	for i := 1; i <= 8; i++ {
+		d := models.Dish{ID: uint(i), Name: "清淡菜", Taste: "清淡", MealType: "lunch", Enabled: true}
+		if i > 4 {
+			d.MealType = "dinner"
+		}
+		if i == 6 || i == 7 {
+			d.Name, d.Taste = "辣菜", "香辣"
+		}
+		if err := database.DB.Create(&d).Error; err != nil {
+			t.Fatalf("写入菜品失败: %v", err)
+		}
+	}
+	seedWeekPlanRecord(t, 1, 5)
+	setStrictSpicyDislike(t)
+	dates := weekDates()
+
+	if _, picked, err := SwapWeekPlanDish(dates[0], "dinner", 5); err != nil || picked.ID != 8 {
+		t.Fatalf("晚餐只能换成晚餐池里本周没排过、也不辣的 8, got %d err=%v", picked.ID, err)
+	}
+	// 合规的晚餐本周都排过了：退一步，只避开当天已有的菜
+	if _, picked, err := SwapWeekPlanDish(dates[0], "dinner", 8); err != nil || picked.ID != 5 {
+		t.Fatalf("应换成当天没有的 5, got %d err=%v", picked.ID, err)
+	}
+	if _, picked, err := SwapWeekPlanDish(dates[0], "lunch", 1); err != nil || picked.ID < 2 || picked.ID > 4 {
+		t.Fatalf("午餐应从午餐池里换, got %d err=%v", picked.ID, err)
+	}
+}
+
+func TestSwapWeekPlanDishErrors(t *testing.T) {
+	setupWeekPlanTestDB(t)
+	// 只有两道菜、每天午 1 晚 2：当天已经排满，没有别的可换
+	database.DB.Create(&models.Dish{ID: 1, Name: "菜一", MealType: "all", Enabled: true})
+	database.DB.Create(&models.Dish{ID: 2, Name: "菜二", MealType: "all", Enabled: true})
+	seedWeekPlanRecord(t, 1, 2)
+	dates := weekDates()
+
+	if _, _, err := SwapWeekPlanDish(dates[0], "lunch", 1); !errors.Is(err, ErrNoSwapCandidate) {
+		t.Fatalf("没有别的菜可换应返回 ErrNoSwapCandidate, got %v", err)
+	}
+	// 要换的菜不在那一餐里、日期不在本周（前端拿着旧菜单）
+	if _, _, err := SwapWeekPlanDish(dates[0], "dinner", 1); !errors.Is(err, ErrWeekPlanChanged) {
+		t.Fatalf("菜不在那一餐里应返回 ErrWeekPlanChanged, got %v", err)
+	}
+	if _, _, err := SwapWeekPlanDish("2000-01-03", "lunch", 1); !errors.Is(err, ErrWeekPlanChanged) {
+		t.Fatalf("日期不在本周应返回 ErrWeekPlanChanged, got %v", err)
+	}
+	// 缓存已失效（菜被停用）：不顺手重排，让前端刷新后再换
+	database.DB.Model(&models.Dish{}).Where("id = ?", 2).Update("enabled", false)
+	if _, _, err := SwapWeekPlanDish(dates[0], "lunch", 1); !errors.Is(err, ErrWeekPlanChanged) {
+		t.Fatalf("缓存失效应返回 ErrWeekPlanChanged, got %v", err)
+	}
+	if cachedRecord == nil || cachedRecord.Days[0].Dinner[0].ID != 2 {
+		t.Fatalf("换菜失败不应改动缓存, got %+v", cachedRecord)
 	}
 }
 
