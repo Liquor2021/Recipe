@@ -9,7 +9,7 @@ import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import StockInSheet, { type StockInCandidate } from "@/components/StockInSheet"
 import PageHeader from "@/components/PageHeader"
 import { cardShadow } from "@/components/Card"
-import type { Achievement, WeekDayPlan, ShoppingCategory, MealRecord } from "@/types"
+import type { Achievement, WeekDayPlan, ShoppingCategory, ShoppingItem, MealRecord } from "@/types"
 import toast from "react-hot-toast"
 import { Menu } from "lucide-react"
 
@@ -25,6 +25,35 @@ function getTomorrowStr() {
 }
 
 const dayOrder: Record<string, number> = { "周一": 1, "周二": 2, "周三": 3, "周四": 4, "周五": 5, "周六": 6, "周日": 7 }
+
+// 买菜清单里的"配料"大多是家里常备的调料：默认收起，不计入待买
+const STAPLES_CATEGORY = "配料"
+const STAPLES_OPEN_KEY = "shopping_staples_open"
+
+// 复制到剪贴板：局域网 http 访问时没有 navigator.clipboard，退回 execCommand
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* 落到下面的兜底 */ }
+  try {
+    const ta = document.createElement("textarea")
+    ta.value = text
+    ta.setAttribute("readonly", "")
+    ta.style.position = "fixed"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    ta.select()
+    ta.setSelectionRange(0, text.length)
+    const ok = document.execCommand("copy")
+    ta.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
 
 function QuickRecordModal({ day, todayStr, tomorrowStr, onConfirm, onClose }: {
   day: WeekDayPlan
@@ -147,6 +176,16 @@ export default function More() {
   const [showAllWeekDays, setShowAllWeekDays] = useState(false)
   const [modalDay, setModalDay] = useState<WeekDayPlan | null>(null)
   const [showStockIn, setShowStockIn] = useState(false)
+  // 常备调料（生抽、白糖……）默认收起；展开状态记在本机
+  const [showStaples, setShowStaples] = useState(() => {
+    try { return localStorage.getItem(STAPLES_OPEN_KEY) === "1" } catch { return false }
+  })
+  const toggleStaples = () => {
+    setShowStaples((open) => {
+      try { localStorage.setItem(STAPLES_OPEN_KEY, open ? "0" : "1") } catch { /* 隐私模式忽略 */ }
+      return !open
+    })
+  }
   const weekListRef = useRef<HTMLDivElement>(null)
   const flipStateRef = useRef<ReturnType<typeof Flip.getState> | null>(null)
 
@@ -268,10 +307,75 @@ export default function More() {
   }
 
   const unlockedCount = achievements.filter((a: Achievement) => a.is_unlocked).length
-  const totalChecked = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.filter((item) => item.checked).length, 0)
-  const totalInStock = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.filter((item) => item.in_stock).length, 0)
+  // 计数只算真正要去买的（蔬菜/肉类/其他）；常备调料单独收起
+  const mainCategories = shoppingList.filter((cat: ShoppingCategory) => cat.category !== STAPLES_CATEGORY)
+  const stapleItems = shoppingList.find((cat: ShoppingCategory) => cat.category === STAPLES_CATEGORY)?.items || []
+  const mainItems = mainCategories.flatMap((cat: ShoppingCategory) => cat.items)
+  const totalChecked = mainItems.filter((item) => item.checked).length
+  const totalInStock = mainItems.filter((item) => item.in_stock).length
   const totalItems = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.length, 0)
-  const needBuyItems = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.filter((item) => !item.checked && !item.in_stock).length, 0)
+  const needBuyItems = mainItems.filter((item) => !item.checked && !item.in_stock).length
+  const stapleNeedCount = stapleItems.filter((item) => !item.checked && !item.in_stock).length
+
+  // 买菜清单的一行（普通函数而不是组件：避免每次渲染都重新挂载行）
+  const renderShoppingRow = (item: ShoppingItem) => (
+    <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock ? "opacity-70" : ""}`}>
+      <button
+        onClick={() => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked })}
+        disabled={item.in_stock}
+        className={`w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
+      >{item.in_stock ? "家" : "✓"}</button>
+      <span className={`transition-all ${item.checked || item.in_stock ? "line-through text-text3" : ""}`}>{item.name}</span>
+      <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+        <span className="text-xs text-text3">{item.amount}</span>
+        <button
+          onClick={() => {
+            // 取消"家中有"会把冰箱里这个食材的批次一起移出，先确认
+            if (item.in_stock && item.stock_batches > 0 &&
+              !confirm(`取消后会从冰箱移出 ${item.stock_batches} 批「${item.name}」，确定吗？`)) return
+            inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock })
+          }}
+          disabled={inventoryMut.isPending}
+          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
+        >
+          {item.in_stock ? "家中有" : "库存"}
+        </button>
+        {item.removable && (
+          <button
+            onClick={() => removeItemMut.mutate(item.name)}
+            disabled={removeItemMut.isPending}
+            aria-label={`从清单移除${item.name}`}
+            className="w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  // 复制还要买的（文字版，方便发给去买菜的家人）；展开了常备调料时一并带上
+  const copyShoppingList = async () => {
+    const amountText = (amount: string) => (amount && amount !== "适量" ? ` ${amount}` : "")
+    const sections = mainCategories
+      .map((cat: ShoppingCategory) => {
+        const need = cat.items.filter((item) => !item.checked && !item.in_stock)
+        return need.length > 0 ? `${cat.category}：${need.map((i) => i.name + amountText(i.amount)).join("、")}` : ""
+      })
+      .filter(Boolean)
+    if (showStaples) {
+      const staples = stapleItems.filter((item) => !item.checked && !item.in_stock)
+      if (staples.length > 0) sections.push(`调料：${staples.map((i) => i.name).join("、")}`)
+    }
+    if (sections.length === 0) {
+      toast("清单上的都买齐了", { icon: "✅" })
+      return
+    }
+    const d = new Date()
+    const ok = await copyText([`🛒 买菜清单（${d.getMonth() + 1}月${d.getDate()}日）`, ...sections].join("\n"))
+    if (ok) toast.success("已复制，可以粘贴发给家人")
+    else toast.error("复制失败，可以长按清单手动选择")
+  }
   // 已买、还没放进冰箱的食材（调料不放冰箱）：买菜回来一键入库
   const stockInCandidates: StockInCandidate[] = shoppingList.flatMap((cat: ShoppingCategory) =>
     cat.category === "配料"
@@ -389,55 +493,47 @@ export default function More() {
         <div className="flex items-center justify-between mb-3.5">
           <div className="text-lg font-bold">🛒 买菜清单</div>
           {totalItems > 0 && (
-            <span className="text-xs text-mint font-medium">
-              待买 {needBuyItems} · 已买 {totalChecked} · 家中 {totalInStock}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-mint font-medium">
+                待买 {needBuyItems} · 已买 {totalChecked} · 家中 {totalInStock}
+              </span>
+              <button
+                onClick={copyShoppingList}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-bg border border-border text-text2 transition-all active:scale-95"
+              >
+                复制
+              </button>
+            </div>
           )}
         </div>
         <div className="bg-card rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border mb-7">
           {shoppingList.length === 0 ? (
             <div className="py-5 px-4 text-center text-sm text-text3">暂无买菜清单，点菜后自动生成今日+明日食材</div>
           ) : (
-            shoppingList.map((cat: ShoppingCategory, ci: number) => (
-              <div key={ci} className={`px-4 py-3 ${ci > 0 ? "border-t border-border" : ""}`}>
-                <div className="text-[13px] font-bold text-text2 mb-2 tracking-wide">{cat.category}</div>
-                {cat.items.map((item, ii) => (
-                  <div key={ii} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock ? "opacity-70" : ""}`}>
-                    <button
-                      onClick={() => checkMut.mutate({ item_name: item.name, meal_date: todayStr, checked: !item.checked })}
-                      disabled={item.in_stock}
-                      className={`w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
-                    >{item.in_stock ? "家" : "✓"}</button>
-                    <span className={`transition-all ${item.checked || item.in_stock ? "line-through text-text3" : ""}`}>{item.name}</span>
-                    <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-xs text-text3">{item.amount}</span>
-                      <button
-                        onClick={() => {
-                          // 取消"家中有"会把冰箱里这个食材的批次一起移出，先确认
-                          if (item.in_stock && item.stock_batches > 0 &&
-                            !confirm(`取消后会从冰箱移出 ${item.stock_batches} 批「${item.name}」，确定吗？`)) return
-                          inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock })
-                        }}
-                        disabled={inventoryMut.isPending}
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
-                      >
-                        {item.in_stock ? "家中有" : "库存"}
-                      </button>
-                      {item.removable && (
-                        <button
-                          onClick={() => removeItemMut.mutate(item.name)}
-                          disabled={removeItemMut.isPending}
-                          aria-label={`从清单移除${item.name}`}
-                          className="w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))
+            <>
+              {mainCategories.length === 0 && (
+                <div className="py-4 px-4 text-center text-[13px] text-text3">要买的只有家里常备的调料</div>
+              )}
+              {mainCategories.map((cat: ShoppingCategory, ci: number) => (
+                <div key={cat.category} className={`px-4 py-3 ${ci > 0 ? "border-t border-border" : ""}`}>
+                  <div className="text-[13px] font-bold text-text2 mb-2 tracking-wide">{cat.category}</div>
+                  {cat.items.map((item) => renderShoppingRow(item))}
+                </div>
+              ))}
+              {stapleItems.length > 0 && (
+                <div className={`px-4 py-3 ${mainCategories.length > 0 ? "border-t border-border" : ""}`}>
+                  <button onClick={toggleStaples} className="w-full flex items-center justify-between text-left">
+                    <span className="text-[13px] font-bold text-text2 tracking-wide">
+                      常备调料 <span className="font-medium text-text3">· {stapleItems.length} 样</span>
+                    </span>
+                    <span className="text-xs text-text3">
+                      {showStaples ? "收起 ▴" : `家里一般都有${stapleNeedCount > 0 ? "，缺了再看" : ""} ▾`}
+                    </span>
+                  </button>
+                  {showStaples && <div className="mt-2">{stapleItems.map((item) => renderShoppingRow(item))}</div>}
+                </div>
+              )}
+            </>
           )}
         </div>
         {stockInCandidates.length > 0 && (
