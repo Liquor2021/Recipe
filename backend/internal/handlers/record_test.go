@@ -12,8 +12,8 @@ import (
 
 func TestAddShoppingItemsLegacyStringArrays(t *testing.T) {
 	db := setupHandlerTestDB(t, &models.Dish{}, &models.ShoppingCheck{})
-	// 旧数据：食材是字符串数组，调料是对象数组
-	dish := models.Dish{Name: "番茄炒蛋", Ingredients: `["番茄","鸡蛋"]`, Seasonings: `[{"name":"盐","amount":"少许"}]`}
+	// 旧数据：食材是字符串数组，调料是对象数组；调料里的清水不用买、不写进清单
+	dish := models.Dish{Name: "番茄炒蛋", Ingredients: `["番茄","鸡蛋"]`, Seasonings: `[{"name":"盐","amount":"少许"},{"name":"清水","amount":"200毫升"}]`}
 	db.Create(&dish)
 
 	if err := addShoppingItems(db, dish.ID, dish.Name, "lunch", "2026-10-28"); err != nil {

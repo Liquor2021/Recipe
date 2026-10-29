@@ -142,6 +142,20 @@ func GetDishes(c *gin.Context) {
 
 	query := database.DB.Model(&models.Dish{})
 
+	// ids=1,2,3：按 id 批量取（如明日菜单把已保存记录还原成完整菜品），最多 100 个
+	if raw := strings.TrimSpace(c.Query("ids")); raw != "" {
+		ids := make([]uint, 0)
+		for _, part := range strings.Split(raw, ",") {
+			if id, err := strconv.ParseUint(strings.TrimSpace(part), 10, 64); err == nil && id > 0 && len(ids) < 100 {
+				ids = append(ids, uint(id))
+			}
+		}
+		if len(ids) == 0 {
+			utils.BadRequest(c, "参数无效")
+			return
+		}
+		query = query.Where("id IN ?", ids)
+	}
 	if category := c.Query("category"); category != "" {
 		query = query.Where("category = ?", category)
 	}

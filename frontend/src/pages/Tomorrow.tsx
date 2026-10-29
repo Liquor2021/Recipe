@@ -159,6 +159,13 @@ function recordToDish(record: MealRecord): Dish {
   }
 }
 
+// 用完整菜品替换同 id 的占位菜（找不到的保持原样，如菜已被删除）
+function hydrateDishes(dishes: Dish[], full: Dish[] | undefined) {
+  if (!full || full.length === 0) return dishes
+  const byId = new Map(full.map((d) => [d.id, d]))
+  return dishes.map((d) => byId.get(d.id) ?? d)
+}
+
 function CountStepper({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   return (
     <div className="grid h-8 grid-cols-[32px_32px_32px] overflow-hidden rounded-full border border-border bg-bg">
@@ -696,6 +703,21 @@ export default function Tomorrow() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initializedFor, recordsLoading, tomorrowRecords, tomorrowStr])
 
+  // 从已保存记录还原的菜只有 id/名字/图片（recordToDish），用时和难度都是占位值：
+  // 按 id 批量取完整菜品用于展示（编辑和保存仍以 lunch/dinner 状态为准，只用到 id 和名字）
+  const recordDishIds = useMemo(
+    () => [...new Set(originalRecords.map((r) => r.dish_id))].sort((a, b) => a - b),
+    [originalRecords],
+  )
+  const { data: recordDishesData } = useQuery({
+    queryKey: ["dishes", "by-ids", recordDishIds.join(",")],
+    queryFn: () => dishesApi.list({ ids: recordDishIds.join(","), pageSize: "100" }),
+    enabled: recordDishIds.length > 0,
+    staleTime: 60000,
+  })
+  const lunchView = useMemo(() => hydrateDishes(lunch, recordDishesData?.items), [lunch, recordDishesData])
+  const dinnerView = useMemo(() => hydrateDishes(dinner, recordDishesData?.items), [dinner, recordDishesData])
+
   const selectedMealById = useMemo(() => {
     const map = new Map<number, MealType>()
     lunch.forEach((dish) => map.set(dish.id, "lunch"))
@@ -915,8 +937,8 @@ export default function Tomorrow() {
               totalCount={totalCount}
               hasSavedPlan={hasSavedPlan}
               hasChanges={hasChanges}
-              lunch={lunch}
-              dinner={dinner}
+              lunch={lunchView}
+              dinner={dinnerView}
               onGenerateAll={() => generateAll()}
               onOpenShopping={() => navigate("/more")}
               disabled={disabled}
@@ -951,7 +973,7 @@ export default function Tomorrow() {
 
             <MealPlanner
               meal="lunch"
-              dishes={lunch}
+              dishes={lunchView}
               target={targets.lunch}
               disabled={disabled}
               onTargetChange={(value) => updateTarget("lunch", value)}
@@ -965,7 +987,7 @@ export default function Tomorrow() {
 
             <MealPlanner
               meal="dinner"
-              dishes={dinner}
+              dishes={dinnerView}
               target={targets.dinner}
               disabled={disabled}
               onTargetChange={(value) => updateTarget("dinner", value)}

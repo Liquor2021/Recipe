@@ -113,6 +113,17 @@ func IsCategoryHead(name string) bool {
 	return categoryHeads[Normalize(name)]
 }
 
+// tapWater 自来水/烧开的水：菜谱里常写成调料（"清水 500毫升"），但不用买
+var tapWater = map[string]bool{
+	"水": true, "清水": true, "热水": true, "开水": true, "温水": true,
+	"冷水": true, "凉水": true, "冰水": true, "凉白开": true,
+}
+
+// IsTapWater 是否不用买的水（买菜清单不列）；矿泉水、椰子水等要买的不算
+func IsTapWater(name string) bool {
+	return tapWater[strings.TrimSpace(name)]
+}
+
 // IsStaple 是否常备配料（葱姜蒜及其切配形态）
 func IsStaple(name string) bool {
 	return Staples[Normalize(name)]

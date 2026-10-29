@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ninimenu/internal/database"
+	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
@@ -27,6 +28,10 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 	var items []models.ShoppingCheck
 	for _, list := range []string{dish.Ingredients, dish.Seasonings} {
 		for _, ing := range services.ParseIngredientList(list) {
+			// 清水/热水不用买，不写进买菜清单
+			if ingredients.IsTapWater(ing.Name) {
+				continue
+			}
 			items = append(items, models.ShoppingCheck{
 				MealDate:   mealDate,
 				MealType:   mealType,

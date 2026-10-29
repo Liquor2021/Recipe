@@ -11,11 +11,13 @@ interface AnimatedBottomSheetProps {
   zIndexClass?: string
 }
 
+// 默认层级要高于各页面的固定底栏（菜品详情底栏 z-[210]、明日菜单选菜层 z-[220]），
+// 否则弹层底部的按钮会被底栏盖住、点不到；低于做菜模式/评价弹窗等全屏层（z-[300] 起）
 export default function AnimatedBottomSheet({
   children,
   onClose,
   className = "",
-  zIndexClass = "z-[200]",
+  zIndexClass = "z-[250]",
 }: AnimatedBottomSheetProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)

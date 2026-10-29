@@ -70,6 +70,20 @@ func itemNames(r dishListResponse) []string {
 	return names
 }
 
+func TestGetDishesByIDs(t *testing.T) {
+	setupHandlerTestDB(t, &models.Dish{}, &models.Setting{})
+	for _, name := range []string{"番茄炒蛋", "红烧排骨", "清炒时蔬"} {
+		database.DB.Create(&models.Dish{Name: name, Enabled: true})
+	}
+	r := listDishes(t, "ids=1,3,abc,99&pageSize=100")
+	if names := itemNames(r); r.Data.Total != 2 || len(names) != 2 {
+		t.Fatalf("按 id 批量取应只返回存在的 1、3 两道（非法和不存在的 id 忽略）, got %v", names)
+	}
+	if w := serveJSON(t, GetDishes, "GET", "/api/dishes?ids=abc", nil); w.Code != 400 {
+		t.Fatalf("ids 全部非法应返回 400, got %d", w.Code)
+	}
+}
+
 func TestGetDishesRecommendAppliesDislikes(t *testing.T) {
 	setupHandlerTestDB(t, &models.Dish{}, &models.Setting{})
 	database.DB.Create(&models.Dish{Name: "辣子鸡", Taste: "香辣", Enabled: true, SortOrder: 1})

@@ -94,6 +94,22 @@ export default function Home() {
 
   const dishes = dishesData?.items || []
   const wheelDishes = useMemo(() => wheelData?.items || [], [wheelData])
+
+  // 临期提醒文案：已过期与快过期分开说（过去只要有一批过期，就把快过期的也说成"已过期"）；
+  // 同一食材多批只列一次名字，过期的排前面
+  const urgentSummary = useMemo(() => {
+    const items = urgentItems || []
+    const today = new Date(todayKey + "T00:00:00").getTime()
+    const isExpired = (expiry: string) => !!expiry && new Date(expiry + "T00:00:00").getTime() < today
+    const expired = items.filter((i) => isExpired(i.expiry_date))
+    const soon = items.filter((i) => !isExpired(i.expiry_date))
+    const parts = [expired.length > 0 ? `${expired.length} 批已过期` : "", soon.length > 0 ? `${soon.length} 批快过期` : ""].filter(Boolean)
+    const names = [...new Set([...expired, ...soon].map((i) => i.item_name))]
+    return {
+      title: `冰箱里 ${parts.join("、")}${expired.length > 0 ? "，尽快处理" : ""}`,
+      names: names.slice(0, 3).join("、") + (names.length > 3 ? " 等" : ""),
+    }
+  }, [urgentItems, todayKey])
   const todayRecords = recordsData?.items || []
   const currentRec = pickedRec || dishes[0] || null
 
@@ -373,13 +389,9 @@ export default function Home() {
           >
             <span className="text-xl flex-shrink-0">⚠️</span>
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold text-red">
-                {urgentItems.some((i) => (i.expiry_date ? new Date(i.expiry_date + "T00:00:00").getTime() < new Date(todayKey + "T00:00:00").getTime() : false))
-                  ? `冰箱里 ${urgentItems.length} 样食材已过期，尽快处理`
-                  : `冰箱里 ${urgentItems.length} 样食材快过期了`}
-              </div>
+              <div className="text-[13px] font-bold text-red">{urgentSummary.title}</div>
               <div className="text-[11px] text-text2 truncate">
-                {urgentItems.slice(0, 3).map((i) => i.item_name).join("、")}，看看能做什么消耗掉
+                {urgentSummary.names}，看看能做什么消耗掉
               </div>
             </div>
             <span

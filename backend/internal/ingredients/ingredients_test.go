@@ -47,6 +47,20 @@ func TestIsCategoryHead(t *testing.T) {
 	}
 }
 
+func TestIsTapWater(t *testing.T) {
+	for _, name := range []string{"清水", " 热水 ", "温水", "开水", "凉白开", "水"} {
+		if !IsTapWater(name) {
+			t.Fatalf("IsTapWater(%q) = false, want true", name)
+		}
+	}
+	// 要买的饮品/食材不算
+	for _, name := range []string{"矿泉水", "椰子水", "水豆腐", "水淀粉", "番茄"} {
+		if IsTapWater(name) {
+			t.Fatalf("IsTapWater(%q) = true, want false", name)
+		}
+	}
+}
+
 func TestShelfLifeFor(t *testing.T) {
 	tests := []struct {
 		in   string

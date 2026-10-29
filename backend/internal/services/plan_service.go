@@ -722,6 +722,10 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	}
 	merged := make(map[string]*nameAccum)
 	for _, ch := range checks {
+		// 菜谱里写成调料的清水/热水不用买（旧数据里已经写进清单的也一并不显示）
+		if ingredients.IsTapWater(ch.ItemName) {
+			continue
+		}
 		entry, exists := merged[ch.ItemName]
 		if !exists {
 			entry = &nameAccum{}

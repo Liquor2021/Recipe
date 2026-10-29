@@ -169,6 +169,18 @@ func TestRemoveShoppingExtraItemOnlyDeletesExtraRows(t *testing.T) {
 	}
 }
 
+func TestShoppingListSkipsTapWater(t *testing.T) {
+	setupTestDB(t, &models.ShoppingCheck{}, &models.InventoryBatch{}, &models.ShoppingItemCategory{})
+	today := dateFromNow(0)
+	// 旧数据里已经写进清单的清水/热水也不显示
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 1, ItemName: "热水", ItemAmount: "700毫升"})
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 1, ItemName: "排骨", ItemAmount: "500g"})
+	items := shoppingItemsByName(t, today)
+	if _, ok := items["热水"]; ok || len(items) != 1 {
+		t.Fatalf("买菜清单不应列出热水, got %v", items)
+	}
+}
+
 func TestToggleHomeInventoryOffRemovesOnlyAvailableBatches(t *testing.T) {
 	setupTestDB(t, &models.InventoryBatch{})
 	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(3)})
