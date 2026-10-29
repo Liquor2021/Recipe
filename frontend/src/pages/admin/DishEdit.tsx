@@ -110,8 +110,11 @@ export default function AdminDishEdit() {
   const [manageTaste, setManageTaste] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<{ type: "category" | "taste"; value: string } | null>(null)
 
+  // 菜品加载完成后把它填进表单：表单状态多（20 余项），彻底消掉"effect 里 setState"
+  // 需要把表单拆成按 dish.id 重新挂载的子组件，收益小、改动大，这里保留同步写法
   useEffect(() => {
     if (!dish) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setName(dish.name || "")
     setCategory(dish.category || "家常菜")
     setMealType(dish.meal_type || "all")

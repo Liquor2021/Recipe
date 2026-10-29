@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, settingsApi } from "@/api"
@@ -53,7 +53,7 @@ export default function AdminDishes() {
     queryKey: ["admin", "dishes", params],
     queryFn: () => dishesApi.list(params),
   })
-  const dishes = dishesData?.items || []
+  const dishes = useMemo(() => dishesData?.items || [], [dishesData])
   const total = dishesData?.total || 0
   const totalPages = Math.ceil(total / pageSize)
 

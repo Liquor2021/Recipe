@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
-import { lazy, Suspense, useEffect, useRef, useState } from "react"
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CalendarDays, Heart, Home as HomeIcon, Images, Menu, UtensilsCrossed } from "lucide-react"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
 
@@ -42,8 +42,20 @@ export default function MainLayout() {
   const didMountRef = useRef(false)
   const animatingRef = useRef(false)
   const offsetXRef = useRef(0)
+  // 路由变化（后退/前进、其他页面跳转）时同步当前 tab：在渲染中按"上一次的路径"调整，
+  // 比在 effect 里 setState 少一次以旧 tab 渲染的中间态
+  const [syncedPath, setSyncedPath] = useState(location.pathname)
+  if (syncedPath !== location.pathname) {
+    setSyncedPath(location.pathname)
+    const idx = tabs.findIndex((t) => t.path === location.pathname)
+    if (idx >= 0 && idx !== activeIdx) setActiveIdx(idx)
+  }
+
+  // 触摸事件处理函数（document 上的原生监听）读最新 tab：提交后同步写入，不在渲染中写 ref
   const stateRef = useRef({ activeIdx })
-  stateRef.current = { activeIdx }
+  useLayoutEffect(() => {
+    stateRef.current = { activeIdx }
+  }, [activeIdx])
 
   const touchRef = useRef<{
     startX: number
@@ -52,11 +64,6 @@ export default function MainLayout() {
     directionDecided: boolean
     isHorizontal: boolean | null
   } | null>(null)
-
-  useEffect(() => {
-    const idx = tabs.findIndex((t) => t.path === location.pathname)
-    if (idx >= 0) setActiveIdx(idx)
-  }, [location.pathname])
 
   useGSAP(() => {
     const el = stripRef.current

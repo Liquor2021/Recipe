@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { achievementsApi } from "@/api"
 import type { Achievement } from "@/types"
@@ -86,11 +86,16 @@ export default function AchievementUnlockOverlay() {
     }, 3200)
   }, [])
 
-  showNextRef.current = showNext
+  // 定时器回调通过 ref 调用最新的 showNext（自己调度自己）；提交后写入，不在渲染中写 ref
+  useLayoutEffect(() => {
+    showNextRef.current = showNext
+  }, [showNext])
 
   useEffect(() => {
     if ((window as unknown as Record<string, boolean>)[INSTANCE_KEY]) return
     ;(window as unknown as Record<string, boolean>)[INSTANCE_KEY] = true
+    // 全局只允许一个弹窗实例：占位标记是副作用，必须在挂载后做，随后再打开查询
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveInstance(true)
     return () => {
       ;(window as unknown as Record<string, boolean>)[INSTANCE_KEY] = false
@@ -103,7 +108,7 @@ export default function AchievementUnlockOverlay() {
     enabled: activeInstance,
     refetchOnWindowFocus: true,
   })
-  const achievements = Array.isArray(rawAchievements) ? rawAchievements : []
+  const achievements = useMemo(() => (Array.isArray(rawAchievements) ? rawAchievements : []), [rawAchievements])
 
   const unlocked = useMemo(
     () => achievements.filter((a: Achievement) => a.is_unlocked).sort(sortUnlocked),
@@ -149,9 +154,11 @@ export default function AchievementUnlockOverlay() {
   }, [achievements.length, unlocked, showNext])
 
   useEffect(() => {
+    // timerRef.current 是同一个对象、只改字段不换引用：先取出来，卸载时读到的仍是最新的定时器 id
+    const timers = timerRef.current
     return () => {
-      window.clearTimeout(timerRef.current.leave)
-      window.clearTimeout(timerRef.current.next)
+      window.clearTimeout(timers.leave)
+      window.clearTimeout(timers.next)
     }
   }, [])
 

@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, favoritesApi, recordsApi } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import { asArray } from "@/lib/utils"
-import { getDishImageUrl, getDishEmoji } from "@/components/DishImage"
+import { getDishImageUrl, getDishEmoji } from "@/lib/dishImage"
 import PhotoViewer from "@/components/PhotoViewer"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import SectionHeader from "@/components/SectionHeader"
@@ -134,7 +134,7 @@ export default function DishDetail() {
     enabled: !!dishId,
     staleTime: 0,
   })
-  const dishRecords = dishRecordsData?.records || []
+  const dishRecords = useMemo(() => dishRecordsData?.records || [], [dishRecordsData])
   const dishStats: DishRecordsStats = dishRecordsData?.stats || { total_count: 0, lunch_count: 0, dinner_count: 0, yum_percent: 0, ok_percent: 0, no_percent: 0, avg_rating: 0, last_date: "", avg_interval: 0 }
 
   // 同类推荐按分类向后端取已启用的菜（过去在"最新 100 道"里筛，老分类常常一道都凑不出，还会混进已停用的菜）

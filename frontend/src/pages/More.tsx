@@ -292,6 +292,9 @@ export default function More() {
     })
   }, { dependencies: [displayDays], scope: weekListRef })
 
+  // contextSafe 只是把回调包一层（登记到 GSAP 上下文便于卸载时清理），ref 在点击时才读；
+  // react-hooks/refs 把"把读 ref 的函数传给 contextSafe"当成渲染时读 ref，属误报
+  // eslint-disable-next-line react-hooks/refs
   const toggleWeekDays = contextSafe(() => {
     if (weekListRef.current) {
       flipStateRef.current = Flip.getState(".week-day-card", { props: "opacity,transform" })

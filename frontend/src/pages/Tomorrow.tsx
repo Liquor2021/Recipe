@@ -679,6 +679,8 @@ export default function Tomorrow() {
     if (records.length > 0) {
       const nextLunch = mealRecords(records, "lunch").map(recordToDish)
       const nextDinner = mealRecords(records, "dinner").map(recordToDish)
+      // 每个日期只用服务端记录初始化一次可编辑的草稿（initStartedForRef 守卫），之后由用户编辑
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLunch(nextLunch)
       setDinner(nextDinner)
       setTargets({

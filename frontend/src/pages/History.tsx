@@ -173,7 +173,7 @@ export default function History() {
     queryFn: () => dayRatingApi.list({ date_from: monthStartKey, date_to: monthEndKey }),
   })
 
-  const records = recordsData?.items || []
+  const records = useMemo(() => recordsData?.items || [], [recordsData])
 
   const recordByDate = useMemo(() => {
     const m = new Map<string, MealRecord[]>()

@@ -25,6 +25,9 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
     gsap.fromTo(layerRef.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: motionDuration(0.2) })
   }, { scope: layerRef })
 
+  // contextSafe 只是把回调包一层（登记到 GSAP 上下文便于卸载时清理），ref 在点击/滑动时才读；
+  // react-hooks/refs 把"把读 ref 的函数传给 contextSafe"当成渲染时读 ref，属误报
+  // eslint-disable-next-line react-hooks/refs
   const close = contextSafe(() => {
     gsap.to(layerRef.current, {
       autoAlpha: 0,
@@ -34,6 +37,7 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
     })
   })
 
+  // eslint-disable-next-line react-hooks/refs -- 同上，contextSafe 回调在事件里执行
   const snapTo = contextSafe((newIdx: number, animate: boolean) => {
     if (!stripRef.current) return
     animating.current = true
