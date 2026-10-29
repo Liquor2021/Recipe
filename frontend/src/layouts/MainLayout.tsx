@@ -1,5 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CalendarDays, Heart, Home as HomeIcon, Images, Menu, UtensilsCrossed } from "lucide-react"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
 
@@ -51,11 +51,29 @@ export default function MainLayout() {
     if (idx >= 0 && idx !== activeIdx) setActiveIdx(idx)
   }
 
+  // 六个 tab 按需挂载：过去打开 App 时六页一起挂载、一起拉数据（冷启动 17 个请求，没打开的页
+  // 也在加载）。现在只挂当前页，空闲一会儿再挂相邻页，边缘滑动开始时也先挂相邻页——拖动时露出
+  // 的那一页已经在了，不会闪白。挂过的页一直保留（数据和滚动位置都在）。
+  const [mountedTabs, setMountedTabs] = useState<ReadonlySet<number>>(() => new Set(activeIdx >= 0 ? [activeIdx] : []))
+  const mountTabs = useCallback((idxs: number[]) => {
+    setMountedTabs((prev) => {
+      const add = idxs.filter((i) => i >= 0 && i < TAB_COUNT && !prev.has(i))
+      return add.length === 0 ? prev : new Set([...prev, ...add])
+    })
+  }, [])
+  if (activeIdx >= 0 && !mountedTabs.has(activeIdx)) {
+    setMountedTabs(new Set([...mountedTabs, activeIdx]))
+  }
+  useEffect(() => {
+    const timer = window.setTimeout(() => mountTabs([activeIdx - 1, activeIdx + 1]), 1200)
+    return () => window.clearTimeout(timer)
+  }, [activeIdx, mountTabs])
+
   // 触摸事件处理函数（document 上的原生监听）读最新 tab：提交后同步写入，不在渲染中写 ref
-  const stateRef = useRef({ activeIdx })
+  const stateRef = useRef({ activeIdx, mountTabs })
   useLayoutEffect(() => {
-    stateRef.current = { activeIdx }
-  }, [activeIdx])
+    stateRef.current = { activeIdx, mountTabs }
+  }, [activeIdx, mountTabs])
 
   const touchRef = useRef<{
     startX: number
@@ -97,6 +115,8 @@ export default function MainLayout() {
       if (!startEdge) return
       if (startEdge === "left" && s.activeIdx === 0) return
       if (startEdge === "right" && s.activeIdx === tabs.length - 1) return
+      // 开始边缘滑动：先把要露出来的相邻页挂上
+      s.mountTabs([startEdge === "left" ? s.activeIdx - 1 : s.activeIdx + 1])
       touchRef.current = {
         startX: x,
         startY: t.clientY,
@@ -210,11 +230,15 @@ export default function MainLayout() {
             width: `${TAB_COUNT * 100}%`,
           }}
         >
-          {tabs.map((tab) => (
+          {tabs.map((tab, i) => (
             <div key={tab.path} className="h-full overflow-y-auto overscroll-y-contain pb-[calc(60px+env(safe-area-inset-bottom))]" style={{ width: `${STEP_PCT}%`, flexShrink: 0 }}>
-              <Suspense fallback={<TabLoading />}>
-                <tab.Component />
-              </Suspense>
+              {mountedTabs.has(i) ? (
+                <Suspense fallback={<TabLoading />}>
+                  <tab.Component />
+                </Suspense>
+              ) : (
+                <TabLoading />
+              )}
             </div>
           ))}
         </div>
