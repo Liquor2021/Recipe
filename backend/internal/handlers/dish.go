@@ -176,20 +176,22 @@ func GetDishes(c *gin.Context) {
 		query = query.Order(sort + " " + order)
 	}
 
-	// exclude_disliked=1：推荐类展示位（首页今日推荐/转盘）按 strict 忌口剔除菜品；
-	// avoid 模式不影响。需在分页前过滤，否则总数和分页会对不上，所以与搜索一样走内存分支。
-	excludeDisliked := c.Query("exclude_disliked") == "1" || c.Query("exclude_disliked") == "true"
+	// recommend=1：推荐类展示位（首页今日推荐/换一个/猜你喜欢/转盘）按家庭忌口处理：
+	// strict 剔除命中的菜，avoid 把它们排到最后。需在分页前处理，否则总数和分页对不上，
+	// 所以与搜索一样走内存分支。带关键词搜索时只做 strict 剔除，不打乱匹配排序。
+	recommend := c.Query("recommend") == "1" || c.Query("recommend") == "true"
 
 	// 带关键词的搜索走内存过滤：菜名或食材命中都算（"冰箱里有鸡蛋能做什么"）
 	searchTrimmed := strings.TrimSpace(searchRaw)
-	if searchTrimmed == "" && excludeDisliked {
+	if searchTrimmed == "" && recommend {
 		var all []models.Dish
 		if err := query.Find(&all).Error; err != nil {
 			utils.InternalError(c, "加载菜品失败")
 			return
 		}
-		filtered := services.ExcludeStrictDisliked(all)
-		utils.SuccessPaginated(c, paginateDishes(filtered, page, pageSize, isRandom), int64(len(filtered)), page, pageSize)
+		// random 的打乱已在 ArrangeForRecommendation 里做过，分页时不能再打乱（会冲掉忌口排序）
+		arranged := services.ArrangeForRecommendation(all, isRandom)
+		utils.SuccessPaginated(c, paginateDishes(arranged, page, pageSize, false), int64(len(arranged)), page, pageSize)
 		return
 	}
 	if searchTrimmed != "" {
@@ -198,7 +200,7 @@ func GetDishes(c *gin.Context) {
 			utils.InternalError(c, "搜索菜品失败")
 			return
 		}
-		if excludeDisliked {
+		if recommend {
 			all = services.ExcludeStrictDisliked(all)
 		}
 		// 拼音索引按全局版本戳刷新（不带任何筛选的 MAX(updated_at)）：未变复用、变了全量重建。

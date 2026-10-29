@@ -487,19 +487,67 @@ func PickMoodDishes(mood string, count int) ([]models.Dish, string) {
 	return fallback, ""
 }
 
-// buildWeightedIndices 生成按权重重复的下标数组：命中家庭忌口的菜固定权重 1（取消收藏加权）
+// 随机抽菜的权重（avoid 温和降权）：命中忌口的菜是普通菜的 1/3，收藏是普通菜的 3 倍
+// （收藏 : 普通 维持原来的 3 : 1）。strict 模式下忌口菜在抽签前已出局，用不到降权。
+const (
+	dislikedDishWeight = 1
+	normalDishWeight   = 3
+	favoriteDishWeight = 9
+)
+
+// dishPickWeight 午/晚餐推荐的抽签权重：命中忌口优先于收藏（收藏的忌口菜也只给 1）
+func dishPickWeight(d models.Dish, dislikes map[string]bool) int {
+	switch {
+	case dishHitsDislikes(d, dislikes):
+		return dislikedDishWeight
+	case d.Favorite:
+		return favoriteDishWeight
+	default:
+		return normalDishWeight
+	}
+}
+
+// buildWeightedIndices 生成按权重重复的下标数组（洗牌后按首次出现取菜 = 不放回加权抽样）
 func buildWeightedIndices(dishes []models.Dish, dislikes map[string]bool) []int {
 	indices := make([]int, 0)
 	for i, d := range dishes {
-		w := 1
-		if d.Favorite && !dishHitsDislikes(d, dislikes) {
-			w += 2
-		}
-		for j := 0; j < w; j++ {
+		for j := 0; j < dishPickWeight(d, dislikes); j++ {
 			indices = append(indices, i)
 		}
 	}
 	return indices
+}
+
+// ArrangeForRecommendation 首页推荐位（今日推荐/换一个/猜你喜欢/转盘）的忌口处理：
+// strict 剔除命中忌口的菜；avoid 把它们排到最后，只有前面的菜不够时才会出现。
+// random=true 时先打乱再排（转盘每次不同）。原切片不被修改。
+func ArrangeForRecommendation(dishes []models.Dish, random bool) []models.Dish {
+	return arrangeForRecommendation(dishes, loadFamilyDislikeConfig(), random, rand.New(rand.NewSource(time.Now().UnixNano())))
+}
+
+func arrangeForRecommendation(dishes []models.Dish, cfg familyDislikeConfig, random bool, r *rand.Rand) []models.Dish {
+	out := make([]models.Dish, len(dishes))
+	copy(out, dishes)
+	if random {
+		r.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+	}
+	if len(cfg.tokens) == 0 {
+		return out
+	}
+	if cfg.strict {
+		return applyDislikeMode(out, cfg)
+	}
+	// 每道菜只判一次是否命中（判定要解析食材 JSON），再稳定地分成两段
+	preferred := make([]models.Dish, 0, len(out))
+	disliked := make([]models.Dish, 0)
+	for _, d := range out {
+		if dishHitsDislikes(d, cfg.tokens) {
+			disliked = append(disliked, d)
+		} else {
+			preferred = append(preferred, d)
+		}
+	}
+	return append(preferred, disliked...)
 }
 
 func GetRandomQuote(scene string) string {

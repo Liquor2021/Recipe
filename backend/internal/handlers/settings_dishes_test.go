@@ -62,29 +62,42 @@ func listDishes(t *testing.T, query string) dishListResponse {
 	return resp
 }
 
-func TestGetDishesExcludeDisliked(t *testing.T) {
+func itemNames(r dishListResponse) []string {
+	names := make([]string, 0, len(r.Data.Items))
+	for _, it := range r.Data.Items {
+		names = append(names, it.Name)
+	}
+	return names
+}
+
+func TestGetDishesRecommendAppliesDislikes(t *testing.T) {
 	setupHandlerTestDB(t, &models.Dish{}, &models.Setting{})
 	database.DB.Create(&models.Dish{Name: "辣子鸡", Taste: "香辣", Enabled: true, SortOrder: 1})
 	database.DB.Create(&models.Dish{Name: "清炒时蔬", Taste: "清淡", Enabled: true, SortOrder: 2})
 	database.DB.Create(&models.Dish{Name: "麻辣鸡丝", Taste: "麻辣", Enabled: true, SortOrder: 3})
 	database.DB.Create(&models.Setting{Key: "family_members", Value: `[{"name":"妈妈","dislikes":["辣"]}]`})
 
-	// avoid 模式：exclude_disliked 不过滤（strict 才剔除）
-	if r := listDishes(t, "enabled=true&exclude_disliked=1"); r.Data.Total != 3 {
-		t.Fatalf("avoid 模式不应过滤, total=%d", r.Data.Total)
+	// avoid：不剔除，但忌口菜排到最后（今日推荐默认取第一道，不能总是忌口菜）
+	r := listDishes(t, "enabled=true&sort=sort_order&order=asc&recommend=1")
+	if names := itemNames(r); r.Data.Total != 3 || len(names) != 3 || names[0] != "清炒时蔬" || names[1] != "辣子鸡" || names[2] != "麻辣鸡丝" {
+		t.Fatalf("avoid 下应保留全部、忌口菜按原顺序排到最后, got %v total=%d", names, r.Data.Total)
+	}
+	// avoid + 随机（转盘）：合规菜仍在最前
+	if names := itemNames(listDishes(t, "enabled=true&sort=random&pageSize=3&recommend=1")); len(names) != 3 || names[0] != "清炒时蔬" {
+		t.Fatalf("avoid 随机列表也应把合规菜排在前面, got %v", names)
 	}
 
 	database.DB.Create(&models.Setting{Key: "family_dislike_mode", Value: "strict"})
-	r := listDishes(t, "enabled=true&sort=sort_order&order=asc&pageSize=1&exclude_disliked=1")
+	r = listDishes(t, "enabled=true&sort=sort_order&order=asc&pageSize=1&recommend=1")
 	if r.Data.Total != 1 || len(r.Data.Items) != 1 || r.Data.Items[0].Name != "清炒时蔬" {
 		t.Fatalf("strict 下推荐列表应只剩合规菜，且总数按过滤后计, got %+v", r.Data)
 	}
 	// 不带参数的普通列表（菜品页/后台）不受影响
 	if r := listDishes(t, "enabled=true"); r.Data.Total != 3 {
-		t.Fatalf("不带 exclude_disliked 的列表不应过滤, total=%d", r.Data.Total)
+		t.Fatalf("不带 recommend 的列表不应过滤, total=%d", r.Data.Total)
 	}
-	// 与搜索组合：搜"鸡"只剩辣菜，过滤后为空
-	if r := listDishes(t, "search="+url.QueryEscape("鸡")+"&exclude_disliked=1"); r.Data.Total != 0 {
+	// 与搜索组合：搜"鸡"只剩辣菜，strict 过滤后为空
+	if r := listDishes(t, "search="+url.QueryEscape("鸡")+"&recommend=1"); r.Data.Total != 0 {
 		t.Fatalf("搜索结果也应按 strict 忌口过滤, got %+v", r.Data)
 	}
 }

@@ -165,6 +165,33 @@ func TestWeekPlanLegacyFormatChecksDailyCounts(t *testing.T) {
 	}
 }
 
+func TestGenerateWeekPlanAvoidModeDownweightsDislikes(t *testing.T) {
+	setupWeekPlanTestDB(t)
+	// 20 道清淡 + 20 道辣菜：均匀抽取时辣菜约占一半，温和降权后应明显变少但不为零
+	for i := 1; i <= 40; i++ {
+		d := models.Dish{ID: uint(i), Name: "清淡菜", Taste: "清淡", MealType: "all", Enabled: true}
+		if i > 20 {
+			d.Name, d.Taste = "辣菜", "香辣"
+		}
+		database.DB.Create(&d)
+	}
+	cfg := weekPlanConfig{lunchCount: 1, dinnerCount: 1, dislikes: familyDislikeConfig{tokens: map[string]bool{"辣": true}}}
+	spicy, total := 0, 0
+	for run := 0; run < 60; run++ {
+		for _, id := range planDishIDs(generateWeekPlan(cfg)) {
+			total++
+			if id > 20 {
+				spicy++
+			}
+		}
+	}
+	// 权重 1:3 不放回抽 14 道，期望辣菜约 21%；均匀抽取约 50%
+	frac := float64(spicy) / float64(total)
+	if total != 60*14 || frac > 0.35 || frac < 0.05 {
+		t.Fatalf("avoid 周菜单辣菜占比应明显低于均匀抽取的 50%% 且不为零, got %.3f (%d/%d)", frac, spicy, total)
+	}
+}
+
 func TestPickDishesStrictFilterBeforeRecency(t *testing.T) {
 	setupWeekPlanTestDB(t)
 	// A 是辣菜但最近没吃；B 合规但昨天刚吃过

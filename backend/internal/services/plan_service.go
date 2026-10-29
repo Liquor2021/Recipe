@@ -294,6 +294,18 @@ func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
 	monday := now.AddDate(0, 0, 1-weekday)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// avoid 温和降权：命中忌口的菜被抽中的概率是普通菜的 1/3（strict 下已整体出局）。
+	// 周菜单不做收藏加权，保持原来的均匀抽取。命中判定要解析食材 JSON，每道菜只算一次
+	hitsDislike := make(map[uint]bool, len(dishes))
+	for _, d := range dishes {
+		hitsDislike[d.ID] = dishHitsDislikes(d, cfg.dislikes.tokens)
+	}
+	weight := func(d models.Dish) int {
+		if hitsDislike[d.ID] {
+			return dislikedDishWeight
+		}
+		return normalDishWeight
+	}
 
 	var days []WeekDayPlan
 	usedAllIDs := make(map[uint]bool)
@@ -307,8 +319,8 @@ func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
 
 		usedThisDay := make(map[uint]bool)
 
-		dayPlan.Lunch = pickNDishes(lunchPool, lunchCount, usedAllIDs, usedThisDay, r)
-		dayPlan.Dinner = pickNDishes(dinnerPool, dinnerCount, usedAllIDs, usedThisDay, r)
+		dayPlan.Lunch = pickNDishes(lunchPool, lunchCount, usedAllIDs, usedThisDay, r, weight)
+		dayPlan.Dinner = pickNDishes(dinnerPool, dinnerCount, usedAllIDs, usedThisDay, r, weight)
 
 		days = append(days, dayPlan)
 	}
@@ -316,13 +328,12 @@ func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
 	return &WeekPlan{Days: days}
 }
 
-func pickNDishes(pool []models.Dish, count int, globalUsed map[uint]bool, dayUsed map[uint]bool, r *rand.Rand) []models.Dish {
+func pickNDishes(pool []models.Dish, count int, globalUsed map[uint]bool, dayUsed map[uint]bool, r *rand.Rand, weight func(models.Dish) int) []models.Dish {
 	available := filterAvailableBoth(pool, globalUsed, dayUsed)
 	var picked []models.Dish
 
 	for len(picked) < count && len(available) > 0 {
-		idx := r.Intn(len(available))
-		d := available[idx]
+		d := available[weightedPick(available, weight, r)]
 		picked = append(picked, d)
 		globalUsed[d.ID] = true
 		dayUsed[d.ID] = true
@@ -332,8 +343,7 @@ func pickNDishes(pool []models.Dish, count int, globalUsed map[uint]bool, dayUse
 	if len(picked) < count {
 		available2 := filterAvailable(pool, dayUsed)
 		for len(picked) < count && len(available2) > 0 {
-			idx := r.Intn(len(available2))
-			d := available2[idx]
+			d := available2[weightedPick(available2, weight, r)]
 			picked = append(picked, d)
 			dayUsed[d.ID] = true
 			available2 = filterAvailable(pool, dayUsed)
@@ -341,6 +351,22 @@ func pickNDishes(pool []models.Dish, count int, globalUsed map[uint]bool, dayUse
 	}
 
 	return picked
+}
+
+// weightedPick 按权重随机取一个下标（权重 <= 0 的按 1 计）；dishes 不能为空
+func weightedPick(dishes []models.Dish, weight func(models.Dish) int, r *rand.Rand) int {
+	total := 0
+	for _, d := range dishes {
+		total += max(1, weight(d))
+	}
+	n := r.Intn(total)
+	for i, d := range dishes {
+		n -= max(1, weight(d))
+		if n < 0 {
+			return i
+		}
+	}
+	return len(dishes) - 1
 }
 
 func filterAvailableBoth(dishes []models.Dish, globalUsed map[uint]bool, dayUsed map[uint]bool) []models.Dish {

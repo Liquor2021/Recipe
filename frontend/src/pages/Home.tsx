@@ -47,14 +47,15 @@ export default function Home() {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const appName = useAppInfoStore((s) => s.appName)
 
-  // 今日推荐/换一个/猜你喜欢与转盘都是推荐位：strict 忌口模式下由后端剔除命中忌口的菜
+  // 今日推荐/换一个/猜你喜欢与转盘都是推荐位：后端按家庭忌口处理
+  // （strict 剔除命中忌口的菜，avoid 把它们排到最后）
   const { data: dishesData } = useQuery({
     queryKey: ["dishes", "enabled"],
-    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", exclude_disliked: "1" }),
+    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", recommend: "1" }),
   })
   const { data: wheelData } = useQuery({
     queryKey: ["dishes", "wheel"],
-    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "12", sort: "random", exclude_disliked: "1" }),
+    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "12", sort: "random", recommend: "1" }),
   })
   const { data: recordsData } = useQuery({
     queryKey: ["records"],

@@ -24,7 +24,7 @@ function parseDislikeMode(raw: unknown): DislikeMode {
 }
 
 const DISLIKE_MODE_DESC: Record<DislikeMode, string> = {
-  avoid: "温和降权：命中忌口的菜会大幅减少出现，但多人就餐时仍可能出现。",
+  avoid: "温和降权：命中忌口的菜被抽中的概率降到普通菜的约 1/3，排序类推荐里排到最后，可选的菜不够时仍会出现。",
   strict: "严格过滤：命中忌口的菜绝不出现；如果所有菜都被过滤，宁可返回空推荐。",
 }
 

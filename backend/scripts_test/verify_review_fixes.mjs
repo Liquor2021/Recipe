@@ -104,8 +104,8 @@ async function main() {
   await req("POST", "/fridge", { item_name: "鸡蛋" })
   r = await req("GET", "/fridge/recipes?limit=50")
   check("清冰箱推荐不出现辣菜", r.code === 0 && !(r.data || []).some((m) => isSpicy(m.dish)), JSON.stringify((r.data || []).filter((m) => isSpicy(m.dish)).map((m) => m.dish.name)))
-  r = await req("GET", "/dishes?enabled=true&sort=random&pageSize=100&exclude_disliked=1")
-  check("首页推荐位（exclude_disliked）不出现辣菜", r.code === 0 && r.data.items.length > 0 && !r.data.items.some(isSpicy), JSON.stringify(r.data?.items?.filter(isSpicy).map((d) => d.name)))
+  r = await req("GET", "/dishes?enabled=true&sort=random&pageSize=100&recommend=1")
+  check("首页推荐位（recommend=1）不出现辣菜", r.code === 0 && r.data.items.length > 0 && !r.data.items.some(isSpicy), JSON.stringify(r.data?.items?.filter(isSpicy).map((d) => d.name)))
   const allEnabled = await req("GET", "/dishes?enabled=true&pageSize=1")
   check("普通菜品列表不受忌口过滤", allEnabled.data?.total > r.data?.total, `${allEnabled.data?.total} vs ${r.data?.total}`)
 
@@ -113,6 +113,9 @@ async function main() {
   await req("PUT", "/settings", { settings: { family_dislike_mode: "avoid" } }, AH)
   const avoidPlan = (await req("GET", "/week-plan")).data
   check("strict → avoid：原菜单仍合规，不重排", JSON.stringify(planIDs(avoidPlan)) === JSON.stringify(planIDs(strictPlan)))
+  const avoidRec = await req("GET", "/dishes?enabled=true&sort=sort_order&order=asc&pageSize=100&recommend=1")
+  const enabledTotal = (await req("GET", "/dishes?enabled=true&pageSize=1")).data?.total
+  check("avoid：推荐位保留全部菜，忌口菜排到最后", avoidRec.data?.total === enabledTotal && !avoidRec.data.items.some(isSpicy), `${avoidRec.data?.total} vs ${enabledTotal}`)
   await req("PUT", "/settings", { settings: { lunch_dishes_per_day: String(Number(lunchBefore) + 1) } }, AH)
   const morePlan = (await req("GET", "/week-plan")).data
   check("午餐道数 +1 后菜单重新生成", (morePlan?.days || []).length === 7 && morePlan.days.every((d) => d.lunch.length === Number(lunchBefore) + 1), JSON.stringify((morePlan?.days || []).map((d) => d.lunch.length)))
