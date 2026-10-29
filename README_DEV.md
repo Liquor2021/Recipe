@@ -66,8 +66,16 @@ chmod +x ninimenu
 | `COMPRESS_MAX_DIM` | `1200` | 图片压缩最大宽高（px） |
 | `JPEG_QUALITY` | `85` | JPG 压缩质量（1-100） |
 | `REPEAT_DAYS` | `3` | 推荐去重天数 |
+| `DB_BACKUP_DIR` | 数据库同目录下的 `backups/` | 数据库每日自动备份目录 |
+| `DB_BACKUP_KEEP` | `7` | 自动备份保留份数，`0` 关闭自动备份 |
 
 可写入项目根目录 `.env` 文件，运行时自动加载。发布包中使用 `env.bak`。
+
+## 数据库备份与恢复
+
+服务运行时每天自动用 `VACUUM INTO` 备份一次数据库（`ninimenu-YYYY-MM-DD.db`），只保留最新 `DB_BACKUP_KEEP` 份；管理后台「设置 → 数据备份」可以查看备份并下载一份当前数据库。备份只含数据库，上传的图片原图在 `BACKUP_DIR`。
+
+恢复：停止服务 → 把 `data/ninimenu.db` 换成要恢复的备份文件（同时删掉旁边的 `ninimenu.db-wal`、`ninimenu.db-shm`）→ 启动服务。
 
 ## 上传图片压缩机制
 

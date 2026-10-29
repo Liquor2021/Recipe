@@ -62,6 +62,15 @@ async function main() {
   check("菜品详情列表里有计划，但\"做了几次/上次做\"只算吃过的", dishRecs.records.length === 2 && dishRecs.stats.total_count === 1 && dishRecs.stats.last_date === dayFromNow(0), JSON.stringify(dishRecs.stats))
   if (plan.data?.id) await req("DELETE", `/records/${plan.data.id}`)
 
+  console.log("== 数据库备份 ==")
+  r = await req("GET", "/admin/backups", undefined, AH)
+  check("启动后已自动备份今天的数据库", r.code === 0 && r.data?.keep === 7 && (r.data?.files || []).some((f) => f.name === `ninimenu-${dayFromNow(0)}.db` && f.size > 0), JSON.stringify(r.data))
+  const dl = await fetch(BASE + "/admin/backup/download", { headers: AH })
+  const bytes = new Uint8Array(await dl.arrayBuffer())
+  check("下载当前数据库是完整的 SQLite 文件", dl.status === 200 && new TextDecoder().decode(bytes.slice(0, 15)) === "SQLite format 3", `${dl.status} ${bytes.length}`)
+  const noAuth = await fetch(BASE + "/admin/backup/download", { headers: H })
+  check("没有管理端登录不能下载", [401, 403].includes(noAuth.status), String(noAuth.status))
+
   // 清理
   await req("DELETE", `/fridge/${encodeURIComponent("E2E入库食材")}`)
   if (rec.data?.id) await req("DELETE", `/records/${rec.data.id}`)

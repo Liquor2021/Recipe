@@ -141,6 +141,24 @@ export const dashboardApi = {
   get: () => api<DashboardData>("GET", "/admin/dashboard"),
 }
 
+export const backupApi = {
+  list: () => api<{ keep: number; dir: string; files: { name: string; size: number; mod_time: string }[] }>("GET", "/admin/backups"),
+  // 现做一份完整的数据库副本并下载（二进制，不走 JSON 封装）
+  download: async () => {
+    const res = await defaultClient.get<Blob>("/admin/backup/download", { responseType: "blob", timeout: 60000 })
+    const url = URL.createObjectURL(res.data)
+    const d = new Date()
+    const p = (n: number) => String(n).padStart(2, "0")
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `ninimenu-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.db`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
+}
+
 export const fridgeApi = {
   list: () => api<InventoryBatch[]>("GET", "/fridge"),
   add: (item_name: string, quantity?: string, expiry_date?: string) =>

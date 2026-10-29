@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { settingsApi, shoppingCategoriesApi } from "@/api"
+import { backupApi, settingsApi, shoppingCategoriesApi } from "@/api"
 import { asString } from "@/lib/utils"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import type { FamilyMember, ShoppingCategoryOverride } from "@/types"
@@ -49,6 +49,54 @@ function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
     >
       <div className={`absolute top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-all ${value ? "left-[22px]" : "left-[2px]"}`} />
     </button>
+  )
+}
+
+function formatSize(bytes: number) {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+// BackupCard 数据备份：服务端每天自动备份数据库；这里看备份情况、手动下载一份当前数据库
+function BackupCard() {
+  const { data } = useQuery({ queryKey: ["admin", "backups"], queryFn: () => backupApi.list() })
+  const [downloading, setDownloading] = useState(false)
+  const download = async () => {
+    setDownloading(true)
+    try {
+      await backupApi.download()
+    } catch {
+      toast.error("下载失败，稍后再试")
+    } finally {
+      setDownloading(false)
+    }
+  }
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="text-[13px] font-semibold text-text2 mb-1">数据备份</div>
+      <div className="text-[11px] text-text3 mb-3 leading-relaxed">
+        {data && data.keep > 0
+          ? `每天自动备份一次数据库，保留最近 ${data.keep} 份（${data.dir}）。不含上传的图片，图片原图另在上传备份目录。`
+          : "自动备份已关闭（DB_BACKUP_KEEP=0）。"}
+        恢复时停止服务，用备份文件替换数据库文件即可（步骤见 README_DEV）。
+      </div>
+      <button
+        onClick={download}
+        disabled={downloading}
+        className="w-full py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-60"
+      >
+        {downloading ? "正在导出…" : "下载当前数据库"}
+      </button>
+      {data && data.files.length > 0 && (
+        <div className="mt-3 flex flex-col gap-1">
+          {data.files.map((f) => (
+            <div key={f.name} className="flex items-center justify-between text-[12px] text-text2">
+              <span className="truncate">{f.name}</span>
+              <span className="flex-shrink-0 text-text3">{formatSize(f.size)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -427,6 +475,8 @@ export default function AdminSettings() {
           </div>
         )}
       </div>
+
+      <BackupCard />
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="text-[13px] font-semibold text-text2 mb-1">密码来源</div>

@@ -18,6 +18,8 @@ type Config struct {
 	DBPath         string
 	UploadDir      string
 	BackupDir      string
+	DBBackupDir    string // 数据库每日自动备份目录
+	DBBackupKeep   int    // 自动备份保留份数，0 = 关闭自动备份
 	MaxUploadSize  int64
 	CompressMaxDim int
 	JpegQuality    int
@@ -47,6 +49,12 @@ func Load() {
 		if _, err := fmt.Sscanf(v, "%d", &d); err == nil && d > 0 {
 			C.RepeatDays = d
 		}
+	}
+	// 数据库备份默认放在数据库旁边的 backups/，每天一份，保留 7 份
+	C.DBBackupDir = getEnv("DB_BACKUP_DIR", filepath.Join(filepath.Dir(C.DBPath), "backups"))
+	C.DBBackupKeep = getEnvInt("DB_BACKUP_KEEP", 7)
+	if C.DBBackupKeep < 0 {
+		C.DBBackupKeep = 0
 	}
 }
 

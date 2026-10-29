@@ -15,6 +15,7 @@ func main() {
 	if err := database.Init(); err != nil {
 		panic(fmt.Sprintf("数据库初始化失败: %v", err))
 	}
+	database.StartAutoBackup(config.C.DBBackupDir, config.C.DBBackupKeep)
 
 	r := gin.Default()
 	routes.Setup(r)

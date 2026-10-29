@@ -109,6 +109,8 @@ func Setup(r *gin.Engine) {
 		admin.PUT("/achievements/:id", handlers.UpdateAchievement)
 		admin.DELETE("/achievements/:id", handlers.DeleteAchievement)
 		admin.GET("/admin/dashboard", handlers.GetDashboard)
+		admin.GET("/admin/backups", handlers.ListBackups)
+		admin.GET("/admin/backup/download", handlers.DownloadBackup)
 	}
 
 	staticDir := "static"
