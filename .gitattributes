@@ -1,0 +1,19 @@
+# 统一 LF：Windows 下 core.autocrlf=true 会把工作区转成 CRLF，
+# gofmt -l 因此几乎把所有 Go 文件都报成"未格式化"（实际只是换行符不同）
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF，否则 cmd 解析多行语句可能出错
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制
+*.webp binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.exe binary
+*.db binary
+*.zip binary
+*.gz binary
