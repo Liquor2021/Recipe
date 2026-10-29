@@ -143,22 +143,55 @@ func GetFridgeConsumption(c *gin.Context) {
 }
 
 type ConsumeFridgeRequest struct {
-	BatchIDs []uint `json:"batch_ids" binding:"required,min=1,max=100"`
+	// BatchIDs 整批用完、移出冰箱的批次
+	BatchIDs []uint `json:"batch_ids"`
+	// Remaining 用了一部分、还剩一些的批次：只把数量改成剩余量
+	Remaining []struct {
+		BatchID  uint   `json:"batch_id"`
+		Quantity string `json:"quantity"`
+	} `json:"remaining"`
 }
 
-// ConsumeFridgeBatches 做完菜后一次扣掉多个批次（单条语句，要么全部生效要么都不生效）
+// ConsumeFridgeBatches 做完菜后更新冰箱：用完的批次移出、用了一部分的改成剩余量（同一事务）
 func ConsumeFridgeBatches(c *gin.Context) {
 	var req ConsumeFridgeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.BadRequest(c, "请选择要移出的批次")
+		utils.BadRequest(c, "参数无效")
 		return
 	}
-	removed, err := services.ConsumeInventoryBatches(req.BatchIDs)
+	total := len(req.BatchIDs) + len(req.Remaining)
+	if total == 0 || total > 100 {
+		utils.BadRequest(c, "请选择要更新的批次（一次最多 100 批）")
+		return
+	}
+	seen := make(map[uint]bool, total)
+	for _, id := range req.BatchIDs {
+		if id == 0 || seen[id] {
+			utils.BadRequest(c, "批次参数无效")
+			return
+		}
+		seen[id] = true
+	}
+	remaining := make([]services.BatchRemaining, 0, len(req.Remaining))
+	for _, r := range req.Remaining {
+		qty := strings.TrimSpace(r.Quantity)
+		if r.BatchID == 0 || seen[r.BatchID] {
+			utils.BadRequest(c, "批次参数无效")
+			return
+		}
+		if qty == "" || len([]rune(qty)) > 50 {
+			utils.BadRequest(c, "请填写剩余数量")
+			return
+		}
+		seen[r.BatchID] = true
+		remaining = append(remaining, services.BatchRemaining{BatchID: r.BatchID, Quantity: qty})
+	}
+	removed, updated, err := services.ConsumeInventory(req.BatchIDs, remaining)
 	if err != nil {
-		utils.InternalError(c, "移出失败")
+		utils.InternalError(c, "更新冰箱失败")
 		return
 	}
-	utils.Success(c, gin.H{"removed": removed})
+	utils.Success(c, gin.H{"removed": removed, "updated": updated})
 }
 
 func GetFridgeRecipes(c *gin.Context) {

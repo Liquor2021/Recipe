@@ -316,6 +316,7 @@ export interface ConsumptionBatch {
   expiry_date: string
   days_left: number // 999 = 未设置保质期
   kind: ConsumptionKind
+  remaining_hint: string // 按菜谱用量算出的剩余量建议，空 = 算不出（单位不同/会用完）
 }
 
 export interface ConsumptionSlot {

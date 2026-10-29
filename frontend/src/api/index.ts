@@ -148,7 +148,9 @@ export const fridgeApi = {
   remove: (itemName: string) => api<null>("DELETE", `/fridge/${encodeURIComponent(itemName)}`),
   recipes: (limit = 12) => api<FridgeMatch[]>("GET", `/fridge/recipes?limit=${limit}`),
   consumption: (dishId: number) => api<ConsumptionMatch>("GET", `/fridge/consumption?dish_id=${dishId}`),
-  consume: (batchIds: number[]) => api<{ removed: number }>("POST", "/fridge/consume", { batch_ids: batchIds }),
+  // batchIds 整批移出；remaining 用了一部分的批次改成剩余数量（同一事务）
+  consume: (batchIds: number[], remaining?: { batch_id: number; quantity: string }[]) =>
+    api<{ removed: number; updated: number }>("POST", "/fridge/consume", { batch_ids: batchIds, remaining }),
   urgent: () => api<InventoryBatch[]>("GET", "/fridge/urgent"),
 }
 

@@ -342,6 +342,81 @@ func TestMatchDishConsumptionEmpty(t *testing.T) {
 	}
 }
 
+func TestRemainingAfterUse(t *testing.T) {
+	tests := []struct{ stock, used, want string }{
+		{"6个", "3个", "3个"},
+		{"6个", "6个", ""},         // 正好用完
+		{"6个", "8个", ""},         // 不够用：交给用户选"用完"
+		{"500g", "300克", "200g"}, // 同一单位的不同写法，沿用库存的写法
+		{"1.5斤", "0.5斤", "1斤"},
+		{"0.3kg", "0.1公斤", "0.2kg"}, // 不出现 0.19999999 这类浮点尾巴
+		{"1斤", "200g", ""},          // 不做单位换算
+		{"半袋", "1袋", ""},            // 无法解析
+		{"3个", "适量", ""},
+		{"", "3个", ""},
+		{"2个+1袋", "1个", ""}, // 组合数量不算
+		{"6", "2", "4"},     // 都不带单位也算同单位
+		{"6", "2个", ""},
+	}
+	for _, tt := range tests {
+		if got := remainingAfterUse(tt.stock, tt.used); got != tt.want {
+			t.Fatalf("remainingAfterUse(%q, %q) = %q, want %q", tt.stock, tt.used, got, tt.want)
+		}
+	}
+}
+
+func TestMatchDishConsumptionRemainingHint(t *testing.T) {
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	dish := dishWithIngredients(1, "番茄炒蛋", false, `[{"name":"鸡蛋","amount":"3个"},{"name":"番茄","amount":"适量"}]`)
+	batches := []models.InventoryBatch{
+		{ID: 1, ItemName: "鸡蛋", Quantity: "10个", ExpiryDate: "2026-11-20"},
+		{ID: 2, ItemName: "番茄", Quantity: "4个", ExpiryDate: "2026-11-01"},
+	}
+	slots := matchDishConsumption(dish, batches, today)
+	egg, _ := slotByName(slots, "鸡蛋")
+	tomato, _ := slotByName(slots, "番茄")
+	if len(egg.Batches) != 1 || egg.Batches[0].RemainingHint != "7个" {
+		t.Fatalf("鸡蛋 10个 用 3个 应提示还剩 7个, got %+v", egg.Batches)
+	}
+	if len(tomato.Batches) != 1 || tomato.Batches[0].RemainingHint != "" {
+		t.Fatalf("菜谱写'适量'无法计算，不应给提示, got %+v", tomato.Batches)
+	}
+}
+
+func TestConsumeInventoryRemoveAndUpdate(t *testing.T) {
+	setupTestDB(t, &models.InventoryBatch{})
+	for _, b := range []models.InventoryBatch{
+		{ItemName: "番茄", Quantity: "2个", InStock: true},
+		{ItemName: "鸡蛋", Quantity: "10个", InStock: true},
+		{ItemName: "排骨", Quantity: "500g", InStock: true},
+	} {
+		database.DB.Create(&b)
+	}
+	var all []models.InventoryBatch
+	database.DB.Order("id ASC").Find(&all)
+
+	// 番茄用完移出、鸡蛋还剩 7 个；9999 已不在库不算错误
+	removed, updated, err := ConsumeInventory([]uint{all[0].ID}, []BatchRemaining{{BatchID: all[1].ID, Quantity: " 7个 "}, {BatchID: 9999, Quantity: "1个"}})
+	if err != nil || removed != 1 || updated != 1 {
+		t.Fatalf("removed=%d updated=%d err=%v, want 1 1 nil", removed, updated, err)
+	}
+	var egg models.InventoryBatch
+	database.DB.First(&egg, all[1].ID)
+	if egg.Quantity != "7个" {
+		t.Fatalf("鸡蛋应改为 7个, got %q", egg.Quantity)
+	}
+
+	// 剩余数量为空：整个事务回滚，排骨不能被先移出
+	if _, _, err := ConsumeInventory([]uint{all[2].ID}, []BatchRemaining{{BatchID: all[1].ID, Quantity: "  "}}); err == nil {
+		t.Fatalf("剩余数量为空应返回错误")
+	}
+	var n int64
+	database.DB.Model(&models.InventoryBatch{}).Where("id = ?", all[2].ID).Count(&n)
+	if n != 1 {
+		t.Fatalf("失败时应整体回滚，排骨不应被移出")
+	}
+}
+
 func TestConsumeInventoryBatches(t *testing.T) {
 	setupTestDB(t, &models.InventoryBatch{})
 	for _, name := range []string{"番茄", "鸡蛋", "排骨"} {

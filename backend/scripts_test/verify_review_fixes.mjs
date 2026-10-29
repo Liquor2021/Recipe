@@ -66,6 +66,17 @@ async function main() {
   r = await req("POST", "/fridge/consume", { batch_ids: [] })
   check("空批次列表返回 400", r.status === 400, JSON.stringify(r))
 
+  console.log("== 按用量扣库存：用了一部分只改剩余量 ==")
+  await req("POST", "/fridge", { item_name: "E2E测试食材", quantity: "5份", expiry_date: dayFromNow(5) })
+  r = await req("GET", `/fridge/consumption?dish_id=${dishID}`)
+  const partSlot = (r.data?.slots || []).find((s) => s.requested_name === "E2E测试食材")
+  const partBatch = partSlot?.batches?.[0]
+  check("库存 5份、菜谱 3份 → 建议还剩 2份", partBatch && partBatch.remaining_hint === "2份", JSON.stringify(partSlot))
+  r = await req("POST", "/fridge/consume", { remaining: [{ batch_id: partBatch?.batch_id, quantity: "2份" }] })
+  const partLeft = ((await req("GET", "/fridge")).data || []).find((b) => b.id === partBatch?.batch_id)
+  check("只改剩余量、批次仍在冰箱", r.code === 0 && r.data?.updated === 1 && r.data?.removed === 0 && partLeft?.quantity === "2份", JSON.stringify({ r, partLeft }))
+  await req("DELETE", `/fridge/${encodeURIComponent("E2E测试食材")}`)
+
   console.log("== 补料：真实结果 + 菜谱用量 ==")
   r = await req("POST", "/shopping-list/items", { dish_id: dishID, dish_name: "E2E排骨测试", items: [{ name: "E2E测试食材" }] })
   check("补料返回 added=1", r.code === 0 && r.data?.added === 1, JSON.stringify(r))

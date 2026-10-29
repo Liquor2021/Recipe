@@ -3,10 +3,12 @@ package services
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"ninimenu/internal/database"
 	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -368,13 +370,16 @@ const (
 
 // ConsumptionBatch 做完菜后可扣减的一个库存批次
 type ConsumptionBatch struct {
-	BatchID    uint      `json:"batch_id"`
-	StockName  string    `json:"stock_name"`
-	Quantity   string    `json:"quantity"`
-	ExpiryDate string    `json:"expiry_date"`
-	DaysLeft   int       `json:"days_left"` // noExpiryDays 表示未设置保质期
-	Kind       string    `json:"kind"`
-	createdAt  time.Time // 先进先出排序用，不输出
+	BatchID    uint   `json:"batch_id"`
+	StockName  string `json:"stock_name"`
+	Quantity   string `json:"quantity"`
+	ExpiryDate string `json:"expiry_date"`
+	DaysLeft   int    `json:"days_left"` // noExpiryDays 表示未设置保质期
+	Kind       string `json:"kind"`
+	// RemainingHint 按菜谱用量（1 份）算出的剩余量，如库存"6个"、菜谱"3个" → "3个"；
+	// 单位对不上、无法解析或会用完时为空。只是建议值，用户在弹层里可以改
+	RemainingHint string    `json:"remaining_hint"`
+	createdAt     time.Time // 先进先出排序用，不输出
 }
 
 // ConsumptionSlot 菜谱里的一项主料，及冰箱里能对应上的批次
@@ -519,6 +524,9 @@ func matchDishConsumption(dish models.Dish, batches []models.InventoryBatch, tod
 			}
 			return lessFIFO(a.DaysLeft, b.DaysLeft, a.createdAt, b.createdAt, a.BatchID, b.BatchID)
 		})
+		for i := range s.batches {
+			s.batches[i].RemainingHint = remainingAfterUse(s.batches[i].Quantity, s.amount)
+		}
 		var suggested uint
 		if consumeRank(s.batches[0], s.head) <= 1 {
 			suggested = s.batches[0].BatchID
@@ -548,6 +556,95 @@ func MatchDishConsumption(dishID uint) (*ConsumptionMatch, bool, error) {
 		return nil, false, err
 	}
 	return &ConsumptionMatch{DishID: dish.ID, Slots: matchDishConsumption(dish, batches, time.Now())}, true, nil
+}
+
+// unitAliases 同一单位的常见写法归一（只做写法归一，不做克/斤之类的换算）
+var unitAliases = map[string]string{
+	"g": "克", "克": "克",
+	"kg": "千克", "千克": "千克", "公斤": "千克",
+	"ml": "毫升", "毫升": "毫升",
+	"l": "升", "升": "升",
+	"斤": "斤",
+}
+
+func normalizeUnit(u string) string {
+	u = strings.ToLower(strings.TrimSpace(u))
+	if a, ok := unitAliases[u]; ok {
+		return a
+	}
+	return u
+}
+
+// parseSimpleAmount 解析"数字+单位"形式的数量（如"6个""0.5斤"）；带"+"的组合或非数字开头返回 ok=false
+func parseSimpleAmount(s string) (float64, string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.ContainsAny(s, "+＋") {
+		return 0, "", false
+	}
+	m := amountPattern.FindStringSubmatch(s)
+	if m == nil {
+		return 0, "", false
+	}
+	n, err := strconv.ParseFloat(m[1], 64)
+	if err != nil {
+		return 0, "", false
+	}
+	return n, strings.TrimSpace(m[2]), true
+}
+
+// remainingAfterUse 库存数量减去菜谱用量后的剩余量（沿用库存的单位写法）。
+// 只在两边都是"数字+单位"且单位相同（同一单位的不同写法也算，如 g/克）时计算；
+// 不做单位换算，剩余 <= 0 或无法计算时返回空串（交给用户自己选"用完"或手填）
+func remainingAfterUse(stockQty, usedAmount string) string {
+	have, haveUnit, ok := parseSimpleAmount(stockQty)
+	if !ok {
+		return ""
+	}
+	used, usedUnit, ok := parseSimpleAmount(usedAmount)
+	if !ok || used <= 0 || normalizeUnit(haveUnit) != normalizeUnit(usedUnit) {
+		return ""
+	}
+	left := math.Round((have-used)*100) / 100
+	if left <= 0 {
+		return ""
+	}
+	return formatAmountNumber(left) + haveUnit
+}
+
+// BatchRemaining 做完菜后某批次还剩多少（只改数量，不移出）
+type BatchRemaining struct {
+	BatchID  uint
+	Quantity string
+}
+
+// ConsumeInventory 做完菜后更新冰箱：removeIDs 整批移出，remaining 改成剩余数量，
+// 在同一事务里完成，任一步失败全部回滚。已不在库的批次不算错误，按实际影响行数返回。
+func ConsumeInventory(removeIDs []uint, remaining []BatchRemaining) (removed, updated int64, err error) {
+	err = database.DB.Transaction(func(tx *gorm.DB) error {
+		if len(removeIDs) > 0 {
+			res := tx.Where("id IN ?", removeIDs).Delete(&models.InventoryBatch{})
+			if res.Error != nil {
+				return res.Error
+			}
+			removed = res.RowsAffected
+		}
+		for _, r := range remaining {
+			qty := strings.TrimSpace(r.Quantity)
+			if qty == "" {
+				return errors.New("剩余数量为空")
+			}
+			res := tx.Model(&models.InventoryBatch{}).Where("id = ?", r.BatchID).Update("quantity", qty)
+			if res.Error != nil {
+				return res.Error
+			}
+			updated += res.RowsAffected
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return removed, updated, nil
 }
 
 // ConsumeInventoryBatches 一次移除多个批次（单条 DELETE，原子生效），返回实际移除数。
