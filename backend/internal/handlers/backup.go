@@ -21,6 +21,11 @@ func ListBackups(c *gin.Context) {
 	utils.Success(c, gin.H{"keep": config.C.DBBackupKeep, "dir": config.C.DBBackupDir, "files": files})
 }
 
+// GetSecurityStatus 后台提醒：哪些口令/密钥还是默认值
+func GetSecurityStatus(c *gin.Context) {
+	utils.Success(c, gin.H{"insecure_defaults": config.C.InsecureDefaults()})
+}
+
 // DownloadBackup 现做一份完整的数据库副本供下载（不含上传的图片）
 func DownloadBackup(c *gin.Context) {
 	tmpDir, err := os.MkdirTemp("", "ninimenu-export-")

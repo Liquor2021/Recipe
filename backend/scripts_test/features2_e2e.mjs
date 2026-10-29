@@ -71,6 +71,11 @@ async function main() {
   const noAuth = await fetch(BASE + "/admin/backup/download", { headers: H })
   check("没有管理端登录不能下载", [401, 403].includes(noAuth.status), String(noAuth.status))
 
+  console.log("== 默认口令提醒 ==")
+  r = await req("GET", "/admin/security", undefined, AH)
+  // E2E 服务用的是默认口令 nini123、未设置 JWT_SECRET
+  check("列出仍是默认值的口令和密钥", r.code === 0 && ["APP_PASSWORD", "ADMIN_PASSWORD", "JWT_SECRET"].every((n) => (r.data?.insecure_defaults || []).includes(n)), JSON.stringify(r.data))
+
   // 清理
   await req("DELETE", `/fridge/${encodeURIComponent("E2E入库食材")}`)
   if (rec.data?.id) await req("DELETE", `/records/${rec.data.id}`)

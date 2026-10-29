@@ -71,6 +71,8 @@ chmod +x ninimenu
 
 可写入项目根目录 `.env` 文件，运行时自动加载。发布包中使用 `env.bak`。
 
+`APP_PASSWORD`、`ADMIN_PASSWORD`、`JWT_SECRET` 的默认值是公开的，只适合本机试用；仍是默认值时，启动日志和管理后台会给出提醒。部署到局域网或公网前务必改掉，尤其是 `JWT_SECRET`：用默认值时，知道它的人可以自己签发管理端登录凭证。
+
 ## 数据库备份与恢复
 
 服务运行时每天自动用 `VACUUM INTO` 备份一次数据库（`ninimenu-YYYY-MM-DD.db`），只保留最新 `DB_BACKUP_KEEP` 份；管理后台「设置 → 数据备份」可以查看备份并下载一份当前数据库。备份只含数据库，上传的图片原图在 `BACKUP_DIR`。

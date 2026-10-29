@@ -141,6 +141,11 @@ export const dashboardApi = {
   get: () => api<DashboardData>("GET", "/admin/dashboard"),
 }
 
+export const securityApi = {
+  // 仍是默认值的口令/密钥（环境变量名）
+  status: () => api<{ insecure_defaults: string[] }>("GET", "/admin/security"),
+}
+
 export const backupApi = {
   list: () => api<{ keep: number; dir: string; files: { name: string; size: number; mod_time: string }[] }>("GET", "/admin/backups"),
   // 现做一份完整的数据库副本并下载（二进制，不走 JSON 封装）

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { backupApi, settingsApi, shoppingCategoriesApi } from "@/api"
+import SecurityNotice from "@/components/SecurityNotice"
 import { asString } from "@/lib/utils"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import type { FamilyMember, ShoppingCategoryOverride } from "@/types"
@@ -477,6 +478,8 @@ export default function AdminSettings() {
       </div>
 
       <BackupCard />
+
+      <SecurityNotice />
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="text-[13px] font-semibold text-text2 mb-1">密码来源</div>

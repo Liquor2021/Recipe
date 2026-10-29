@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { dashboardApi } from "@/api"
+import SecurityNotice from "@/components/SecurityNotice"
 
 function moodLabel(m: string) {
   if (m === "yum" || m === "great") return "😋"
@@ -30,6 +31,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="px-5 py-4 max-w-[640px] mx-auto pb-20">
+      <div className="mb-4 empty:hidden"><SecurityNotice /></div>
       <div className="grid grid-cols-3 gap-2.5 mb-5">
         <div className="bg-card rounded-2xl p-3 shadow-sm text-center">
           <div className="text-xl font-extrabold">{d?.total_dishes || 0}</div>

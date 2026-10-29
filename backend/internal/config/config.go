@@ -27,14 +27,36 @@ type Config struct {
 
 var C Config
 
+// 未配置时的默认口令与签名密钥：只适合本机试用，部署到局域网/公网前必须改
+const (
+	DefaultPassword  = "nini123"
+	DefaultJWTSecret = "ninimenu-secret-key"
+)
+
+// InsecureDefaults 仍在用默认值的安全相关配置（环境变量名）。
+// JWT_SECRET 用默认值时，知道这个公开默认值的人可以自己签发管理端登录凭证，绕过管理密码。
+func (c Config) InsecureDefaults() []string {
+	var names []string
+	if c.AppPassword == DefaultPassword {
+		names = append(names, "APP_PASSWORD")
+	}
+	if c.AdminPassword == DefaultPassword {
+		names = append(names, "ADMIN_PASSWORD")
+	}
+	if c.JWTSecret == DefaultJWTSecret {
+		names = append(names, "JWT_SECRET")
+	}
+	return names
+}
+
 func Load() {
 	loadDotEnv()
 
 	C = Config{
 		Port:           getEnv("PORT", "8080"),
-		AppPassword:    getEnv("APP_PASSWORD", getEnv("ADMIN_PASSWORD", "nini123")),
-		AdminPassword:  getEnv("ADMIN_PASSWORD", "nini123"),
-		JWTSecret:      getEnv("JWT_SECRET", "ninimenu-secret-key"),
+		AppPassword:    getEnv("APP_PASSWORD", getEnv("ADMIN_PASSWORD", DefaultPassword)),
+		AdminPassword:  getEnv("ADMIN_PASSWORD", DefaultPassword),
+		JWTSecret:      getEnv("JWT_SECRET", DefaultJWTSecret),
 		JWTExpire:      getEnv("JWT_EXPIRE", "24h"),
 		RepeatDays:     3,
 		DBPath:         getEnv("DB_PATH", "data/ninimenu.db"),
