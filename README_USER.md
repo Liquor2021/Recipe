@@ -223,7 +223,7 @@ backend\imgtool.exe -t 250 logo.png
 
 **Q: 忘记密码怎么办？**
 
-A: 在运行目录创建 `.env` 文件，设置 `APP_PASSWORD=新密码` 和 `ADMIN_PASSWORD=新密码`，重启即可。
+A: 在运行目录创建 `.env` 文件，设置 `APP_PASSWORD=新密码` 和 `ADMIN_PASSWORD=新密码`，重启即可（顺手把 `JWT_SECRET` 也设成一串随机字符）。
 
 **Q: 数据存在哪里？**
 
