@@ -77,6 +77,12 @@ async function main() {
   console.log("== 家中有：过期不算、取消只移未过期批 ==")
   const rec = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E排骨测试", meal_type: "lunch", meal_date: dayFromNow(0) })
   check("记录测试菜（生成买菜清单）", rec.code === 0, JSON.stringify(rec))
+  r = await req("PUT", `/records/${rec.data?.id}`, { rating: 4, mood: "yum" })
+  check("给记录打 4 星", r.code === 0 && r.data?.rating === 4, JSON.stringify(r))
+  r = await req("PUT", `/records/${rec.data?.id}`, { mood: "ok", remark: "E2E" })
+  check("只改心情备注时评分保留", r.code === 0 && r.data?.rating === 4 && r.data?.mood === "ok", JSON.stringify(r))
+  r = await req("PUT", `/records/${rec.data?.id}`, { rating: 9 })
+  check("评分超出 0-5 返回 400", r.status === 400, JSON.stringify(r))
   const afterRecord = await shoppingItem("E2E测试食材")
   check("先补料再记录这道菜，用量不翻倍（仍是 3份）", afterRecord && afterRecord.amount === "3份", JSON.stringify(afterRecord))
   await req("POST", "/fridge", { item_name: "排骨", expiry_date: dayFromNow(-1) }) // 已过期的一批

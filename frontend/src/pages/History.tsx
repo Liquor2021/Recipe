@@ -12,7 +12,7 @@ import PhotoViewer from "@/components/PhotoViewer"
 import SwipeDeleteRow from "@/components/SwipeDeleteRow"
 import { cardShadow } from "@/components/Card"
 import toast from "react-hot-toast"
-import { CalendarDays } from "lucide-react"
+import { CalendarDays, Star } from "lucide-react"
 
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 
@@ -59,6 +59,8 @@ export default function History() {
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate())
   const [ratingRecord, setRatingRecord] = useState<MealRecord | null>(null)
   const [ratingMood, setRatingMood] = useState<string>("")
+  // 1-5 星，0 = 未打分（报告的平均评分、菜品详情的评分趋势用它）
+  const [ratingStars, setRatingStars] = useState(0)
   const [ratingRemark, setRatingRemark] = useState("")
   const [ratingPhoto, setRatingPhoto] = useState("")
   const [showMealRating, setShowMealRating] = useState(false)
@@ -194,6 +196,7 @@ export default function History() {
   function openRating(r: MealRecord) {
     setRatingRecord(r)
     setRatingMood(r.mood || "")
+    setRatingStars(r.rating || 0)
     setRatingRemark(r.remark || "")
     setRatingPhoto(r.photo || "")
   }
@@ -202,7 +205,7 @@ export default function History() {
     if (!ratingRecord) return
     updateMut.mutate({
       id: ratingRecord.id,
-      data: { mood: ratingMood, remark: ratingRemark, photo: ratingPhoto },
+      data: { mood: ratingMood, rating: ratingStars, remark: ratingRemark, photo: ratingPhoto },
     })
   }
 
@@ -452,6 +455,7 @@ export default function History() {
                     {r.mood ? (
                       <div onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 transition-transform">
                         <span className="text-lg">{moodEmojiMap[r.mood]}</span>
+                        {r.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{r.rating}</span>}
                         {r.remark && <span className="text-[11px] text-text2 max-w-[60px] truncate">{r.remark}</span>}
                       </div>
                     ) : (
@@ -530,6 +534,7 @@ export default function History() {
                 {r.mood ? (
                   <div onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 transition-transform">
                     <span className="text-lg">{moodEmojiMap[r.mood]}</span>
+                    {r.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{r.rating}</span>}
                     {r.remark && <span className="text-[11px] text-text2 max-w-[60px] truncate">{r.remark}</span>}
                   </div>
                 ) : (
@@ -568,6 +573,23 @@ export default function History() {
                     <span className={`text-xs font-medium ${ratingMood === m.key ? "text-primary" : "text-text2"}`}>{m.label}</span>
                   </button>
                 ))}
+              </div>
+              <div className="mb-5">
+                <div className="text-xs text-text2 font-semibold mb-2">打分（可选，再点一次取消）</div>
+                <div className="flex items-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      aria-label={`${s} 星`}
+                      onClick={() => setRatingStars((cur) => (cur === s ? 0 : s))}
+                      className="w-9 h-9 flex items-center justify-center rounded-full transition-all active:scale-90"
+                    >
+                      <Star size={24} className={s <= ratingStars ? "text-yellow fill-yellow" : "text-text4"} />
+                    </button>
+                  ))}
+                  {ratingStars > 0 && <span className="ml-1 text-xs font-semibold text-text2">{ratingStars} 分</span>}
+                </div>
               </div>
               <div className="mb-5">
                 <div className="text-xs text-text2 font-semibold mb-2">备注（可选）</div>

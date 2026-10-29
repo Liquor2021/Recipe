@@ -37,8 +37,8 @@ func setupHandlerTestDB(t *testing.T, models ...any) *gorm.DB {
 	return db
 }
 
-// serveJSON 直接调用处理器（不经过路由与鉴权中间件），返回响应
-func serveJSON(t *testing.T, handler gin.HandlerFunc, method, target string, body any) *httptest.ResponseRecorder {
+// serveJSON 直接调用处理器（不经过路由与鉴权中间件），返回响应；params 为路由参数（如 :id）
+func serveJSON(t *testing.T, handler gin.HandlerFunc, method, target string, body any, params ...gin.Param) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	var reader io.Reader
@@ -53,6 +53,7 @@ func serveJSON(t *testing.T, handler gin.HandlerFunc, method, target string, bod
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(method, target, reader)
 	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = params
 	handler(c)
 	return w
 }

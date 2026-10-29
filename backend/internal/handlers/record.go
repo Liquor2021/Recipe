@@ -203,6 +203,10 @@ func CreateRecord(c *gin.Context) {
 		utils.BadRequest(c, "请填写完整信息")
 		return
 	}
+	if !validRating(req.Rating) {
+		utils.BadRequest(c, "评分应为 0-5")
+		return
+	}
 
 	var existing int64
 	database.DB.Model(&models.MealRecord{}).
@@ -313,11 +317,34 @@ func BatchCreateRecords(c *gin.Context) {
 	})
 }
 
+// UpdateRecordRequest 只更新请求里带了的字段：没带 rating 时不能把已有评分清成 0
+// （历史页评价弹层过去只提交心情/备注/照片）
 type UpdateRecordRequest struct {
-	Rating int    `json:"rating"`
-	Remark string `json:"remark"`
-	Mood   string `json:"mood"`
-	Photo  string `json:"photo"`
+	Rating *int    `json:"rating"`
+	Remark *string `json:"remark"`
+	Mood   *string `json:"mood"`
+	Photo  *string `json:"photo"`
+}
+
+// validRating 评分 1-5 星，0 表示未评分（报告平均分、评分趋势只统计 > 0 的记录）
+func validRating(r int) bool {
+	return r >= 0 && r <= 5
+}
+
+// applyRecordUpdate 把请求里带了的字段写到记录上
+func applyRecordUpdate(record *models.MealRecord, req UpdateRecordRequest) {
+	if req.Rating != nil {
+		record.Rating = *req.Rating
+	}
+	if req.Remark != nil {
+		record.Remark = *req.Remark
+	}
+	if req.Mood != nil {
+		record.Mood = *req.Mood
+	}
+	if req.Photo != nil {
+		record.Photo = *req.Photo
+	}
 }
 
 func UpdateRecord(c *gin.Context) {
@@ -333,11 +360,12 @@ func UpdateRecord(c *gin.Context) {
 		utils.BadRequest(c, "请求数据无效")
 		return
 	}
+	if req.Rating != nil && !validRating(*req.Rating) {
+		utils.BadRequest(c, "评分应为 0-5")
+		return
+	}
 
-	record.Rating = req.Rating
-	record.Remark = req.Remark
-	record.Mood = req.Mood
-	record.Photo = req.Photo
+	applyRecordUpdate(&record, req)
 	if err := database.DB.Save(&record).Error; err != nil {
 		utils.InternalError(c, "保存记录失败")
 		return
