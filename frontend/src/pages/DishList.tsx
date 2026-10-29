@@ -6,6 +6,7 @@ import { asArray } from "@/lib/utils"
 import { gsap, scrollToElement } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
+import SafeImage from "@/components/SafeImage"
 import { isImageUrl } from "@/lib/dishImage"
 import type { Dish, MealRecord } from "@/types"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
@@ -541,7 +542,12 @@ function TodayMenuItem({ record, dish, onDelete, onClick }: { record: MealRecord
         {dishHasImage ? (
           <DishImage dish={dish!} className="w-full h-full" emojiSize="text-[20px]" />
         ) : recordHasImage ? (
-          <img src={record.dish_image_url} alt={record.dish_name} className="w-full h-full object-cover" />
+          <SafeImage
+            src={record.dish_image_url}
+            alt={record.dish_name}
+            className="w-full h-full object-cover"
+            fallback={<div className="w-full h-full flex items-center justify-center text-[20px]">{record.dish_emoji || "🍽"}</div>}
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-[20px]">{record.dish_emoji || "🍽"}</div>
         )}

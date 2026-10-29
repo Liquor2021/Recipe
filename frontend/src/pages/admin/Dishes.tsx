@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, settingsApi } from "@/api"
 import { asArray } from "@/lib/utils"
+import { getDishImageUrl } from "@/lib/dishImage"
+import SafeImage from "@/components/SafeImage"
 import type { Dish } from "@/types"
 import toast from "react-hot-toast"
 import { Search } from "lucide-react"
@@ -250,7 +252,7 @@ export default function AdminDishes() {
                   </button>
                 )}
                 <div className="w-10 h-10 rounded-[10px] bg-primary-light flex items-center justify-center text-xl flex-shrink-0">
-                  {d.image_url ? <img src={d.image_url} alt="" className="w-full h-full object-cover rounded-[10px]" /> : getEmoji(d)}
+                  <SafeImage src={getDishImageUrl(d)} alt="" className="w-full h-full object-cover rounded-[10px]" fallback={getEmoji(d)} />
                 </div>
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <div className="text-sm font-semibold truncate">{d.name}</div>

@@ -87,7 +87,7 @@ export default function AdminRecords() {
                 </div>
               </div>
               {r.photo && (
-                <img src={r.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+                <img src={r.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" loading="lazy" decoding="async" />
               )}
               <button
                 onClick={() => { if (confirm("确定删除此记录？")) deleteMut.mutate(r.id) }}

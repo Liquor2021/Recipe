@@ -7,8 +7,9 @@ const categoryEmojis: Record<string, string> = {
   汤品: "🍲", 主食: "🍚", 小食: "🥟",
 }
 
+// 菜系 emoji；image_url 里存的若是 emoji 文本（不是图片地址）也用它，否则用默认的盘子
 export function getDishEmoji(d: Dish): string {
-  return categoryEmojis[d.category] || d.image_url || "🍽"
+  return categoryEmojis[d.category] || (d.image_url && !isImageUrl(d.image_url) ? d.image_url : "") || "🍽"
 }
 
 export function isImageUrl(url: string | undefined): boolean {

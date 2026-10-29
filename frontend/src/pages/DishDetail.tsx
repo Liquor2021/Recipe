@@ -6,6 +6,7 @@ import { dishesApi, favoritesApi, recordsApi } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import { asArray } from "@/lib/utils"
 import { getDishImageUrl, getDishEmoji } from "@/lib/dishImage"
+import SafeImage from "@/components/SafeImage"
 import PhotoViewer from "@/components/PhotoViewer"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import SectionHeader from "@/components/SectionHeader"
@@ -218,11 +219,13 @@ export default function DishDetail() {
       />
 
       <div className="relative h-[260px] bg-gradient-to-br from-primary-light to-pink-light overflow-hidden">
-        {getDishImageUrl(dish) ? (
-          <img src={getDishImageUrl(dish)!} alt={dish.name} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-[80px]">{getDishEmoji(dish)}</div>
-        )}
+        <SafeImage
+          src={getDishImageUrl(dish)}
+          alt={dish.name}
+          className="w-full h-full object-cover"
+          eager
+          fallback={<div className="w-full h-full flex items-center justify-center text-[80px]">{getDishEmoji(dish)}</div>}
+        />
         <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-bg to-transparent" />
         <button onClick={() => favMut.mutate()} className={`absolute bottom-4 right-5 w-11 h-11 rounded-full bg-card shadow-md flex items-center justify-center text-xl transition-all active:animate-heartbeat z-[1] ${isFav ? "text-primary" : ""}`}>
           {isFav ? "❤" : "♡"}
