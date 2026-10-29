@@ -142,6 +142,18 @@ export default function Fridge() {
     onSuccess: () => { invalidate(); setEditing(null); toast.success("已移出冰箱") },
     onError: () => toast.error("移出失败，稍后再试"),
   })
+  // 一键清理已过期批次（批量接口单次最多 100 批，分段提交）
+  const clearExpiredMut = useMutation({
+    mutationFn: async (ids: number[]) => {
+      let removed = 0
+      for (let i = 0; i < ids.length; i += 100) {
+        removed += (await fridgeApi.consume(ids.slice(i, i + 100))).removed
+      }
+      return removed
+    },
+    onSuccess: (removed) => { invalidate(); toast.success(`已清理 ${removed} 批过期食材`) },
+    onError: () => toast.error("清理失败，稍后再试"),
+  })
 
   // 缺料一键补入买菜清单（今天去买，做今天的菜）
   const addMissingMut = useMutation({
@@ -175,6 +187,12 @@ export default function Fridge() {
     const left = daysLeft(i.expiry_date)
     return left !== null && left <= 2
   }).length
+  const expiredIds = items
+    .filter((i) => {
+      const left = daysLeft(i.expiry_date)
+      return left !== null && left < 0
+    })
+    .map((i) => i.id)
 
   function handleAdd(raw: string) {
     const name = raw.trim()
@@ -241,6 +259,20 @@ export default function Fridge() {
                 + {name}
               </button>
             ))}
+          </div>
+        )}
+
+        {expiredIds.length > 0 && (
+          <div className="flex items-center justify-between gap-3 mb-3 px-3.5 py-2.5 rounded-2xl bg-red-light text-red">
+            <span className="text-xs font-semibold">有 {expiredIds.length} 批食材已过期</span>
+            <button
+              type="button"
+              disabled={clearExpiredMut.isPending}
+              onClick={() => { if (confirm(`确定把 ${expiredIds.length} 批过期食材移出冰箱吗？`)) clearExpiredMut.mutate(expiredIds) }}
+              className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold bg-red text-white transition-all active:scale-95 disabled:opacity-50"
+            >
+              一键清理
+            </button>
           </div>
         )}
 

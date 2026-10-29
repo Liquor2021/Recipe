@@ -1,5 +1,5 @@
 // 审核修复 E2E：扣库存精确匹配 / 补料 / 家中有 / 严格忌口全覆盖 / 周菜单缓存失效
-// 会留下少量 "E2E" 前缀的测试数据（补料条目没有删除接口），请对着临时库启动的服务跑：
+// 会留下痕迹（记录测试菜会解锁成就、测试菜是软删除），请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/verify_review_fixes.mjs
 const BASE = "http://localhost:8080/api"
 const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
@@ -122,6 +122,11 @@ async function main() {
 
   // 清理：记录、测试菜、冰箱、设置
   if (rec.data?.id) await req("DELETE", `/records/${rec.data.id}`)
+  // 删掉记录后只剩补料条目：可以从清单直接删掉
+  const leftover = await shoppingItem("E2E测试食材")
+  check("只剩补料的条目标记为可删除", leftover && leftover.removable === true, JSON.stringify(leftover))
+  r = await req("DELETE", `/shopping-list/items/${encodeURIComponent("E2E测试食材")}`)
+  check("删掉补料条目", r.code === 0 && r.data?.removed === 1 && !(await shoppingItem("E2E测试食材")), JSON.stringify(r))
   if (dishID) await req("DELETE", `/dishes/${dishID}`, undefined, AH)
   for (const name of new Set(((await req("GET", "/fridge")).data || []).map((b) => b.item_name))) await req("DELETE", `/fridge/${encodeURIComponent(name)}`)
   for (const b of fridgeBefore) await req("POST", "/fridge", { item_name: b.item_name, quantity: b.quantity, expiry_date: b.expiry_date })

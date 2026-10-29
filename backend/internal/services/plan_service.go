@@ -423,6 +423,8 @@ type ShoppingItem struct {
 	InStock bool   `json:"in_stock"`
 	// StockBatches 冰箱里该食材的未过期批次数（取消"家中有"会把它们一起移出，前端据此确认）
 	StockBatches int `json:"stock_batches"`
+	// Removable 只来自补料（没有菜品联动条目）：可以直接从清单删掉
+	Removable bool `json:"removable"`
 }
 
 type ShoppingCategoryOverride struct {
@@ -714,8 +716,9 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	}
 
 	type nameAccum struct {
-		amounts []string
-		checked bool
+		amounts   []string
+		checked   bool
+		hasLinked bool // 有菜品联动条目（删记录才会消失）
 	}
 	merged := make(map[string]*nameAccum)
 	for _, ch := range checks {
@@ -730,6 +733,9 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 		}
 		if ch.Checked {
 			entry.checked = true
+		}
+		if ch.MealType != "extra" {
+			entry.hasLinked = true
 		}
 	}
 
@@ -750,7 +756,7 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	for name, entry := range merged {
 		amountStr := compactShoppingAmounts(entry.amounts)
 		stock := stockCounts[ingredients.Normalize(name)]
-		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: stock > 0, StockBatches: stock}
+		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked}
 		category := classifyShoppingItem(name, categoryByName)
 		if _, ok := grouped[category]; !ok {
 			category = "其他"
@@ -885,14 +891,30 @@ func DeleteShoppingCategoryOverride(itemName string) error {
 	return database.DB.Where("item_name = ?", itemName).Delete(&models.ShoppingItemCategory{}).Error
 }
 
+// ShoppingListDates 买菜清单展示范围：今天 + 明天
+func ShoppingListDates() []string {
+	now := time.Now()
+	return []string{now.Format("2006-01-02"), now.AddDate(0, 0, 1).Format("2006-01-02")}
+}
+
 // ToggleShoppingCheck 勾选/取消某食材"已买"：只改买菜清单展示范围（今天+明天）内的条目，
 // 不能把历史日期和更远日期里同名的条目一起改掉（会污染"已买"统计与之后的清单）
 func ToggleShoppingCheck(itemName string, checked bool) error {
-	now := time.Now()
-	dates := []string{now.Format("2006-01-02"), now.AddDate(0, 0, 1).Format("2006-01-02")}
 	return database.DB.Model(&models.ShoppingCheck{}).
-		Where("item_name = ? AND meal_date IN ?", itemName, dates).
+		Where("item_name = ? AND meal_date IN ?", itemName, ShoppingListDates()).
 		Update("checked", checked).Error
+}
+
+// RemoveShoppingExtraItem 从买菜清单删掉某食材的补料条目（今天+明天），返回删除条数。
+// 只删补料（meal_type=extra）：菜品联动条目跟着用餐记录走，删记录时才会一起删。
+func RemoveShoppingExtraItem(itemName string) (int64, error) {
+	itemName = strings.TrimSpace(itemName)
+	if itemName == "" {
+		return 0, ErrEmptyItemName
+	}
+	res := database.DB.Where("item_name = ? AND meal_type = ? AND meal_date IN ?", itemName, "extra", ShoppingListDates()).
+		Delete(&models.ShoppingCheck{})
+	return res.RowsAffected, res.Error
 }
 
 // ToggleHomeInventory 买菜清单"家中有"开关：打开 = 冰箱新增一批；

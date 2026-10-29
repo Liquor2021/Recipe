@@ -27,11 +27,7 @@ func RegenerateWeekPlanHandler(c *gin.Context) {
 }
 
 func GetShoppingList(c *gin.Context) {
-	today := time.Now().Format("2006-01-02")
-	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
-	dates := []string{today, tomorrow}
-
-	list, err := services.BuildShoppingList(dates)
+	list, err := services.BuildShoppingList(services.ShoppingListDates())
 	if err != nil {
 		utils.InternalError(c, "加载买菜清单失败")
 		return
@@ -112,6 +108,20 @@ func AddShoppingItemsHandler(c *gin.Context) {
 	}
 	// 前端按 added 数值组织提示文案（0 = 清单里已存在）
 	utils.Success(c, gin.H{"added": added})
+}
+
+// RemoveShoppingItemHandler 从买菜清单删掉补料条目（误点补料的撤销入口）
+func RemoveShoppingItemHandler(c *gin.Context) {
+	removed, err := services.RemoveShoppingExtraItem(c.Param("itemName"))
+	if err != nil {
+		if errors.Is(err, services.ErrEmptyItemName) {
+			utils.BadRequest(c, "参数无效")
+			return
+		}
+		utils.InternalError(c, "删除失败")
+		return
+	}
+	utils.Success(c, gin.H{"removed": removed})
 }
 
 func GetShoppingCategories(c *gin.Context) {

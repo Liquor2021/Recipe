@@ -132,6 +132,43 @@ func TestShoppingListExtraNotDoubleCountedAfterRecording(t *testing.T) {
 	}
 }
 
+func TestRemoveShoppingExtraItemOnlyDeletesExtraRows(t *testing.T) {
+	setupTestDB(t, &models.ShoppingCheck{}, &models.InventoryBatch{}, &models.ShoppingItemCategory{})
+	today := dateFromNow(0)
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "extra", DishID: 3, ItemName: "洋葱", ItemAmount: "1个"})
+	database.DB.Create(&models.ShoppingCheck{MealDate: dateFromNow(-3), MealType: "extra", DishID: 3, ItemName: "洋葱"}) // 历史条目不动
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "extra", DishID: 4, ItemName: "牛腩", ItemAmount: "300g"})
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 5, ItemName: "牛腩", ItemAmount: "500g"})
+
+	items := shoppingItemsByName(t, today)
+	if !items["洋葱"].Removable || items["牛腩"].Removable {
+		t.Fatalf("只来自补料的条目才可删除, got 洋葱=%v 牛腩=%v", items["洋葱"].Removable, items["牛腩"].Removable)
+	}
+
+	if removed, err := RemoveShoppingExtraItem("洋葱"); err != nil || removed != 1 {
+		t.Fatalf("应删掉今天的补料洋葱 1 条, got %d %v", removed, err)
+	}
+	var n int64
+	database.DB.Model(&models.ShoppingCheck{}).Where("item_name = ?", "洋葱").Count(&n)
+	if n != 1 {
+		t.Fatalf("历史日期的条目不应被删, 剩 %d 条", n)
+	}
+	// 混合条目：只删补料那份，菜品联动的用量保留
+	if _, err := RemoveShoppingExtraItem("牛腩"); err != nil {
+		t.Fatal(err)
+	}
+	items = shoppingItemsByName(t, today)
+	if _, ok := items["洋葱"]; ok {
+		t.Fatalf("洋葱应已从清单消失")
+	}
+	if it := items["牛腩"]; it.Amount != "500g" || it.Removable {
+		t.Fatalf("菜品联动的牛腩应保留 500g, got %+v", it)
+	}
+	if _, err := RemoveShoppingExtraItem("  "); err != ErrEmptyItemName {
+		t.Fatalf("空名应返回 ErrEmptyItemName, got %v", err)
+	}
+}
+
 func TestToggleHomeInventoryOffRemovesOnlyAvailableBatches(t *testing.T) {
 	setupTestDB(t, &models.InventoryBatch{})
 	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(3)})

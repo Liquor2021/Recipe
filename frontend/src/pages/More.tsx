@@ -235,6 +235,16 @@ export default function More() {
     },
   })
 
+  // 误点补料的撤销入口：只删补料条目
+  const removeItemMut = useMutation({
+    mutationFn: (itemName: string) => shoppingListApi.removeItem(itemName),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      toast.success("已从清单移除")
+    },
+    onError: () => toast.error("移除失败，稍后再试"),
+  })
+
   const settingsMut = useMutation({
     mutationFn: (s: Record<string, string>) => settingsApi.update(s),
     onSuccess: () => {
@@ -400,6 +410,16 @@ export default function More() {
                       >
                         {item.in_stock ? "家中有" : "库存"}
                       </button>
+                      {item.removable && (
+                        <button
+                          onClick={() => removeItemMut.mutate(item.name)}
+                          disabled={removeItemMut.isPending}
+                          aria-label={`从清单移除${item.name}`}
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

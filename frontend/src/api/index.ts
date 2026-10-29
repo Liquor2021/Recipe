@@ -98,6 +98,9 @@ export const shoppingListApi = {
   // 未带 amount 时后端按 dish_id 的菜谱补上用量
   addItems: (p: { dish_id?: number; dish_name?: string; items: { name: string; amount?: string }[] }) =>
     api<{ added: number }>("POST", "/shopping-list/items", p),
+  // 删掉补料条目（菜品联动的条目跟着用餐记录走，不受影响）
+  removeItem: (itemName: string) =>
+    api<{ removed: number }>("DELETE", `/shopping-list/items/${encodeURIComponent(itemName)}`),
 }
 
 export const shoppingCategoriesApi = {

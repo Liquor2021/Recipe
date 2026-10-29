@@ -37,22 +37,35 @@ function ShareBars({ shares, tone }: { shares: ReportShare[]; tone: "primary" | 
   )
 }
 
-// 分享长图弹层：内嵌 canvas 预览 + 保存图片
+// 下载/分享用的文件名：应用名可在后台自定义，去掉文件名里不允许的字符
+function reportFileName(report: DietReport, appName: string) {
+  const safeName = (appName || "NiniMenu").replace(/[\\/:*?"<>|\s]+/g, "") || "NiniMenu"
+  return `${safeName}-${report.range === "month" ? "本月" : "本周"}饮食报告-${report.end_date || ""}.png`
+}
+
+// 分享长图弹层：内嵌 canvas 预览 + 保存图片 + 系统分享（支持的浏览器）
 function ReportShareSheet({ report, appName, onClose }: { report: DietReport; appName: string; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [shareFile, setShareFile] = useState<File | null>(null)
+  const canShareFile = !!shareFile && typeof navigator.canShare === "function" && navigator.canShare({ files: [shareFile] })
 
   // 弹层打开后生成分享长图，并复制到预览画布
   useEffect(() => {
     const target = canvasRef.current
     if (!target) return
+    let cancelled = false
     try {
       const rendered = renderReportImage(report, appName)
       target.width = rendered.width
       target.height = rendered.height
       const ctx = target.getContext("2d")
       if (ctx) ctx.drawImage(rendered, 0, 0)
+      // 预先生成 PNG 文件：系统分享要在点击时同步调用，不能点了之后再等 toBlob
+      rendered.toBlob((blob) => {
+        if (!cancelled && blob) setShareFile(new File([blob], reportFileName(report, appName), { type: "image/png" }))
+      }, "image/png")
     } catch (err) {
       // 生成失败不让弹层崩溃：提示用户并禁用保存
       console.error("生成分享图失败:", err)
@@ -62,7 +75,18 @@ function ReportShareSheet({ report, appName, onClose }: { report: DietReport; ap
         toast.error("生成图片失败，请重试")
       })
     }
+    return () => { cancelled = true }
   }, [report, appName])
+
+  // 系统分享（手机上可直接发给家人或存相册）；用户取消分享不算失败
+  const handleShare = async () => {
+    if (!shareFile) return
+    try {
+      await navigator.share({ files: [shareFile] })
+    } catch (err) {
+      if ((err as DOMException)?.name !== "AbortError") toast.error("分享失败，可以先保存图片")
+    }
+  }
 
   // canvas.toBlob 导出 PNG，用临时 <a download> 触发下载
   const handleSave = () => {
@@ -79,9 +103,7 @@ function ReportShareSheet({ report, appName, onClose }: { report: DietReport; ap
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
         a.href = url
-        // 应用名可在后台自定义：去掉文件名里不允许的字符
-        const safeName = (appName || "NiniMenu").replace(/[\\/:*?"<>|\s]+/g, "") || "NiniMenu"
-        a.download = `${safeName}-${report.range === "month" ? "本月" : "本周"}饮食报告-${report.end_date || ""}.png`
+        a.download = reportFileName(report, appName)
         document.body.appendChild(a)
         a.click()
         a.remove()
@@ -120,6 +142,15 @@ function ReportShareSheet({ report, appName, onClose }: { report: DietReport; ap
               <Download size={16} strokeWidth={2.4} />
               {saving ? "保存中..." : "保存图片"}
             </button>
+            {canShareFile && !failed && (
+              <button
+                onClick={handleShare}
+                className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96 flex items-center justify-center gap-1.5"
+              >
+                <Share2 size={16} strokeWidth={2.4} />
+                分享
+              </button>
+            )}
           </div>
         </>
       )}
