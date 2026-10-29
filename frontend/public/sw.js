@@ -5,8 +5,15 @@
 // 其余 API 一律透传网络，保证数据新鲜。
 const CACHE_NAME = "ninimenu-v1"
 // API 缓存独立命名 + 版本化：策略调整时递增 vN，activate 会清掉旧版本
-const API_CACHE_NAME = "ninimenu-api-v1"
+// （v2：加入离线副本有效期与条目上限，v1 时期无上限累积的副本随升级一并清掉）
+const API_CACHE_NAME = "ninimenu-api-v2"
 const CORE_ASSETS = ["/", "/index.html", "/manifest.json"]
+
+// 离线副本最多保留 7 天：再旧的家庭数据（忌口、记录等）宁可不展示
+const API_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+// 条目上限：搜索词、分页参数会产生大量不同 URL，超出后淘汰最久未更新的
+const API_CACHE_MAX_ENTRIES = 200
+const CACHED_AT_HEADER = "sw-cached-at"
 
 // 离线可回退的数据接口白名单（前缀匹配：/api/dishes 也能覆盖 /api/dishes/1 这类详情）。
 // 前缀下挂有写端点（如 /api/records 的 POST/PUT/DELETE）也不受影响——
@@ -32,6 +39,43 @@ const API_CACHE_PREFIXES = [
 function isApiCacheable(pathname) {
   return API_CACHE_PREFIXES.some((prefix) => pathname.startsWith(prefix))
 }
+
+// 写入离线副本：附带写入时间（用于有效期判断），写完按上限淘汰最旧的条目。
+// Cache API 的 keys() 按插入顺序返回，put 同一 URL 会移到末尾，删头部即"最久未更新"。
+async function putApiCache(req, res) {
+  const body = await res.blob()
+  const headers = new Headers(res.headers)
+  // blob() 拿到的是已解压的内容：去掉原始的压缩/长度头，避免副本"自称 gzip"却是明文
+  headers.delete("content-encoding")
+  headers.delete("content-length")
+  headers.set(CACHED_AT_HEADER, String(Date.now()))
+  const cache = await caches.open(API_CACHE_NAME)
+  await cache.put(req, new Response(body, { status: res.status, statusText: res.statusText, headers }))
+  const keys = await cache.keys()
+  if (keys.length > API_CACHE_MAX_ENTRIES) {
+    await Promise.all(keys.slice(0, keys.length - API_CACHE_MAX_ENTRIES).map((k) => cache.delete(k)))
+  }
+}
+
+// 读取离线副本：超过有效期的视为不存在并顺手删除
+async function matchApiCache(req) {
+  const cache = await caches.open(API_CACHE_NAME)
+  const cached = await cache.match(req)
+  if (!cached) return undefined
+  const cachedAt = Number(cached.headers.get(CACHED_AT_HEADER) || 0)
+  if (!cachedAt || Date.now() - cachedAt > API_CACHE_TTL_MS) {
+    await cache.delete(req)
+    return undefined
+  }
+  return cached
+}
+
+// 页面通知清空离线数据（应用口令失效时）：别人拿到这台设备也看不到旧的家庭数据
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "clear-api-cache") {
+    event.waitUntil(caches.delete(API_CACHE_NAME))
+  }
+})
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -80,13 +124,11 @@ self.addEventListener("fetch", (event) => {
         .then((res) => {
           if (res.ok) {
             const copy = res.clone()
-            event.waitUntil(
-              caches.open(API_CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {})
-            )
+            event.waitUntil(putApiCache(req, copy).catch(() => {}))
           }
           return res
         })
-        .catch(() => caches.open(API_CACHE_NAME).then((cache) => cache.match(req)))
+        .catch(() => matchApiCache(req))
     )
     return
   }

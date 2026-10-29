@@ -62,58 +62,13 @@ func PickMood(c *gin.Context) {
 		return
 	}
 
-	count := 3
-
-	switch req.Mood {
-	case "tired", "lazy":
-		var dishes []models.Dish
-		database.DB.Where("enabled = ? AND difficulty = ?", true, "easy").Find(&dishes)
-		if len(dishes) > 0 {
-			shuffled := shuffleDishes(services.ExcludeDisliked(dishes))
-			if len(shuffled) > count {
-				shuffled = shuffled[:count]
-			}
-			services.RecordAchievementEvent("recommend_mood", "")
-			quote := services.GetRandomQuote("quick")
-			utils.Success(c, gin.H{"dishes": shuffled, "quote": quote})
-			return
-		}
-	case "spicy":
-		var dishes []models.Dish
-		database.DB.Where("enabled = ? AND taste = ?", true, "辣").Find(&dishes)
-		if len(dishes) > 0 {
-			shuffled := shuffleDishes(services.ExcludeDisliked(dishes))
-			if len(shuffled) > count {
-				shuffled = shuffled[:count]
-			}
-			services.RecordAchievementEvent("recommend_mood", "")
-			quote := services.GetRandomQuote("lunch")
-			utils.Success(c, gin.H{"dishes": shuffled, "quote": quote})
-			return
-		}
-	case "healthy":
-		var dishes []models.Dish
-		database.DB.Where("enabled = ? AND taste IN ?", true, []string{"清淡", "鲜"}).Find(&dishes)
-		if len(dishes) > 0 {
-			shuffled := shuffleDishes(services.ExcludeDisliked(dishes))
-			if len(shuffled) > count {
-				shuffled = shuffled[:count]
-			}
-			services.RecordAchievementEvent("recommend_mood", "")
-			quote := services.GetRandomQuote("dinner")
-			utils.Success(c, gin.H{"dishes": shuffled, "quote": quote})
-			return
-		}
-	}
-
-	dishes, err := services.PickDishes("", count, true)
-	if err != nil || len(dishes) == 0 {
+	dishes, scene := services.PickMoodDishes(req.Mood, 3)
+	if len(dishes) == 0 {
 		utils.NotFound(c, "没有可推荐的菜品")
 		return
 	}
 	services.RecordAchievementEvent("recommend_mood", "")
-	quote := services.GetRandomQuote("")
-	utils.Success(c, gin.H{"dishes": dishes, "quote": quote})
+	utils.Success(c, gin.H{"dishes": dishes, "quote": services.GetRandomQuote(scene)})
 }
 
 func PickTomorrow(c *gin.Context) {
@@ -144,8 +99,8 @@ func PickTomorrow(c *gin.Context) {
 func PickBlindBox(c *gin.Context) {
 	var dishes []models.Dish
 	database.DB.Where("enabled = ?", true).Find(&dishes)
-	// 盲盒是给全家看的单菜惊喜，直接排除命中家庭忌口的菜
-	dishes = services.ExcludeDisliked(dishes)
+	// 盲盒是给全家看的单菜惊喜：优先排除命中家庭忌口的菜（strict 下全被排除就没有盲盒）
+	dishes = services.PreferNonDisliked(dishes)
 	if len(dishes) == 0 {
 		utils.NotFound(c, "没有可推荐的菜品")
 		return
@@ -177,14 +132,4 @@ func getPickCount(c *gin.Context) int {
 		count = 10
 	}
 	return count
-}
-
-func shuffleDishes(dishes []models.Dish) []models.Dish {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	shuffled := make([]models.Dish, len(dishes))
-	copy(shuffled, dishes)
-	r.Shuffle(len(shuffled), func(i, j int) {
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-	})
-	return shuffled
 }

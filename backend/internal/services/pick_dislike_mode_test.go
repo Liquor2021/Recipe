@@ -4,32 +4,13 @@ import (
 	"fmt"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
-	"path/filepath"
 	"testing"
-
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 )
 
-// setupSettingTestDB 为单测准备独立的临时文件 SQLite（内存库在连接池多连接下会各开一个空库，不可靠）
+// setupSettingTestDB 只含 Setting 表的临时库
 func setupSettingTestDB(t *testing.T) {
 	t.Helper()
-	old := database.DB
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "settings-test.db")), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("打开测试数据库失败: %v", err)
-	}
-	if err := db.AutoMigrate(&models.Setting{}); err != nil {
-		t.Fatalf("迁移 Setting 表失败: %v", err)
-	}
-	database.DB = db
-	t.Cleanup(func() {
-		// 还原包级 database.DB，避免后续测试拿到这个已被关闭的临时连接
-		database.DB = old
-		if sqlDB, err := db.DB(); err == nil {
-			sqlDB.Close()
-		}
-	})
+	setupTestDB(t, &models.Setting{})
 }
 
 // seedSetting 写入一条设置；value 为空表示不写（模拟键缺失）

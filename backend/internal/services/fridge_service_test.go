@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"testing"
 	"time"
@@ -143,11 +144,225 @@ func TestMatchDishesNullJSONSafety(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("want 1 match, got %d", len(matches))
 	}
-	if matches[0].Missing == nil || matches[0].Matched == nil || matches[0].UsingUrgent == nil || matches[0].MatchedBatchIDs == nil {
-		t.Fatalf("slices must not be nil: matched=%v missing=%v urgent=%v batchIDs=%v", matches[0].Matched, matches[0].Missing, matches[0].UsingUrgent, matches[0].MatchedBatchIDs)
+	if matches[0].Missing == nil || matches[0].Matched == nil || matches[0].UsingUrgent == nil {
+		t.Fatalf("slices must not be nil: matched=%v missing=%v urgent=%v", matches[0].Matched, matches[0].Missing, matches[0].UsingUrgent)
 	}
-	if len(matches[0].MatchedBatchIDs) != 1 || matches[0].MatchedBatchIDs[0] != stock[0].BatchID {
-		t.Fatalf("MatchedBatchIDs = %v, want [201] (stock BatchID)", matches[0].MatchedBatchIDs)
+}
+
+func TestParseIngredientList(t *testing.T) {
+	tests := []struct {
+		note string
+		raw  string
+		want []DishIngredient
+	}{
+		{"标准对象数组", `[{"name":"鸡蛋","amount":"3个"},{"name":" 番茄 ","amount":" 2个 "}]`, []DishIngredient{{"鸡蛋", "3个"}, {"番茄", "2个"}}},
+		{"旧字符串数组", `["鸡蛋","番茄"]`, []DishIngredient{{"鸡蛋", ""}, {"番茄", ""}}},
+		{"混写逐项兼容", `["鸡蛋",{"name":"番茄","amount":"1个"}]`, []DishIngredient{{"鸡蛋", ""}, {"番茄", "1个"}}},
+		{"坏项只跳过该项", `[{"name":"鸡蛋","amount":3},{"name":"番茄"},null,""]`, []DishIngredient{{"番茄", ""}}},
+		{"非法 JSON", `not-json`, nil},
+		{"空数组", `[]`, nil},
+	}
+	for _, tt := range tests {
+		got := ParseIngredientList(tt.raw)
+		if len(got) != len(tt.want) {
+			t.Fatalf("[%s] got %v, want %v", tt.note, got, tt.want)
+		}
+		for i := range tt.want {
+			if got[i] != tt.want[i] {
+				t.Fatalf("[%s] got[%d] = %+v, want %+v", tt.note, i, got[i], tt.want[i])
+			}
+		}
+	}
+}
+
+func TestConsumeKind(t *testing.T) {
+	tests := []struct{ req, stock, want string }{
+		{"排骨", "排骨", consumeExact},
+		{"西红柿", "番茄", consumeExact},   // 真别名
+		{"排骨", "猪肉", consumeGeneric},  // 库存是泛称
+		{"猪肉", "五花肉", consumeGeneric}, // 菜谱是泛称
+		{"排骨", "五花肉", consumeSimilar}, // 两个具体部位：不能互相默认扣
+		{"排骨", "牛腩", ""},              // 不同大类
+		{"番茄", "鸡蛋", ""},
+	}
+	for _, tt := range tests {
+		if got := consumeKind(tt.req, tt.stock); got != tt.want {
+			t.Fatalf("consumeKind(%q, %q) = %q, want %q", tt.req, tt.stock, got, tt.want)
+		}
+	}
+}
+
+func slotByName(slots []ConsumptionSlot, name string) (ConsumptionSlot, bool) {
+	for _, s := range slots {
+		if s.RequestedName == name {
+			return s, true
+		}
+	}
+	return ConsumptionSlot{}, false
+}
+
+func batchIDs(s ConsumptionSlot) []uint {
+	ids := make([]uint, len(s.Batches))
+	for i, b := range s.Batches {
+		ids[i] = b.BatchID
+	}
+	return ids
+}
+
+func TestMatchDishConsumptionNeverDefaultsToOtherCut(t *testing.T) {
+	// DeepSeek 复现场景：菜要排骨，冰箱只有五花肉（明天到期）+ 排骨（下周到期）。
+	// 旧实现按大类先进先出会删掉五花肉；现在必须默认扣排骨，五花肉只作相近部位参考。
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	dish := dishWithIngredients(1, "红烧排骨", false, `[{"name":"排骨","amount":"500g"},{"name":"小葱","amount":"1根"}]`)
+	batches := []models.InventoryBatch{
+		{ID: 1, ItemName: "五花肉", ExpiryDate: "2026-10-29"},
+		{ID: 2, ItemName: "排骨", ExpiryDate: "2026-11-04"},
+		{ID: 3, ItemName: "小葱", ExpiryDate: "2026-10-30"},
+	}
+	slots := matchDishConsumption(dish, batches, today)
+	if len(slots) != 1 {
+		t.Fatalf("常备配料不参与扣减，应只有排骨一个槽位, got %+v", slots)
+	}
+	s := slots[0]
+	if s.RequestedName != "排骨" || s.Amount != "500g" {
+		t.Fatalf("slot = %+v, want 排骨 500g", s)
+	}
+	if s.SuggestedBatchID != 2 {
+		t.Fatalf("默认应扣排骨批次 2, got %d (batches %v)", s.SuggestedBatchID, batchIDs(s))
+	}
+	if ids := batchIDs(s); len(ids) != 2 || ids[0] != 2 || ids[1] != 1 {
+		t.Fatalf("排序应为 精确排骨 → 相近五花肉, got %v", ids)
+	}
+	if s.Batches[1].Kind != consumeSimilar || s.Batches[1].StockName != "五花肉" {
+		t.Fatalf("五花肉应标为 similar, got %+v", s.Batches[1])
+	}
+}
+
+func TestMatchDishConsumptionFIFOAndExpired(t *testing.T) {
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	dish := dishWithIngredients(1, "番茄炒蛋", false, `[{"name":"西红柿","amount":"2个"},{"name":"番茄","amount":"1个"},{"name":"鸡蛋","amount":"3个"}]`)
+	batches := []models.InventoryBatch{
+		{ID: 10, ItemName: "番茄", ExpiryDate: "2026-11-05", CreatedAt: today.AddDate(0, 0, -1)},
+		{ID: 11, ItemName: "番茄", ExpiryDate: "2026-10-30", CreatedAt: today.AddDate(0, 0, -4)},
+		{ID: 12, ItemName: "番茄", ExpiryDate: "2026-10-25"}, // 已过期：列出但不默认扣
+		{ID: 20, ItemName: "鸡蛋", ExpiryDate: "2026-10-26"}, // 唯一一批已过期
+	}
+	slots := matchDishConsumption(dish, batches, today)
+	if len(slots) != 2 {
+		t.Fatalf("番茄/西红柿是同一食材应合并，期望 2 个槽位, got %+v", slots)
+	}
+	tomato, ok := slotByName(slots, "西红柿")
+	if !ok {
+		t.Fatalf("槽位名应保留菜谱首次写法'西红柿', got %+v", slots)
+	}
+	if tomato.SuggestedBatchID != 11 {
+		t.Fatalf("应默认扣最早到期的未过期批 11, got %d", tomato.SuggestedBatchID)
+	}
+	if ids := batchIDs(tomato); len(ids) != 3 || ids[0] != 11 || ids[1] != 10 || ids[2] != 12 {
+		t.Fatalf("番茄批次顺序应为 11(临期) → 10 → 12(过期), got %v", ids)
+	}
+	egg, _ := slotByName(slots, "鸡蛋")
+	if egg.SuggestedBatchID != 0 || len(egg.Batches) != 1 {
+		t.Fatalf("只有过期批次时列出但不默认扣, got %+v", egg)
+	}
+}
+
+func TestMatchDishConsumptionBatchAssignedOnce(t *testing.T) {
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	// 菜谱同时写了瘦肉和排骨：排骨批精确归排骨槽，不能再作为瘦肉的相近部位出现
+	dish := dishWithIngredients(1, "排骨炒肉", false, `[{"name":"瘦肉","amount":"100g"},{"name":"排骨","amount":"300g"}]`)
+	batches := []models.InventoryBatch{{ID: 5, ItemName: "排骨", ExpiryDate: "2026-11-01"}}
+	slots := matchDishConsumption(dish, batches, today)
+	if len(slots) != 1 || slots[0].RequestedName != "排骨" || slots[0].SuggestedBatchID != 5 {
+		t.Fatalf("排骨批只应归排骨槽, got %+v", slots)
+	}
+
+	// 菜谱写泛称"猪肉"、冰箱是具体部位：泛称匹配，可以默认扣最早到期的
+	generic := dishWithIngredients(2, "青椒炒肉", false, `[{"name":"猪肉","amount":"200g"}]`)
+	batches = []models.InventoryBatch{
+		{ID: 6, ItemName: "五花肉", ExpiryDate: "2026-11-03"},
+		{ID: 7, ItemName: "瘦肉", ExpiryDate: "2026-10-30"},
+	}
+	slots = matchDishConsumption(generic, batches, today)
+	if len(slots) != 1 || slots[0].SuggestedBatchID != 7 || slots[0].Batches[0].Kind != consumeGeneric {
+		t.Fatalf("泛称猪肉应默认扣最早到期的瘦肉批 7, got %+v", slots)
+	}
+}
+
+func TestMatchDishConsumptionHeadRequestStrictFIFO(t *testing.T) {
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	// 菜谱写泛称"猪肉"：猪肉批（精确，6 天）和瘦肉批（泛称，明天到期）都完全满足，按到期先后默认扣瘦肉
+	dish := dishWithIngredients(1, "青椒炒肉", false, `[{"name":"猪肉","amount":"200g"}]`)
+	batches := []models.InventoryBatch{
+		{ID: 1, ItemName: "猪肉", ExpiryDate: "2026-11-03"},
+		{ID: 2, ItemName: "瘦肉", ExpiryDate: "2026-10-29"},
+	}
+	slots := matchDishConsumption(dish, batches, today)
+	if len(slots) != 1 || slots[0].SuggestedBatchID != 2 {
+		t.Fatalf("泛称菜谱应严格先进先出默认扣瘦肉批 2, got %+v", slots)
+	}
+
+	// 菜谱写具体部位"排骨"：精确的排骨批优先于更早到期的泛称"猪肉"批（猪肉未必是排骨）
+	ribs := dishWithIngredients(2, "红烧排骨", false, `[{"name":"排骨","amount":"500g"}]`)
+	batches = []models.InventoryBatch{
+		{ID: 3, ItemName: "排骨", ExpiryDate: "2026-11-03"},
+		{ID: 4, ItemName: "猪肉", ExpiryDate: "2026-10-29"},
+	}
+	slots = matchDishConsumption(ribs, batches, today)
+	if len(slots) != 1 || slots[0].SuggestedBatchID != 3 {
+		t.Fatalf("具体部位菜谱应精确优先默认扣排骨批 3, got %+v", slots)
+	}
+}
+
+func TestMatchDishConsumptionRoundRobinAcrossSlots(t *testing.T) {
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	// 菜谱两个部位都要，冰箱是两批泛称"猪肉"：每个槽位各分到一批，而不是第一个槽位全拿
+	dish := dishWithIngredients(1, "双拼", false, `[{"name":"瘦肉","amount":"100g"},{"name":"五花肉","amount":"100g"}]`)
+	batches := []models.InventoryBatch{
+		{ID: 1, ItemName: "猪肉", ExpiryDate: "2026-11-05"},
+		{ID: 2, ItemName: "猪肉", ExpiryDate: "2026-10-30"},
+	}
+	slots := matchDishConsumption(dish, batches, today)
+	if len(slots) != 2 {
+		t.Fatalf("两个槽位都应有候选, got %+v", slots)
+	}
+	lean, _ := slotByName(slots, "瘦肉")
+	belly, _ := slotByName(slots, "五花肉")
+	if lean.SuggestedBatchID != 2 || belly.SuggestedBatchID != 1 {
+		t.Fatalf("先到期的批给第一个槽位、另一批给第二个槽位, got 瘦肉=%d 五花肉=%d", lean.SuggestedBatchID, belly.SuggestedBatchID)
+	}
+}
+
+func TestMatchDishConsumptionEmpty(t *testing.T) {
+	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
+	dish := dishWithIngredients(1, "番茄炒蛋", false, `[{"name":"番茄","amount":"2个"}]`)
+	slots := matchDishConsumption(dish, []models.InventoryBatch{{ID: 1, ItemName: "牛腩"}}, today)
+	if slots == nil || len(slots) != 0 {
+		t.Fatalf("无候选时应返回空切片（JSON 为 [] 而非 null）, got %#v", slots)
+	}
+}
+
+func TestConsumeInventoryBatches(t *testing.T) {
+	setupTestDB(t, &models.InventoryBatch{})
+	for _, name := range []string{"番茄", "鸡蛋", "排骨"} {
+		if err := database.DB.Create(&models.InventoryBatch{ItemName: name, InStock: true, ExpiryDate: "2026-11-01"}).Error; err != nil {
+			t.Fatalf("写入批次 %s 失败: %v", name, err)
+		}
+	}
+	var all []models.InventoryBatch
+	database.DB.Order("id ASC").Find(&all)
+	// 其中一个 id 不存在（已被别处移出）：不算错误，按实际移除数返回
+	removed, err := ConsumeInventoryBatches([]uint{all[0].ID, all[2].ID, 9999})
+	if err != nil || removed != 2 {
+		t.Fatalf("removed=%d err=%v, want 2 nil", removed, err)
+	}
+	var left []models.InventoryBatch
+	database.DB.Find(&left)
+	if len(left) != 1 || left[0].ItemName != "鸡蛋" {
+		t.Fatalf("应只剩鸡蛋, got %+v", left)
+	}
+	if removed, err := ConsumeInventoryBatches(nil); err != nil || removed != 0 {
+		t.Fatalf("空列表应直接返回 0, got %d %v", removed, err)
 	}
 }
 

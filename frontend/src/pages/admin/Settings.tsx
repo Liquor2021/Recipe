@@ -190,6 +190,10 @@ export default function AdminSettings() {
     mutationFn: (s: Record<string, string>) => settingsApi.update(s),
     onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["settings"] })
+      // 忌口、每餐道数等设置会改变推荐与周菜单：相关缓存一起失效，回到前台立刻按新设置展示
+      for (const key of ["week-plan", "dishes", "pick", "fridge-recipes"]) {
+        qc.invalidateQueries({ queryKey: [key] })
+      }
       if (variables.app_name !== undefined) {
         updateAppName(variables.app_name || "NiniMenu")
       }

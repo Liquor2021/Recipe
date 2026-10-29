@@ -63,6 +63,17 @@ var canonical = buildIndex(AliasGroups)
 // categoryIndex 大类 → 组内成员索引（含自身），用于 CategoryOf
 var categoryIndex = buildIndex(CategoryGroups)
 
+// categoryHeads 大类名集合（每组第一个，如"猪肉"），用于 IsCategoryHead
+var categoryHeads = buildHeads(CategoryGroups)
+
+func buildHeads(groups [][]string) map[string]bool {
+	m := make(map[string]bool, len(groups))
+	for _, group := range groups {
+		m[strings.ToLower(strings.TrimSpace(group[0]))] = true
+	}
+	return m
+}
+
 // buildIndex 为组内每个名字建立指向组首名的索引。
 // 只做基础小写化，避免与导出函数形成初始化循环（映射会静默失效）。
 func buildIndex(groups [][]string) map[string]string {
@@ -93,6 +104,13 @@ func CategoryOf(s string) string {
 		return c
 	}
 	return n
+}
+
+// IsCategoryHead 是否大类泛称本身（如"猪肉"），而不是具体部位（如"排骨"）。
+// 扣库存时用：泛称与同类部位互相算命中（买的"猪肉"可以拿来做排骨菜），
+// 两个不同的具体部位（排骨 vs 五花肉）则不算。
+func IsCategoryHead(name string) bool {
+	return categoryHeads[Normalize(name)]
 }
 
 // IsStaple 是否常备配料（葱姜蒜及其切配形态）

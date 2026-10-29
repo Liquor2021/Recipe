@@ -76,6 +76,8 @@ func Setup(r *gin.Engine) {
 			app.DELETE("/fridge/batch/:id", handlers.RemoveFridgeBatch)
 			app.DELETE("/fridge/:itemName", handlers.RemoveFridge)
 			app.GET("/fridge/recipes", handlers.GetFridgeRecipes)
+			app.GET("/fridge/consumption", handlers.GetFridgeConsumption)
+			app.POST("/fridge/consume", handlers.ConsumeFridgeBatches)
 			app.GET("/fridge/urgent", handlers.GetUrgentInventory)
 			app.GET("/report", handlers.GetReport)
 		}

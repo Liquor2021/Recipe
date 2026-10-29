@@ -1,6 +1,6 @@
 import { api, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
-import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, DietReport } from "@/types"
+import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, ConsumptionMatch, DietReport } from "@/types"
 
 export const dishesApi = {
   list: (params?: Record<string, string>) =>
@@ -31,7 +31,7 @@ export const recordsApi = {
   list: (params?: Record<string, string>) =>
     api<PaginatedData<MealRecord>>("GET", "/records", params),
   create: (data: Partial<MealRecord>) => api<MealRecord>("POST", "/records", data),
-  batchCreate: (data: Partial<MealRecord>[]) => api<{ created: MealRecord[]; skipped: number; total: number }>("POST", "/records/batch", { records: data }),
+  batchCreate: (data: Partial<MealRecord>[]) => api<{ created: MealRecord[] | null; skipped: number; failed: number; total: number }>("POST", "/records/batch", { records: data }),
   update: (id: number, data: Partial<MealRecord>) =>
     api<MealRecord>("PUT", `/records/${id}`, data),
   delete: (id: number) => api<null>("DELETE", `/records/${id}`),
@@ -95,8 +95,9 @@ export const shoppingListApi = {
     api<null>("POST", "/shopping-list/toggle", data),
   setInventory: (data: { item_name: string; in_stock: boolean }) =>
     api<null>("POST", "/shopping-list/inventory", data),
+  // 未带 amount 时后端按 dish_id 的菜谱补上用量
   addItems: (p: { dish_id?: number; dish_name?: string; items: { name: string; amount?: string }[] }) =>
-    api<null>("POST", "/shopping-list/items", p),
+    api<{ added: number }>("POST", "/shopping-list/items", p),
 }
 
 export const shoppingCategoriesApi = {
@@ -143,6 +144,8 @@ export const fridgeApi = {
   removeBatch: (id: number) => api<null>("DELETE", `/fridge/batch/${id}`),
   remove: (itemName: string) => api<null>("DELETE", `/fridge/${encodeURIComponent(itemName)}`),
   recipes: (limit = 12) => api<FridgeMatch[]>("GET", `/fridge/recipes?limit=${limit}`),
+  consumption: (dishId: number) => api<ConsumptionMatch>("GET", `/fridge/consumption?dish_id=${dishId}`),
+  consume: (batchIds: number[]) => api<{ removed: number }>("POST", "/fridge/consume", { batch_ids: batchIds }),
   urgent: () => api<InventoryBatch[]>("GET", "/fridge/urgent"),
 }
 

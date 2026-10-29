@@ -375,8 +375,10 @@ func buildAchievementSnapshot() achievementSnapshot {
 	s.favoriteCount = int(n)
 	database.DB.Model(&models.ShoppingCheck{}).Where("checked = ?", true).Count(&n)
 	s.shoppingChecked = int(n)
-	database.DB.Model(&models.InventoryBatch{}).Where("in_stock = ?", true).Count(&n)
-	s.inventoryCount = int(n)
+	// 库存成就按"不同食材"计（同一种番茄买 10 批不算 10 项），口径与买菜清单"家中有"一致
+	if counts, err := availableBatchCounts(); err == nil {
+		s.inventoryCount = len(counts)
+	}
 
 	type eventCount struct {
 		EventType string

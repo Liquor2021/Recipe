@@ -121,8 +121,18 @@ func TestRefreshConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(3)
-		go func() { defer wg.Done(); for n := 0; n < 100; n++ { Refresh(versionOf(base), base) } }()
-		go func() { defer wg.Done(); for n := 0; n < 100; n++ { Refresh(versionOf(updated), updated) } }()
+		go func() {
+			defer wg.Done()
+			for n := 0; n < 100; n++ {
+				Refresh(versionOf(base), base)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for n := 0; n < 100; n++ {
+				Refresh(versionOf(updated), updated)
+			}
+		}()
 		go func() {
 			defer wg.Done()
 			for n := 0; n < 100; n++ {

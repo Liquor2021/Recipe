@@ -23,6 +23,25 @@ function parseList(raw: unknown, fallback: string[]): string[] {
   return arr.length > 0 ? arr : fallback
 }
 
+// 把菜品的食材/步骤数组格式化成编辑框里的一行一项（兼容字符串与对象两种历史格式）
+function fmtIngredient(item: unknown): string {
+  if (typeof item === "string") return item
+  if (typeof item === "object" && item !== null) {
+    const o = item as Record<string, unknown>
+    return `${o.name || ""} ${o.amount || ""}`.trim()
+  }
+  return String(item)
+}
+
+function fmtStep(item: unknown, i: number): string {
+  if (typeof item === "string") return `${i + 1}. ${item}`
+  if (typeof item === "object" && item !== null) {
+    const o = item as Record<string, unknown>
+    return `${i + 1}. ${o.text || ""}${o.time ? ` (${o.time}分钟)` : ""}`
+  }
+  return `${i + 1}. ${String(item)}`
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
@@ -109,23 +128,6 @@ export default function AdminDishEdit() {
     setSeasoningsText(asArray(dish.seasonings).map(fmtIngredient).join("\n"))
     setStepsText(asArray(dish.steps).map(fmtStep).join("\n"))
   }, [dish])
-
-  function fmtIngredient(item: unknown): string {
-    if (typeof item === "string") return item
-    if (typeof item === "object" && item !== null) {
-      const o = item as Record<string, unknown>
-      return `${o.name || ""} ${o.amount || ""}`.trim()
-    }
-    return String(item)
-  }
-  function fmtStep(item: unknown, i: number): string {
-    if (typeof item === "string") return `${i + 1}. ${item}`
-    if (typeof item === "object" && item !== null) {
-      const o = item as Record<string, unknown>
-      return `${i + 1}. ${o.text || ""}${o.time ? ` (${o.time}分钟)` : ""}`
-    }
-    return `${i + 1}. ${String(item)}`
-  }
 
   function parseIngredients(text: string): Ingredient[] {
     return text.split("\n").filter((l) => l.trim()).map((l) => {

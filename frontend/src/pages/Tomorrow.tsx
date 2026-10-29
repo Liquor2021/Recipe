@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, pickApi, recordsApi } from "@/api"
-import type { Dish, DishIngredient, MealRecord } from "@/types"
-import { asArray } from "@/lib/utils"
+import type { Dish, MealRecord } from "@/types"
 import { launchConfetti } from "@/lib/confetti"
 import DishImage from "@/components/DishImage"
 import PageHeader from "@/components/PageHeader"
@@ -109,10 +108,6 @@ function totalCookTime(dishes: Dish[]) {
   return dishes.reduce((sum, d) => sum + Math.max(0, d.cook_time || 0), 0)
 }
 
-function matchesMeal(dish: Dish, meal: MealType) {
-  return !dish.meal_type || dish.meal_type === "all" || dish.meal_type === meal
-}
-
 function uniqueById(items: Dish[]) {
   const seen = new Set<number>()
   return items.filter((item) => {
@@ -162,19 +157,6 @@ function recordToDish(record: MealRecord): Dish {
     created_at: record.created_at,
     updated_at: record.created_at,
   }
-}
-
-function itemName(item: string | DishIngredient) {
-  return typeof item === "string" ? item : item.name
-}
-
-function dishSearchText(dish: Dish) {
-  const ingredients = asArray<string | DishIngredient>(dish.ingredients).map(itemName).join(" ")
-  const seasonings = asArray<string | DishIngredient>(dish.seasonings).map(itemName).join(" ")
-  const tags = asArray<string>(dish.tags).join(" ")
-  return [dish.name, dish.category, dish.taste, diffLabel(dish.difficulty), ingredients, seasonings, tags]
-    .join(" ")
-    .toLowerCase()
 }
 
 function CountStepper({ value, onChange }: { value: number; onChange: (value: number) => void }) {
@@ -490,31 +472,39 @@ function DishPickerModal({
   onClose: () => void
 }) {
   const [search, setSearch] = useState("")
+  const [keyword, setKeyword] = useState("")
   const [category, setCategory] = useState("全部")
   const meta = mealMeta[meal]
-  const { data, isLoading } = useQuery({
-    queryKey: ["dishes", "tomorrow-picker", meal],
-    queryFn: () => dishesApi.list({ enabled: "true", meal_type: meal, pageSize: "100", sort: "sort_order", order: "asc" }),
+
+  // 输入停顿 250ms 再搜，避免每敲一个字发一次请求
+  useEffect(() => {
+    const timer = window.setTimeout(() => setKeyword(search.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  // 关键词和分类交给后端过滤：在全部菜品里搜（含食材、别名、拼音、口味、标签），
+  // 而不是只在前 100 道里找——菜库有 600+ 道，过去排在后面的菜永远搜不到
+  const { data, isLoading, isPlaceholderData } = useQuery({
+    queryKey: ["dishes", "tomorrow-picker", meal, keyword, category],
+    queryFn: () => {
+      const params: Record<string, string> = { enabled: "true", meal_type: meal, pageSize: "100", sort: "sort_order", order: "asc" }
+      if (keyword) params.search = keyword
+      if (category !== "全部") params.category = category
+      return dishesApi.list(params)
+    },
+    placeholderData: keepPreviousData,
   })
-  const dishes = data?.items || []
-  const candidates = useMemo(() => dishes.filter((d) => matchesMeal(d, meal)), [dishes, meal])
+  const filtered = data?.items || []
+  const total = data?.total ?? 0
 
-  const categories = useMemo(() => {
-    const set = new Set<string>()
-    candidates.forEach((dish) => {
-      if (dish.category) set.add(dish.category)
-    })
-    return ["全部", ...Array.from(set)]
-  }, [candidates])
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return candidates.filter((dish) => {
-      if (category !== "全部" && dish.category !== category) return false
-      if (q && !dishSearchText(dish).includes(q)) return false
-      return true
-    })
-  }, [candidates, category, search])
+  const { data: categoryCounts } = useQuery({
+    queryKey: ["dishes", "category-counts"],
+    queryFn: () => dishesApi.categoryCounts(),
+  })
+  const categories = useMemo(
+    () => ["全部", ...(categoryCounts?.categories || []).map((c) => c.category).filter(Boolean)],
+    [categoryCounts],
+  )
 
   return (
     <div className="fixed inset-0 z-[220] flex items-end justify-center" onClick={onClose}>
@@ -528,7 +518,7 @@ function DishPickerModal({
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="truncate text-lg font-extrabold">挑选{meta.shortLabel}</div>
-              <div className="mt-0.5 text-[12px] font-medium text-text3">{filtered.length} 道可选</div>
+              <div className="mt-0.5 text-[12px] font-medium text-text3">{total} 道可选</div>
             </div>
             <button
               onClick={onClose}
@@ -581,7 +571,7 @@ function DishPickerModal({
               <div className="mt-1 text-[12px] text-text3">换个关键词或分类试试</div>
             </div>
           ) : (
-            <div className="divide-y divide-border/70">
+            <div className={`divide-y divide-border/70 transition-opacity ${isPlaceholderData ? "opacity-60" : ""}`}>
               {filtered.map((dish) => {
                 const selectedMeal = selectedMealById.get(dish.id)
                 const selectedHere = selectedMeal === meal
@@ -628,6 +618,9 @@ function DishPickerModal({
                   </div>
                 )
               })}
+              {total > filtered.length && (
+                <div className="py-4 text-center text-[12px] text-text3">只显示前 {filtered.length} 道，输入菜名或食材缩小范围</div>
+              )}
             </div>
           )}
         </div>
@@ -734,11 +727,12 @@ export default function Tomorrow() {
           }
         }),
       )
-      if (records.length === 0) return { created: [] as MealRecord[], skipped: 0, total: 0 }
+      if (records.length === 0) return { created: [] as MealRecord[], skipped: 0, failed: 0, total: 0 }
       return recordsApi.batchCreate(records)
     },
     onSuccess: (res, variables) => {
-      setOriginalRecords(res.created)
+      // 全部已记录过时后端 created 为 null
+      setOriginalRecords(res.created ?? [])
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       qc.refetchQueries({ queryKey: ["shopping-list"] })

@@ -3,14 +3,17 @@ const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
 const B = "http://localhost:8080/api"
 let ok = 0, bad = 0
 const check = (n, c, d = "") => { if (c) { ok++; console.log("  ✓ " + n) } else { bad++; console.log("  ✗ " + n + " " + d) } }
+// 相对今天的日期：固定日期过了之后早批会变成"已过期"，用例随时间失效
+const dayFromNow = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` }
+const SOON = dayFromNow(1), LATER = dayFromNow(30)
 ;(async () => {
   const before = await fetch(B + "/fridge", { headers: H }).then(r => r.json())
   const snap = (before.data || []).map(i => ({ item_name: i.item_name, quantity: i.quantity, expiry_date: i.expiry_date }))
   for (const it of snap) await fetch(B + "/fridge/" + encodeURIComponent(it.item_name), { method: "DELETE", headers: H })
 
-  let r = await fetch(B + "/fridge", { method: "POST", headers: H, body: JSON.stringify({ item_name: "番茄", quantity: "2个", expiry_date: "2026-10-29" }) }).then(r => r.json())
+  let r = await fetch(B + "/fridge", { method: "POST", headers: H, body: JSON.stringify({ item_name: "番茄", quantity: "2个", expiry_date: SOON }) }).then(r => r.json())
   check("新批次(明天到期,2个)", r.code === 0)
-  r = await fetch(B + "/fridge", { method: "POST", headers: H, body: JSON.stringify({ item_name: "番茄", quantity: "1袋", expiry_date: "2026-11-27" }) }).then(r => r.json())
+  r = await fetch(B + "/fridge", { method: "POST", headers: H, body: JSON.stringify({ item_name: "番茄", quantity: "1袋", expiry_date: LATER }) }).then(r => r.json())
   check("同食材追加新批(30天)", r.code === 0)
   r = await fetch(B + "/fridge", { method: "POST", headers: H, body: JSON.stringify({ item_name: "鸡蛋" }) }).then(r => r.json())
   check("加鸡蛋(自动默认保质期)", r.code === 0)
@@ -18,7 +21,7 @@ const check = (n, c, d = "") => { if (c) { ok++; console.log("  ✓ " + n) } els
   r = await fetch(B + "/fridge", { headers: H }).then(r => r.json())
   const batches = (r.data || []).filter(i => i.item_name === "番茄")
   check("番茄有 2 批", batches.length === 2, JSON.stringify(batches.map(b => [b.quantity, b.expiry_date])))
-  check("旧批排前(临期在前)", batches[0].expiry_date === "2026-10-29", JSON.stringify(batches.map(b => b.expiry_date)))
+  check("旧批排前(临期在前)", batches[0].expiry_date === SOON, JSON.stringify(batches.map(b => b.expiry_date)))
   check("数量字段存储", batches.some(b => b.quantity === "2个") && batches.some(b => b.quantity === "1袋"), JSON.stringify(batches.map(b => b.quantity)))
 
   r = await fetch(B + "/fridge/recipes?limit=50", { headers: H }).then(r => r.json())
@@ -26,10 +29,14 @@ const check = (n, c, d = "") => { if (c) { ok++; console.log("  ✓ " + n) } els
   check("番茄炒蛋 100%(番茄+鸡蛋都在)", m && m.coverage === 100, JSON.stringify(m?.coverage))
   check("using_urgent 含番茄(早批临期)", m && (m.using_urgent || []).includes("番茄"), JSON.stringify(m?.using_urgent))
   const earlyBatchID = batches[0].id
-  check("matched_batch_ids 指向早批", m && (m.matched_batch_ids || []).includes(earlyBatchID), `want ${earlyBatchID}: ${JSON.stringify(m?.matched_batch_ids)}`)
 
-  r = await fetch(B + `/fridge/batch/${earlyBatchID}`, { method: "DELETE", headers: H }).then(r => r.json())
-  check("按批次移除早批", r.code === 0, JSON.stringify(r))
+  // 扣库存候选：单菜接口按菜谱主料精确匹配，默认勾选最早到期的那批
+  r = await fetch(B + `/fridge/consumption?dish_id=${m?.dish.id}`, { headers: H }).then(r => r.json())
+  const tomatoSlot = (r.data?.slots || []).find(s => s.batches.some(b => b.stock_name === "番茄"))
+  check("扣库存默认勾选早批", tomatoSlot && tomatoSlot.suggested_batch_id === earlyBatchID, `want ${earlyBatchID}: ${JSON.stringify(tomatoSlot)}`)
+
+  r = await fetch(B + "/fridge/consume", { method: "POST", headers: H, body: JSON.stringify({ batch_ids: [earlyBatchID] }) }).then(r => r.json())
+  check("批量扣库存移除早批", r.code === 0 && r.data?.removed === 1, JSON.stringify(r))
   r = await fetch(B + "/fridge", { headers: H }).then(r => r.json())
   const left = (r.data || []).filter(i => i.item_name === "番茄")
   check("剩新批(1袋,30天)", left.length === 1 && left[0].quantity === "1袋", JSON.stringify(left))

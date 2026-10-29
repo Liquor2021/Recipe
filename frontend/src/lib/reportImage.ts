@@ -275,14 +275,14 @@ function makeTopDishesPainter(dishes: ReportTopDish[]): Painter {
   }
 }
 
-// 口味偏好横条：按最大值归一
-function makeTastePainter(shares: ReportShare[]): Painter {
+// 分布横条（口味偏好 / 菜系分布）：按最大值归一
+function makeSharesPainter(title: string, shares: ReportShare[], barColor: string): Painter {
   return (ctx, y) => {
     const top = y + GAP
     if (shares.length === 0) {
       const h = 148
       drawCard(ctx, top, h)
-      drawSectionTitle(ctx, "👅 口味偏好", top)
+      drawSectionTitle(ctx, title, top)
       ctx.font = font(400, 24)
       ctx.fillStyle = C.text3
       ctx.textAlign = "center"
@@ -293,7 +293,7 @@ function makeTastePainter(shares: ReportShare[]): Painter {
     const rowH = 56
     const h = 88 + rowH * shares.length
     drawCard(ctx, top, h)
-    drawSectionTitle(ctx, "👅 口味偏好", top)
+    drawSectionTitle(ctx, title, top)
     const maxCount = Math.max(...shares.map((s) => num(s.count)), 1)
     const barX = IN_X + 164
     const barRight = CARD_X + CARD_W - INSET - 90
@@ -316,7 +316,7 @@ function makeTastePainter(shares: ReportShare[]): Painter {
       const fillW = ratio > 0 ? Math.min(trackW, Math.max(trackW * ratio, 16)) : 0
       if (fillW > 0) {
         roundRectPath(ctx, barX, cy - 8, fillW, 16, 8)
-        ctx.fillStyle = C.primary
+        ctx.fillStyle = barColor
         ctx.fill()
       }
 
@@ -372,14 +372,17 @@ function makeMoodPainter(moods: ReportShare[]): Painter {
   }
 }
 
-// 底部水印
-const watermarkPainter: Painter = (ctx, y) => {
-  ctx.font = font(500, 22)
-  ctx.fillStyle = C.text3
-  ctx.textAlign = "center"
-  ctx.textBaseline = "middle"
-  ctx.fillText("NiniMenu · 今天也好好吃饭", WIDTH / 2, y + 40)
-  return y + 64
+// 底部水印（应用名可在后台改，超宽时截断）
+function makeWatermarkPainter(appName: string): Painter {
+  const text = `${appName || "NiniMenu"} · 今天也好好吃饭`
+  return (ctx, y) => {
+    ctx.font = font(500, 22)
+    ctx.fillStyle = C.text3
+    ctx.textAlign = "center"
+    ctx.textBaseline = "middle"
+    ctx.fillText(ellipsize(ctx, text, WIDTH - PAD * 2), WIDTH / 2, y + 40)
+    return y + 64
+  }
 }
 
 function buildPainters(report: DietReport, appName: string): Painter[] {
@@ -389,14 +392,17 @@ function buildPainters(report: DietReport, appName: string): Painter[] {
   // 保证分享长图与报告页展示相同条数
   const topDishes = (Array.isArray(r.top_dishes) ? r.top_dishes : []).slice(0, 5)
   const tastes = (Array.isArray(r.taste_shares) ? r.taste_shares : []).slice(0, 6)
+  const categories = (Array.isArray(r.category_shares) ? r.category_shares : []).slice(0, 6)
   const moods = (Array.isArray(r.mood_shares) ? r.mood_shares : []).slice(0, 3)
+  // 区块顺序与报告页一致：常做菜 → 口味 → 菜系 → 心情
   return [
     makeHeaderPainter(r, appName),
     makeStatsPainter(num(r.cook_days), num(r.total_meals), num(r.repeat_rate), num(r.new_dish_rate), num(r.avg_rating)),
     makeTopDishesPainter(topDishes),
-    makeTastePainter(tastes),
+    makeSharesPainter("👅 口味偏好", tastes, C.primary),
+    makeSharesPainter("🍽 菜系分布", categories, C.mint),
     makeMoodPainter(moods),
-    watermarkPainter,
+    makeWatermarkPainter(appName),
   ]
 }
 
@@ -410,8 +416,8 @@ export function renderReportImage(report: DietReport, appName: string): HTMLCanv
   if (measureCtx) {
     for (const paint of painters) totalH = paint(measureCtx, totalH)
   }
-  // 极端兜底：量不到高度时给一个不小于满数据布局（约 1614）的保守值，避免底部被裁
-  if (!Number.isFinite(totalH) || totalH <= 0) totalH = 1800
+  // 极端兜底：量不到高度时给一个不小于满数据布局（约 2114）的保守值，避免底部被裁
+  if (!Number.isFinite(totalH) || totalH <= 0) totalH = 2200
 
   const canvas = document.createElement("canvas")
   canvas.width = WIDTH * DPR

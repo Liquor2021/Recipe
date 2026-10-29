@@ -26,7 +26,7 @@ type DietReport struct {
 	StartDate      string          `json:"start_date"`
 	EndDate        string          `json:"end_date"`
 	CookDays       int             `json:"cook_days"`
-	PrevCookDays   int             `json:"prev_cook_days"` // 上一个等长周期
+	PrevCookDays   int             `json:"prev_cook_days"` // 上一周期相同已过天数内的做饭天数，见 previousPeriod
 	TotalMeals     int             `json:"total_meals"`
 	LunchCount     int             `json:"lunch_count"`
 	DinnerCount    int             `json:"dinner_count"`
@@ -179,6 +179,26 @@ func buildDietReport(rng string, start, end time.Time, records []models.MealReco
 	}
 }
 
+// previousPeriod 环比的上期区间：上一周期的"相同位置"。本期是部分周期（如周三打开周报
+// 只过了 3 天），上期也只取上一周期的前 3 天，否则周初/月初会系统性显示"比上期少"。
+// 月报取上月 1 日起同样天数，上月更短时截到上月最后一天（3 月 31 日对比的是整个 2 月）；
+// 上期永远在本期开始之前结束，不会与本期重叠。
+func previousPeriod(rng string, start, today time.Time) (time.Time, time.Time) {
+	// 四舍五入：有夏令时的时区两个零点之间可能是 23/25 小时
+	elapsed := int(math.Round(today.Sub(start).Hours()/24)) + 1
+	var prevStart time.Time
+	if rng == "week" {
+		prevStart = start.AddDate(0, 0, -7)
+	} else {
+		prevStart = time.Date(start.Year(), start.Month()-1, 1, 0, 0, 0, 0, start.Location())
+	}
+	prevEnd := prevStart.AddDate(0, 0, elapsed-1)
+	if lastDay := start.AddDate(0, 0, -1); prevEnd.After(lastDay) {
+		prevEnd = lastDay
+	}
+	return prevStart, prevEnd
+}
+
 // GetDietReport 生成周/月饮食报告
 func GetDietReport(rng string) *DietReport {
 	if rng != "month" {
@@ -187,17 +207,15 @@ func GetDietReport(rng string) *DietReport {
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 
-	var start, periodStart time.Time
+	var start time.Time
 	if rng == "week" {
 		weekday := int(today.Weekday())
 		if weekday == 0 {
 			weekday = 7
 		}
 		start = today.AddDate(0, 0, -(weekday - 1)) // 本周一
-		periodStart = start.AddDate(0, 0, -7)
 	} else {
 		start = time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.Local)
-		periodStart = start.AddDate(0, 0, -30)
 	}
 	end := today
 	var records []models.MealRecord
@@ -225,12 +243,9 @@ func GetDietReport(rng string) *DietReport {
 	}
 
 	var prevCookDays int64
-	// 环比口径：对比"相同已过天数"。本期是部分周期（如周三打开周报只过了 3 天），
-	// 上期也只取上一周期的前 3 天，否则周初/月初会系统性显示"比上期少"。
-	elapsed := int(today.Sub(start).Hours()/24) + 1
-	prevEnd := periodStart.AddDate(0, 0, elapsed-1)
+	prevStart, prevEnd := previousPeriod(rng, start, today)
 	database.DB.Model(&models.MealRecord{}).
-		Where("meal_date >= ? AND meal_date <= ?", periodStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).
+		Where("meal_date >= ? AND meal_date <= ?", prevStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).
 		Distinct("meal_date").Count(&prevCookDays)
 
 	var dayRatings []models.DayRating

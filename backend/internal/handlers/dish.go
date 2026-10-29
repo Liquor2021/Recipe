@@ -49,6 +49,18 @@ func dishMatchesKeyword(d models.Dish, keyword string) bool {
 			return true
 		}
 	}
+	// 菜系/口味/标签：搜"川菜""清淡""下饭"也能找到（排在菜名命中之后）
+	if strings.Contains(strings.ToLower(d.Category), kw) || strings.Contains(strings.ToLower(d.Taste), kw) {
+		return true
+	}
+	var tags []string
+	if json.Unmarshal([]byte(d.Tags), &tags) == nil {
+		for _, tag := range tags {
+			if strings.Contains(strings.ToLower(tag), kw) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -62,6 +74,26 @@ func asciiLettersOnly(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// paginateDishes 内存分页（与 SQL 分页语义一致）；random 时打乱后取前 pageSize 条
+func paginateDishes(dishes []models.Dish, page, pageSize int, random bool) []models.Dish {
+	if random {
+		rand.Shuffle(len(dishes), func(i, j int) { dishes[i], dishes[j] = dishes[j], dishes[i] })
+		if len(dishes) > pageSize {
+			return dishes[:pageSize]
+		}
+		return dishes
+	}
+	offset := (page - 1) * pageSize
+	if offset > len(dishes) {
+		offset = len(dishes)
+	}
+	end := offset + pageSize
+	if end > len(dishes) {
+		end = len(dishes)
+	}
+	return dishes[offset:end]
 }
 
 // sortDishesInMemory 与 SQL 排序对齐的内存排序（搜索命中食材后需内存过滤再分页）
@@ -114,7 +146,8 @@ func GetDishes(c *gin.Context) {
 		query = query.Where("category = ?", category)
 	}
 	if mealType := c.Query("meal_type"); mealType != "" {
-		query = query.Where("meal_type IN ?", []string{mealType, "all"})
+		// 空餐次视同"午晚皆可"，与推荐（PickTomorrowDishes）口径一致
+		query = query.Where("meal_type IN ?", []string{mealType, "all", ""})
 	}
 	if enabled := c.Query("enabled"); enabled != "" {
 		query = query.Where("enabled = ?", enabled == "1" || enabled == "true")
@@ -143,13 +176,30 @@ func GetDishes(c *gin.Context) {
 		query = query.Order(sort + " " + order)
 	}
 
+	// exclude_disliked=1：推荐类展示位（首页今日推荐/转盘）按 strict 忌口剔除菜品；
+	// avoid 模式不影响。需在分页前过滤，否则总数和分页会对不上，所以与搜索一样走内存分支。
+	excludeDisliked := c.Query("exclude_disliked") == "1" || c.Query("exclude_disliked") == "true"
+
 	// 带关键词的搜索走内存过滤：菜名或食材命中都算（"冰箱里有鸡蛋能做什么"）
 	searchTrimmed := strings.TrimSpace(searchRaw)
+	if searchTrimmed == "" && excludeDisliked {
+		var all []models.Dish
+		if err := query.Find(&all).Error; err != nil {
+			utils.InternalError(c, "加载菜品失败")
+			return
+		}
+		filtered := services.ExcludeStrictDisliked(all)
+		utils.SuccessPaginated(c, paginateDishes(filtered, page, pageSize, isRandom), int64(len(filtered)), page, pageSize)
+		return
+	}
 	if searchTrimmed != "" {
 		var all []models.Dish
 		if err := query.Find(&all).Error; err != nil {
 			utils.InternalError(c, "搜索菜品失败")
 			return
+		}
+		if excludeDisliked {
+			all = services.ExcludeStrictDisliked(all)
 		}
 		// 拼音索引按全局版本戳刷新（不带任何筛选的 MAX(updated_at)）：未变复用、变了全量重建。
 		// 版本戳不能取自下方筛选后的子集：主列表搜索常带 category/taste（DishList.tsx:69-77），
@@ -171,25 +221,10 @@ func GetDishes(c *gin.Context) {
 		}
 		// 菜名命中优先展示，食材命中的跟在后面
 		filtered := append(nameHits, ingredientHits...)
-		totalFiltered := len(filtered)
-		if isRandom {
-			rand.Shuffle(len(filtered), func(i, j int) { filtered[i], filtered[j] = filtered[j], filtered[i] })
-			if len(filtered) > pageSize {
-				filtered = filtered[:pageSize]
-			}
-		} else {
+		if !isRandom {
 			sortDishesInMemory(filtered, sort, order)
-			offset := (page - 1) * pageSize
-			if offset > len(filtered) {
-				offset = len(filtered)
-			}
-			end := offset + pageSize
-			if end > len(filtered) {
-				end = len(filtered)
-			}
-			filtered = filtered[offset:end]
 		}
-		utils.SuccessPaginated(c, filtered, int64(totalFiltered), page, pageSize)
+		utils.SuccessPaginated(c, paginateDishes(filtered, page, pageSize, isRandom), int64(len(filtered)), page, pageSize)
 		return
 	}
 
@@ -353,7 +388,10 @@ func ToggleDish(c *gin.Context) {
 		return
 	}
 	dish.Enabled = !dish.Enabled
-	database.DB.Save(&dish)
+	if err := database.DB.Save(&dish).Error; err != nil {
+		utils.InternalError(c, "操作失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 	utils.Success(c, dish)
 }
@@ -412,7 +450,10 @@ func BatchToggleDishes(c *gin.Context) {
 		utils.BadRequest(c, "请选择菜品")
 		return
 	}
-	database.DB.Model(&models.Dish{}).Where("id IN ?", req.IDs).Update("enabled", req.Enabled)
+	if err := database.DB.Model(&models.Dish{}).Where("id IN ?", req.IDs).Update("enabled", req.Enabled).Error; err != nil {
+		utils.InternalError(c, "批量操作失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 	utils.SuccessMsg(c, "批量操作成功")
 }
@@ -427,7 +468,10 @@ func BatchDeleteDishes(c *gin.Context) {
 		utils.BadRequest(c, "请选择菜品")
 		return
 	}
-	database.DB.Where("id IN ?", req.IDs).Delete(&models.Dish{})
+	if err := database.DB.Where("id IN ?", req.IDs).Delete(&models.Dish{}).Error; err != nil {
+		utils.InternalError(c, "批量删除失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 	utils.SuccessMsg(c, "批量删除成功")
 }
@@ -443,7 +487,10 @@ func BatchUpdateCategory(c *gin.Context) {
 		utils.BadRequest(c, "请选择菜品并指定分类")
 		return
 	}
-	database.DB.Model(&models.Dish{}).Where("id IN ?", req.IDs).Update("category", req.Category)
+	if err := database.DB.Model(&models.Dish{}).Where("id IN ?", req.IDs).Update("category", req.Category).Error; err != nil {
+		utils.InternalError(c, "批量修改分类失败")
+		return
+	}
 	utils.SuccessMsg(c, "批量修改分类成功")
 }
 

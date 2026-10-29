@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
@@ -30,7 +31,11 @@ func GetShoppingList(c *gin.Context) {
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 	dates := []string{today, tomorrow}
 
-	list := services.BuildShoppingList(dates)
+	list, err := services.BuildShoppingList(dates)
+	if err != nil {
+		utils.InternalError(c, "加载买菜清单失败")
+		return
+	}
 	utils.Success(c, list)
 }
 
@@ -46,7 +51,10 @@ func ToggleShoppingCheckHandler(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	services.ToggleShoppingCheck(req.ItemName, req.MealDate, req.Checked)
+	if err := services.ToggleShoppingCheck(req.ItemName, req.Checked); err != nil {
+		utils.InternalError(c, "更新失败")
+		return
+	}
 	if req.Checked {
 		services.QueueAutoAchievementSync()
 	}
@@ -64,7 +72,14 @@ func ToggleHomeInventoryHandler(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	services.ToggleHomeInventory(req.ItemName, req.InStock)
+	if err := services.ToggleHomeInventory(req.ItemName, req.InStock); err != nil {
+		if errors.Is(err, services.ErrEmptyItemName) {
+			utils.BadRequest(c, "参数无效")
+			return
+		}
+		utils.InternalError(c, "库存状态更新失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 	utils.SuccessMsg(c, "已更新")
 }
@@ -90,7 +105,11 @@ func AddShoppingItemsHandler(c *gin.Context) {
 	for _, it := range req.Items {
 		items = append(items, services.ShoppingItem{Name: it.Name, Amount: it.Amount})
 	}
-	added := services.AddShoppingListItems(items, req.DishID, req.DishName, strings.TrimSpace(req.MealDate))
+	added, err := services.AddShoppingListItems(items, req.DishID, req.DishName, strings.TrimSpace(req.MealDate))
+	if err != nil {
+		utils.InternalError(c, "加入买菜清单失败")
+		return
+	}
 	// 前端按 added 数值组织提示文案（0 = 清单里已存在）
 	utils.Success(c, gin.H{"added": added})
 }
@@ -110,7 +129,12 @@ func UpsertShoppingCategoryHandler(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	if !services.UpsertShoppingCategoryOverride(req.ItemName, req.Category) {
+	ok, err := services.UpsertShoppingCategoryOverride(req.ItemName, req.Category)
+	if err != nil {
+		utils.InternalError(c, "保存失败")
+		return
+	}
+	if !ok {
 		utils.BadRequest(c, "分类无效")
 		return
 	}
@@ -119,7 +143,10 @@ func UpsertShoppingCategoryHandler(c *gin.Context) {
 
 func DeleteShoppingCategoryHandler(c *gin.Context) {
 	itemName := c.Param("itemName")
-	services.DeleteShoppingCategoryOverride(itemName)
+	if err := services.DeleteShoppingCategoryOverride(itemName); err != nil {
+		utils.InternalError(c, "删除失败")
+		return
+	}
 	utils.SuccessMsg(c, "已删除")
 }
 

@@ -146,6 +146,7 @@ export interface ShoppingItem {
   amount: string
   checked: boolean
   in_stock: boolean
+  stock_batches: number // 冰箱里未过期的批次数；取消"家中有"会一并移出
 }
 
 export interface ShoppingCategoryOverride {
@@ -302,7 +303,30 @@ export interface FridgeMatch {
   matched_count: number
   coverage: number
   using_urgent: string[]
-  matched_batch_ids: number[]
+}
+
+// 扣库存匹配类型：exact=同名/别名，generic=一方是大类泛称（猪肉↔排骨），similar=同类不同部位（只供参考）
+export type ConsumptionKind = "exact" | "generic" | "similar"
+
+export interface ConsumptionBatch {
+  batch_id: number
+  stock_name: string
+  quantity: string
+  expiry_date: string
+  days_left: number // 999 = 未设置保质期
+  kind: ConsumptionKind
+}
+
+export interface ConsumptionSlot {
+  requested_name: string
+  amount: string
+  batches: ConsumptionBatch[]
+  suggested_batch_id: number // 0 = 不建议默认扣
+}
+
+export interface ConsumptionMatch {
+  dish_id: number
+  slots: ConsumptionSlot[]
 }
 
 export interface ReportShare {

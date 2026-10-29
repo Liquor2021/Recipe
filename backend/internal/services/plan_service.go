@@ -2,9 +2,11 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/rand"
 	"ninimenu/internal/database"
+	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
 	"regexp"
 	"sort"
@@ -25,10 +27,50 @@ type WeekPlan struct {
 	Days []WeekDayPlan `json:"days"`
 }
 
+// weekPlanRecord 周菜单缓存（内存与 settings.week_plan_cache 共用）。
+// 只存菜品 ID：读取时按 ID 回库取最新菜品，菜被改名/换图能及时反映，被删/停用/
+// 命中 strict 忌口则整份重新生成。（旧缓存存的是完整菜品对象，而 Dish 只有
+// MarshalJSON 没有对应的 UnmarshalJSON，数组字段反序列化必失败——旧缓存从来没被
+// 读回过，每次重启都会重排一周菜单。只取 id 的结构同时兼容新旧两种格式。）
+type weekPlanRecord struct {
+	Days []weekPlanRecordDay `json:"days"`
+	// LunchCount/DinnerCount 生成时的每餐道数；旧格式缓存没有（为 0）则不校验
+	LunchCount  int `json:"lunch_count,omitempty"`
+	DinnerCount int `json:"dinner_count,omitempty"`
+}
+
+type weekPlanRecordDay struct {
+	Date    string        `json:"date"`
+	DayName string        `json:"day_name"`
+	Lunch   []weekPlanRef `json:"lunch"`
+	Dinner  []weekPlanRef `json:"dinner"`
+}
+
+// weekPlanRef 只解出菜品 id；旧格式里的完整菜品对象其余字段直接忽略
+type weekPlanRef struct {
+	ID uint `json:"id"`
+}
+
+// weekPlanConfig 生成/校验周菜单所依据的设置快照（一次读取，生成与校验口径一致）
+type weekPlanConfig struct {
+	lunchCount  int
+	dinnerCount int
+	dislikes    familyDislikeConfig
+}
+
+func loadWeekPlanConfig() weekPlanConfig {
+	return weekPlanConfig{
+		lunchCount:  getSettingInt("lunch_dishes_per_day", 1),
+		dinnerCount: getSettingInt("dinner_dishes_per_day", 1),
+		dislikes:    loadFamilyDislikeConfig(),
+	}
+}
+
 var (
-	cachedPlan    *WeekPlan
-	cachedWeekKey string
-	planMu        sync.RWMutex
+	// weekPlanMu 串行化周菜单的"校验缓存 → 必要时重新生成 → 保存"，
+	// 避免并发请求各自生成出两份不同的菜单
+	weekPlanMu   sync.Mutex
+	cachedRecord *weekPlanRecord
 )
 
 func getCurrentWeekKey() string {
@@ -51,79 +93,179 @@ func getSettingInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
+// GetCachedWeekPlan 本周菜单：缓存仍有效则返回（菜品信息为最新），否则按当前设置重新生成。
+// 缓存失效条件：不是本周的、每餐道数设置变了、有菜被删/停用、strict 模式下有菜命中忌口。
+// 失效的缓存绝不作为兜底返回——那正是"改了忌口还看到忌口菜"的来源。
 func GetCachedWeekPlan() *WeekPlan {
-	weekKey := getCurrentWeekKey()
+	weekPlanMu.Lock()
+	defer weekPlanMu.Unlock()
 
-	planMu.RLock()
-	if cachedPlan != nil && cachedWeekKey == weekKey {
-		p := cachedPlan
-		planMu.RUnlock()
-		return p
+	cfg := loadWeekPlanConfig()
+	if cachedRecord == nil {
+		cachedRecord = loadWeekPlanRecord()
 	}
-	planMu.RUnlock()
+	if plan, ok := rehydrateWeekPlan(cachedRecord, getCurrentWeekKey(), cfg); ok {
+		return plan
+	}
 
+	plan := generateWeekPlan(cfg)
+	if len(plan.Days) > 0 {
+		saveWeekPlanRecord(plan, cfg)
+	}
+	// 生成为空（如 strict 忌口过滤掉了全部菜）就如实返回空，不缓存，下次请求重新判断
+	return plan
+}
+
+// RegenerateWeekPlan 手动重新生成本周菜单；生成为空时保留仍然有效的旧菜单
+func RegenerateWeekPlan() *WeekPlan {
+	weekPlanMu.Lock()
+	defer weekPlanMu.Unlock()
+
+	cfg := loadWeekPlanConfig()
+	plan := generateWeekPlan(cfg)
+	if len(plan.Days) > 0 {
+		saveWeekPlanRecord(plan, cfg)
+		return plan
+	}
+	if cachedRecord == nil {
+		cachedRecord = loadWeekPlanRecord()
+	}
+	if stale, ok := rehydrateWeekPlan(cachedRecord, getCurrentWeekKey(), cfg); ok {
+		return stale
+	}
+	return plan
+}
+
+// loadWeekPlanRecord 从 settings 读周菜单缓存；不存在或无法解析返回 nil
+func loadWeekPlanRecord() *weekPlanRecord {
 	var setting models.Setting
-	if err := database.DB.Where("`key` = ?", "week_plan_cache").First(&setting).Error; err == nil && setting.Value != "" {
-		var plan WeekPlan
-		if json.Unmarshal([]byte(setting.Value), &plan) == nil && len(plan.Days) > 0 {
-			if plan.Days[0].Date >= weekKey {
-				planMu.Lock()
-				cachedPlan = &plan
-				cachedWeekKey = weekKey
-				planMu.Unlock()
-				return &plan
+	if err := database.DB.Where("`key` = ?", "week_plan_cache").First(&setting).Error; err != nil || setting.Value == "" {
+		return nil
+	}
+	var rec weekPlanRecord
+	if err := json.Unmarshal([]byte(setting.Value), &rec); err != nil || len(rec.Days) == 0 {
+		return nil
+	}
+	return &rec
+}
+
+// rehydrateWeekPlan 校验缓存并按 ID 回库组装出带最新菜品信息的周菜单；
+// 缓存缺失、不是本周、每餐道数不符、有菜不可用或命中 strict 忌口时返回 ok=false
+func rehydrateWeekPlan(rec *weekPlanRecord, weekKey string, cfg weekPlanConfig) (*WeekPlan, bool) {
+	if rec == nil || len(rec.Days) == 0 || rec.Days[0].Date != weekKey {
+		return nil, false
+	}
+	if rec.LunchCount > 0 {
+		if rec.LunchCount != cfg.lunchCount || rec.DinnerCount != cfg.dinnerCount {
+			return nil, false
+		}
+	} else {
+		// 旧格式缓存没记生成时的道数：按每天实际道数与当前设置比对（不一致就重排一次，之后存成新格式）
+		for _, day := range rec.Days {
+			if len(day.Lunch) != cfg.lunchCount || len(day.Dinner) != cfg.dinnerCount {
+				return nil, false
 			}
 		}
 	}
 
-	plan, err := GenerateWeekPlan()
-	if err != nil || len(plan.Days) == 0 {
-		// 生成失败或结果为空：保留旧缓存，绝不用空计划覆盖有效周计划
-		planMu.RLock()
-		stale := cachedPlan
-		planMu.RUnlock()
-		if stale != nil {
-			return stale
+	idSet := make(map[uint]bool)
+	for _, day := range rec.Days {
+		for _, ref := range day.Lunch {
+			idSet[ref.ID] = true
 		}
-		return plan
-	}
-	saveWeekPlanCache(plan)
-	return plan
-}
-
-func RegenerateWeekPlan() *WeekPlan {
-	plan, err := GenerateWeekPlan()
-	if err != nil || len(plan.Days) == 0 {
-		planMu.RLock()
-		stale := cachedPlan
-		planMu.RUnlock()
-		if stale != nil {
-			return stale
+		for _, ref := range day.Dinner {
+			idSet[ref.ID] = true
 		}
-		return plan
 	}
-	saveWeekPlanCache(plan)
-	return plan
-}
-
-func saveWeekPlanCache(plan *WeekPlan) {
-	data, _ := json.Marshal(plan)
-	database.DB.Model(&models.Setting{}).Where("`key` = ?", "week_plan_cache").Assign(models.Setting{Key: "week_plan_cache", Value: string(data)}).FirstOrCreate(&models.Setting{})
-	planMu.Lock()
-	cachedPlan = plan
-	cachedWeekKey = getCurrentWeekKey()
-	planMu.Unlock()
-}
-
-func GenerateWeekPlan() (*WeekPlan, error) {
+	ids := make([]uint, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
 	var dishes []models.Dish
-	database.DB.Where("enabled = ?", true).Find(&dishes)
-	if len(dishes) == 0 {
-		return &WeekPlan{}, nil
+	if len(ids) > 0 {
+		if err := database.DB.Where("id IN ? AND enabled = ?", ids, true).Find(&dishes).Error; err != nil {
+			return nil, false
+		}
+	}
+	byID := make(map[uint]models.Dish, len(dishes))
+	for _, d := range dishes {
+		if cfg.dislikes.strict && dishHitsDislikes(d, cfg.dislikes.tokens) {
+			continue
+		}
+		byID[d.ID] = d
 	}
 
-	lunchCount := getSettingInt("lunch_dishes_per_day", 1)
-	dinnerCount := getSettingInt("dinner_dishes_per_day", 1)
+	resolve := func(refs []weekPlanRef) ([]models.Dish, bool) {
+		out := make([]models.Dish, 0, len(refs))
+		for _, ref := range refs {
+			d, ok := byID[ref.ID]
+			if !ok {
+				return nil, false
+			}
+			out = append(out, d)
+		}
+		return out, true
+	}
+	plan := &WeekPlan{Days: make([]WeekDayPlan, 0, len(rec.Days))}
+	for _, day := range rec.Days {
+		lunch, ok := resolve(day.Lunch)
+		if !ok {
+			return nil, false
+		}
+		dinner, ok := resolve(day.Dinner)
+		if !ok {
+			return nil, false
+		}
+		plan.Days = append(plan.Days, WeekDayPlan{Date: day.Date, DayName: day.DayName, Lunch: lunch, Dinner: dinner})
+	}
+	return plan, true
+}
+
+// saveWeekPlanRecord 把周菜单（只存菜品 ID）写入内存与 settings；调用方需持有 weekPlanMu
+func saveWeekPlanRecord(plan *WeekPlan, cfg weekPlanConfig) {
+	refs := func(dishes []models.Dish) []weekPlanRef {
+		out := make([]weekPlanRef, 0, len(dishes))
+		for _, d := range dishes {
+			out = append(out, weekPlanRef{ID: d.ID})
+		}
+		return out
+	}
+	rec := &weekPlanRecord{LunchCount: cfg.lunchCount, DinnerCount: cfg.dinnerCount}
+	for _, day := range plan.Days {
+		rec.Days = append(rec.Days, weekPlanRecordDay{Date: day.Date, DayName: day.DayName, Lunch: refs(day.Lunch), Dinner: refs(day.Dinner)})
+	}
+	cachedRecord = rec
+
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return
+	}
+	if err := database.DB.Where("`key` = ?", "week_plan_cache").
+		Assign(models.Setting{Key: "week_plan_cache", Value: string(data)}).
+		FirstOrCreate(&models.Setting{}).Error; err != nil {
+		// 落库失败只影响重启后的复用，内存缓存仍有效
+		fmt.Printf("[week-plan] 保存周菜单缓存失败: %v\n", err)
+	}
+}
+
+// GenerateWeekPlan 按当前设置生成一份新的本周菜单（不读写缓存）
+func GenerateWeekPlan() *WeekPlan {
+	return generateWeekPlan(loadWeekPlanConfig())
+}
+
+func generateWeekPlan(cfg weekPlanConfig) *WeekPlan {
+	var dishes []models.Dish
+	if err := database.DB.Where("enabled = ?", true).Find(&dishes).Error; err != nil {
+		return &WeekPlan{}
+	}
+	// strict 忌口：命中的菜整体出局（与日推荐口径一致），全被过滤时宁可返回空菜单
+	dishes = applyDislikeMode(dishes, cfg.dislikes)
+	if len(dishes) == 0 {
+		return &WeekPlan{}
+	}
+
+	lunchCount := cfg.lunchCount
+	dinnerCount := cfg.dinnerCount
 
 	var lunchPool, dinnerPool []models.Dish
 	for _, d := range dishes {
@@ -171,7 +313,7 @@ func GenerateWeekPlan() (*WeekPlan, error) {
 		days = append(days, dayPlan)
 	}
 
-	return &WeekPlan{Days: days}, nil
+	return &WeekPlan{Days: days}
 }
 
 func pickNDishes(pool []models.Dish, count int, globalUsed map[uint]bool, dayUsed map[uint]bool, r *rand.Rand) []models.Dish {
@@ -253,6 +395,8 @@ type ShoppingItem struct {
 	Amount  string `json:"amount"`
 	Checked bool   `json:"checked"`
 	InStock bool   `json:"in_stock"`
+	// StockBatches 冰箱里该食材的未过期批次数（取消"家中有"会把它们一起移出，前端据此确认）
+	StockBatches int `json:"stock_batches"`
 }
 
 type ShoppingCategoryOverride struct {
@@ -435,66 +579,112 @@ func shoppingItemPriority(item ShoppingItem) int {
 	}
 }
 
+// addItemsMu 串行化"先查已有再插入"：双击补料或多端同时补料时不会写出重复条目
+// （单进程 SQLite 应用，进程内互斥即可覆盖全部写入方）
+var addItemsMu sync.Mutex
+
 // AddShoppingListItems 手动往买菜清单补料（如清冰箱推荐里缺的食材）。
-// mealDate 为空默认今天；同日同名条目已存在则跳过去重；返回实际新增条数。
+// mealDate 为空默认今天；同日已有同一食材（含真别名，番茄=西红柿）的条目则跳过；
+// 未带用量且给了 dishID 时，按该菜菜谱补上用量。返回实际新增条数；
+// 数据库读写失败返回 error，调用方不能把失败当成"清单里已经有了"。
 // mealType 用 "extra" 与菜品联动条目隔离，避免删菜时被误清。
-func AddShoppingListItems(items []ShoppingItem, dishID uint, dishName string, mealDate string) int {
-	today := time.Now().Format("2006-01-02")
+func AddShoppingListItems(items []ShoppingItem, dishID uint, dishName string, mealDate string) (int, error) {
 	if mealDate == "" {
-		mealDate = today
+		mealDate = time.Now().Format("2006-01-02")
 	}
+
+	addItemsMu.Lock()
+	defer addItemsMu.Unlock()
 
 	var existing []string
-	database.DB.Model(&models.ShoppingCheck{}).
-		Where("meal_date = ? AND item_name IN ?", mealDate, itemNames(items)).
-		Pluck("item_name", &existing)
-	exists := make(map[string]bool, len(existing))
+	if err := database.DB.Model(&models.ShoppingCheck{}).
+		Where("meal_date = ?", mealDate).
+		Pluck("item_name", &existing).Error; err != nil {
+		return 0, err
+	}
+	exists := make(map[string]bool, len(existing)+len(items))
 	for _, name := range existing {
-		exists[name] = true
+		exists[ingredients.Normalize(name)] = true
 	}
 
+	recipeAmounts := dishRecipeAmounts(dishID)
 	rows := make([]models.ShoppingCheck, 0, len(items))
 	for _, item := range items {
 		name := strings.TrimSpace(item.Name)
-		if name == "" || exists[name] {
+		key := ingredients.Normalize(name)
+		if name == "" || exists[key] {
 			continue
 		}
-		exists[name] = true
+		exists[key] = true
+		amount := strings.TrimSpace(item.Amount)
+		if amount == "" {
+			amount = recipeAmounts[key]
+		}
 		rows = append(rows, models.ShoppingCheck{
 			MealDate:   mealDate,
 			MealType:   "extra",
 			DishID:     dishID,
 			DishName:   dishName,
 			ItemName:   name,
-			ItemAmount: item.Amount,
+			ItemAmount: amount,
 		})
 	}
 	if len(rows) == 0 {
-		return 0
+		return 0, nil
 	}
 	if err := database.DB.Create(&rows).Error; err != nil {
-		return 0
+		return 0, err
 	}
-	return len(rows)
+	return len(rows), nil
 }
 
-func itemNames(items []ShoppingItem) []string {
-	names := make([]string, 0, len(items))
-	for _, item := range items {
-		names = append(names, item.Name)
+// dishRecipeAmounts 菜谱里食材与调料的用量（按真别名归一后的名字索引）；菜不存在返回空表
+func dishRecipeAmounts(dishID uint) map[string]string {
+	amounts := make(map[string]string)
+	if dishID == 0 {
+		return amounts
 	}
-	return names
+	var dish models.Dish
+	if err := database.DB.First(&dish, dishID).Error; err != nil {
+		return amounts
+	}
+	for _, list := range []string{dish.Ingredients, dish.Seasonings} {
+		for _, ing := range ParseIngredientList(list) {
+			key := ingredients.Normalize(ing.Name)
+			if _, ok := amounts[key]; !ok && ing.Amount != "" {
+				amounts[key] = ing.Amount
+			}
+		}
+	}
+	return amounts
 }
 
-func BuildShoppingList(dates []string) []ShoppingCategory {
+// BuildShoppingList 指定日期的买菜清单（同名合并用量、按分类分组）；读库失败返回 error
+func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	if len(dates) == 0 {
-		return []ShoppingCategory{}
+		return []ShoppingCategory{}, nil
 	}
 
 	var checks []models.ShoppingCheck
-	database.DB.Where("meal_date IN ?", dates).Find(&checks)
+	if err := database.DB.Where("meal_date IN ?", dates).Find(&checks).Error; err != nil {
+		return nil, err
+	}
 	if len(checks) == 0 {
-		return []ShoppingCategory{}
+		return []ShoppingCategory{}, nil
+	}
+
+	// 补料条目（extra）是"这道菜还缺什么"的提前登记：之后真的记录了这道菜，
+	// 菜品联动会按菜谱再写一条同名条目，两条说的是同一份需求，用量只算一次（勾选状态照常合并）
+	type linkKey struct {
+		date   string
+		dishID uint
+		item   string
+	}
+	linked := make(map[linkKey]bool)
+	for _, ch := range checks {
+		if ch.MealType != "extra" {
+			linked[linkKey{ch.MealDate, ch.DishID, ch.ItemName}] = true
+		}
 	}
 
 	type nameAccum struct {
@@ -508,7 +698,8 @@ func BuildShoppingList(dates []string) []ShoppingCategory {
 			entry = &nameAccum{}
 			merged[ch.ItemName] = entry
 		}
-		if ch.ItemAmount != "" {
+		superseded := ch.MealType == "extra" && linked[linkKey{ch.MealDate, ch.DishID, ch.ItemName}]
+		if ch.ItemAmount != "" && !superseded {
 			entry.amounts = append(entry.amounts, ch.ItemAmount)
 		}
 		if ch.Checked {
@@ -516,11 +707,10 @@ func BuildShoppingList(dates []string) []ShoppingCategory {
 		}
 	}
 
-	var inventory []models.InventoryBatch
-	database.DB.Where("in_stock = ?", true).Find(&inventory)
-	inStockByName := make(map[string]bool, len(inventory))
-	for _, inv := range inventory {
-		inStockByName[inv.ItemName] = true
+	// "家中有"只看未过期批次，并按真别名匹配（清单写西红柿、冰箱记番茄也算有）
+	stockCounts, err := availableBatchCounts()
+	if err != nil {
+		return nil, err
 	}
 
 	categoryByName := getShoppingCategoryOverrideMap()
@@ -533,7 +723,8 @@ func BuildShoppingList(dates []string) []ShoppingCategory {
 	}
 	for name, entry := range merged {
 		amountStr := compactShoppingAmounts(entry.amounts)
-		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: inStockByName[name]}
+		stock := stockCounts[ingredients.Normalize(name)]
+		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: stock > 0, StockBatches: stock}
 		category := classifyShoppingItem(name, categoryByName)
 		if _, ok := grouped[category]; !ok {
 			category = "其他"
@@ -552,7 +743,7 @@ func BuildShoppingList(dates []string) []ShoppingCategory {
 		result = append(result, ShoppingCategory{Category: category, Items: items})
 	}
 
-	return result
+	return result, nil
 }
 
 func classifyShoppingItem(name string, overrides map[string]string) string {
@@ -646,47 +837,54 @@ func ListShoppingCategoryOverrides() []ShoppingCategoryOverride {
 	return overrides
 }
 
-func UpsertShoppingCategoryOverride(itemName, category string) bool {
+// UpsertShoppingCategoryOverride 设置食材的买菜清单分类；参数无效返回 ok=false
+func UpsertShoppingCategoryOverride(itemName, category string) (bool, error) {
 	itemName = strings.TrimSpace(itemName)
 	category = strings.TrimSpace(category)
 	if itemName == "" || !isValidShoppingCategory(category) {
-		return false
+		return false, nil
 	}
 
-	database.DB.Where("item_name = ?", itemName).
+	err := database.DB.Where("item_name = ?", itemName).
 		Assign(models.ShoppingItemCategory{Category: category}).
-		FirstOrCreate(&models.ShoppingItemCategory{ItemName: itemName})
-	return true
+		FirstOrCreate(&models.ShoppingItemCategory{ItemName: itemName}).Error
+	return true, err
 }
 
-func DeleteShoppingCategoryOverride(itemName string) {
+func DeleteShoppingCategoryOverride(itemName string) error {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
-		return
+		return nil
 	}
-	database.DB.Where("item_name = ?", itemName).Delete(&models.ShoppingItemCategory{})
+	return database.DB.Where("item_name = ?", itemName).Delete(&models.ShoppingItemCategory{}).Error
 }
 
-func ToggleShoppingCheck(itemName string, mealDate string, checked bool) {
-	database.DB.Model(&models.ShoppingCheck{}).
-		Where("item_name = ?", itemName).
-		Update("checked", checked)
+// ToggleShoppingCheck 勾选/取消某食材"已买"：只改买菜清单展示范围（今天+明天）内的条目，
+// 不能把历史日期和更远日期里同名的条目一起改掉（会污染"已买"统计与之后的清单）
+func ToggleShoppingCheck(itemName string, checked bool) error {
+	now := time.Now()
+	dates := []string{now.Format("2006-01-02"), now.AddDate(0, 0, 1).Format("2006-01-02")}
+	return database.DB.Model(&models.ShoppingCheck{}).
+		Where("item_name = ? AND meal_date IN ?", itemName, dates).
+		Update("checked", checked).Error
 }
 
-func ToggleHomeInventory(itemName string, inStock bool) {
+// ToggleHomeInventory 买菜清单"家中有"开关：打开 = 冰箱新增一批；
+// 关闭 = 移出该食材（含真别名）的全部未过期批次（前端已按 stock_batches 二次确认）
+func ToggleHomeInventory(itemName string, inStock bool) error {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
-		return
+		return ErrEmptyItemName
 	}
 
 	if !inStock {
-		database.DB.Where("item_name = ?", itemName).Delete(&models.InventoryBatch{})
-		return
+		_, err := removeAvailableBatches(itemName)
+		return err
 	}
 
 	// 复用冰箱添加逻辑：按食材字典自动设默认保质期，与冰箱页行为一致，
 	// 从买菜清单点"家中有"的食材同样能产生临期提醒
-	CreateInventoryBatch(itemName, "", "")
+	return CreateInventoryBatch(itemName, "", "")
 }
 
 func hasKeyword(s string, keywords []string) bool {

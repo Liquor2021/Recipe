@@ -34,40 +34,24 @@ func PickDishes(mealType string, count int, excludeRecent bool) ([]models.Dish, 
 
 	query.Find(&dishes)
 
-	if len(dishes) == 0 {
-		return nil, nil
-	}
-
-	if excludeRecent {
-		dishes = filterRecent(dishes, getRepeatDays())
-	}
-
-	if len(dishes) == 0 {
-		var allDishes []models.Dish
-		database.DB.Where("enabled = ?", true).Find(&allDishes)
-		if mealType != "" {
-			var filtered []models.Dish
-			for _, d := range allDishes {
-				if d.MealType == mealType || d.MealType == "all" {
-					filtered = append(filtered, d)
-				}
-			}
-			dishes = filtered
-		} else {
-			dishes = allDishes
-		}
-	}
-
-	if len(dishes) == 0 {
-		return nil, nil
-	}
-
+	// strict 模式：命中忌口的菜先整体出局，全部被过滤时宁可返回空。
+	// 必须在"去掉最近吃过"之前做：否则最近没吃过的恰好全是忌口菜时，
+	// 去重结果非空就不会退回全量，忌口过滤后直接变空（明明还有最近吃过的合规菜）。
 	cfg := loadFamilyDislikeConfig()
-	// strict 模式：命中忌口的菜直接出局，全部被过滤时宁可返回空
 	dishes = applyDislikeMode(dishes, cfg)
 	if len(dishes) == 0 {
 		return nil, nil
 	}
+
+	pool := dishes
+	if excludeRecent {
+		pool = filterRecent(dishes, getRepeatDays())
+	}
+	// 最近几天全吃过了：退回不去重的候选池
+	if len(pool) == 0 {
+		pool = dishes
+	}
+	dishes = pool
 
 	weighted := buildWeightedIndices(dishes, cfg.tokens)
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -445,20 +429,62 @@ func dishHitsDislikes(d models.Dish, dislikes map[string]bool) bool {
 	return false
 }
 
-// ExcludeDisliked 过滤命中家庭忌口的菜品。
-// 用于心情推荐、盲盒这类"单菜推荐"场景：没有多人就餐的分摊余地，直接排除。
-func ExcludeDisliked(dishes []models.Dish) []models.Dish {
-	dislikes := loadFamilyDislikes()
-	if len(dislikes) == 0 {
+// preferNonDisliked 单菜推荐（心情推荐、盲盒）的忌口处理：没有多人就餐的分摊余地，
+// 两种模式都优先排除命中忌口的菜；差别在于全被排除时——
+// strict 宁可返回空，avoid（温和降权）退回原候选，忌口不能把推荐清空。
+func preferNonDisliked(dishes []models.Dish, cfg familyDislikeConfig) []models.Dish {
+	if len(cfg.tokens) == 0 {
 		return dishes
 	}
 	out := make([]models.Dish, 0, len(dishes))
 	for _, d := range dishes {
-		if !dishHitsDislikes(d, dislikes) {
+		if !dishHitsDislikes(d, cfg.tokens) {
 			out = append(out, d)
 		}
 	}
+	if len(out) == 0 && !cfg.strict {
+		return dishes
+	}
 	return out
+}
+
+// ExcludeStrictDisliked 按当前家庭忌口配置做 strict 过滤（avoid 模式原样返回）。
+// 供菜品列表接口的推荐类展示位使用（首页今日推荐、转盘）。
+func ExcludeStrictDisliked(dishes []models.Dish) []models.Dish {
+	return applyDislikeMode(dishes, loadFamilyDislikeConfig())
+}
+
+// PreferNonDisliked 按当前家庭忌口配置处理单菜推荐候选，见 preferNonDisliked
+func PreferNonDisliked(dishes []models.Dish) []models.Dish {
+	return preferNonDisliked(dishes, loadFamilyDislikeConfig())
+}
+
+// PickMoodDishes 心情推荐：按心情取候选池、先做忌口处理再判空，最多 count 道。
+// 心情池为空（或被 strict 忌口滤空）时退回普通推荐；返回推荐语场景（退回时为空串）。
+func PickMoodDishes(mood string, count int) ([]models.Dish, string) {
+	var dishes []models.Dish
+	scene := ""
+	switch mood {
+	case "tired", "lazy":
+		database.DB.Where("enabled = ? AND difficulty = ?", true, "easy").Find(&dishes)
+		scene = "quick"
+	case "spicy":
+		database.DB.Where("enabled = ? AND taste = ?", true, "辣").Find(&dishes)
+		scene = "lunch"
+	case "healthy":
+		database.DB.Where("enabled = ? AND taste IN ?", true, []string{"清淡", "鲜"}).Find(&dishes)
+		scene = "dinner"
+	}
+	if candidates := PreferNonDisliked(dishes); len(candidates) > 0 {
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		r.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
+		if len(candidates) > count {
+			candidates = candidates[:count]
+		}
+		return candidates, scene
+	}
+	fallback, _ := PickDishes("", count, true)
+	return fallback, ""
 }
 
 // buildWeightedIndices 生成按权重重复的下标数组：命中家庭忌口的菜固定权重 1（取消收藏加权）

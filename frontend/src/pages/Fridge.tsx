@@ -43,7 +43,7 @@ function coverageTone(coverage: number) {
   return { bg: "bg-yellow-light", text: "text-[#C8A23C]", bar: "bg-yellow" }
 }
 
-function MatchCard({ match, onClick, onAddMissing }: { match: FridgeMatch; onClick: () => void; onAddMissing?: () => void }) {
+function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: FridgeMatch; onClick: () => void; onAddMissing?: () => void; addingMissing?: boolean }) {
   const tone = coverageTone(match.coverage)
   // 后端字段可能为 null，统一兜底成数组
   const matched = match.matched || []
@@ -82,8 +82,9 @@ function MatchCard({ match, onClick, onAddMissing }: { match: FridgeMatch; onCli
           {missing.length > 0 && onAddMissing && (
             <button
               type="button"
+              disabled={addingMissing}
               onClick={(e) => { e.stopPropagation(); onAddMissing() }}
-              className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-light text-[#C8A23C] transition-all active:scale-95"
+              className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-light text-[#C8A23C] transition-all active:scale-95 disabled:opacity-50"
             >
               🛒 补料
             </button>
@@ -139,6 +140,7 @@ export default function Fridge() {
   const removeBatchMut = useMutation({
     mutationFn: (id: number) => fridgeApi.removeBatch(id),
     onSuccess: () => { invalidate(); setEditing(null); toast.success("已移出冰箱") },
+    onError: () => toast.error("移出失败，稍后再试"),
   })
 
   // 缺料一键补入买菜清单（今天去买，做今天的菜）
@@ -149,8 +151,7 @@ export default function Fridge() {
         dish_name: p.dish_name,
         items: p.missing.map((name) => ({ name })),
       }),
-    onSuccess: (result) => {
-      const added = (result as { added?: number } | null)?.added ?? 0
+    onSuccess: ({ added }) => {
       toast.success(added > 0 ? `🛒 已加入买菜清单 ${added} 项` : "买菜清单里已经有了")
       qc.invalidateQueries({ queryKey: ["shopping-list"] })
     },
@@ -325,6 +326,7 @@ export default function Fridge() {
                     match={m}
                     onClick={() => navigate(`/dishes/${m.dish.id}`)}
                     onAddMissing={() => addMissingMut.mutate({ dish_id: m.dish.id, dish_name: m.dish.name, missing: m.missing || [] })}
+                    addingMissing={addMissingMut.isPending}
                   />
                 ))}
               </div>
@@ -378,7 +380,8 @@ export default function Fridge() {
           <div className="flex gap-2.5">
             <button
               type="button"
-              onClick={() => { removeBatchMut.mutate(editing.id); toast.success("已移出冰箱") }}
+              onClick={() => removeBatchMut.mutate(editing.id)}
+              disabled={removeBatchMut.isPending}
               className="py-2.5 px-4 rounded-full text-sm font-semibold bg-red-light text-red active:scale-96 transition-all"
             >
               移出该批

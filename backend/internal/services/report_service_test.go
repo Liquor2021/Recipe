@@ -52,6 +52,34 @@ func TestSplitTasteTokens(t *testing.T) {
 	}
 }
 
+func TestPreviousPeriod(t *testing.T) {
+	day := func(s string) time.Time {
+		d, err := time.ParseInLocation("2006-01-02", s, time.Local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	tests := []struct {
+		note, rng, start, today string
+		wantStart, wantEnd      string
+	}{
+		{"周三：对比上周一到周三", "week", "2026-10-26", "2026-10-28", "2026-10-19", "2026-10-21"},
+		{"周日：对比整个上周", "week", "2026-10-26", "2026-11-01", "2026-10-19", "2026-10-25"},
+		{"3 月 1 日：对比 2 月 1 日（不是 1 月 30 日）", "month", "2026-03-01", "2026-03-01", "2026-02-01", "2026-02-01"},
+		{"10 月 31 日：对比整个 9 月，不与本期重叠", "month", "2026-10-01", "2026-10-31", "2026-09-01", "2026-09-30"},
+		{"3 月 31 日：上月更短，截到 2 月末", "month", "2026-03-01", "2026-03-31", "2026-02-01", "2026-02-28"},
+		{"闰年 2 月 29 日：对比 1 月前 29 天", "month", "2028-02-01", "2028-02-29", "2028-01-01", "2028-01-29"},
+		{"1 月跨年：对比去年 12 月", "month", "2027-01-01", "2027-01-15", "2026-12-01", "2026-12-15"},
+	}
+	for _, tt := range tests {
+		gotStart, gotEnd := previousPeriod(tt.rng, day(tt.start), day(tt.today))
+		if gs, ge := gotStart.Format("2006-01-02"), gotEnd.Format("2006-01-02"); gs != tt.wantStart || ge != tt.wantEnd {
+			t.Fatalf("[%s] previousPeriod = %s..%s, want %s..%s", tt.note, gs, ge, tt.wantStart, tt.wantEnd)
+		}
+	}
+}
+
 func TestBuildDietReport(t *testing.T) {
 	start := time.Date(2026, 10, 19, 0, 0, 0, 0, time.Local) // 周一
 	end := start.AddDate(0, 0, 6)

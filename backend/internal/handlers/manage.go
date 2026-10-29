@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func GetQuotes(c *gin.Context) {
@@ -30,7 +31,10 @@ func CreateQuote(c *gin.Context) {
 	}
 
 	quote := models.Quote{Content: req.Content, Scene: req.Scene, Enabled: true}
-	database.DB.Create(&quote)
+	if err := database.DB.Create(&quote).Error; err != nil {
+		utils.InternalError(c, "创建推荐语失败")
+		return
+	}
 	utils.Success(c, quote)
 }
 
@@ -50,13 +54,19 @@ func UpdateQuote(c *gin.Context) {
 
 	quote.Content = req.Content
 	quote.Scene = req.Scene
-	database.DB.Save(&quote)
+	if err := database.DB.Save(&quote).Error; err != nil {
+		utils.InternalError(c, "保存推荐语失败")
+		return
+	}
 	utils.Success(c, quote)
 }
 
 func DeleteQuote(c *gin.Context) {
 	id := c.Param("id")
-	database.DB.Delete(&models.Quote{}, id)
+	if err := database.DB.Delete(&models.Quote{}, id).Error; err != nil {
+		utils.InternalError(c, "删除失败")
+		return
+	}
 	utils.SuccessMsg(c, "删除成功")
 }
 
@@ -112,10 +122,13 @@ func UnlockAchievement(c *gin.Context) {
 	}
 
 	now := time.Now()
-	database.DB.Create(&models.UserAchievement{
+	if err := database.DB.Create(&models.UserAchievement{
 		AchievementID: achievement.ID,
 		UnlockedAt:    now,
-	})
+	}).Error; err != nil {
+		utils.InternalError(c, "解锁失败")
+		return
+	}
 	utils.SuccessMsg(c, "解锁成功")
 }
 
@@ -130,16 +143,22 @@ func ToggleAchievement(c *gin.Context) {
 	var unlocked models.UserAchievement
 	result := database.DB.Where("achievement_id = ?", achievement.ID).First(&unlocked)
 	if result.Error == nil {
-		database.DB.Delete(&unlocked)
+		if err := database.DB.Delete(&unlocked).Error; err != nil {
+			utils.InternalError(c, "操作失败")
+			return
+		}
 		utils.SuccessMsg(c, "已关闭")
 		return
 	}
 
 	now := time.Now()
-	database.DB.Create(&models.UserAchievement{
+	if err := database.DB.Create(&models.UserAchievement{
 		AchievementID: achievement.ID,
 		UnlockedAt:    now,
-	})
+	}).Error; err != nil {
+		utils.InternalError(c, "操作失败")
+		return
+	}
 	utils.SuccessMsg(c, "已激活")
 }
 
@@ -160,6 +179,10 @@ func CreateAchievement(c *gin.Context) {
 	if req.Condition == "" {
 		req.Condition = "manual"
 	}
+	if achievementCodeTaken(req.Code, 0) {
+		utils.BadRequest(c, "成就代码已存在")
+		return
+	}
 
 	achievement := models.Achievement{
 		Code:        req.Code,
@@ -168,8 +191,18 @@ func CreateAchievement(c *gin.Context) {
 		Icon:        req.Icon,
 		Condition:   req.Condition,
 	}
-	database.DB.Create(&achievement)
+	if err := database.DB.Create(&achievement).Error; err != nil {
+		utils.InternalError(c, "创建成就失败")
+		return
+	}
 	utils.Success(c, achievement)
+}
+
+// achievementCodeTaken 成就代码是否已被其他成就占用（code 有唯一约束，撞了写入会失败）
+func achievementCodeTaken(code string, exceptID uint) bool {
+	var n int64
+	database.DB.Model(&models.Achievement{}).Where("code = ? AND id <> ?", code, exceptID).Count(&n)
+	return n > 0
 }
 
 func UpdateAchievement(c *gin.Context) {
@@ -186,6 +219,11 @@ func UpdateAchievement(c *gin.Context) {
 		return
 	}
 
+	if achievementCodeTaken(req.Code, achievement.ID) {
+		utils.BadRequest(c, "成就代码已存在")
+		return
+	}
+
 	achievement.Code = req.Code
 	achievement.Name = req.Name
 	achievement.Description = req.Description
@@ -194,14 +232,26 @@ func UpdateAchievement(c *gin.Context) {
 	if achievement.Condition == "" {
 		achievement.Condition = "manual"
 	}
-	database.DB.Save(&achievement)
+	if err := database.DB.Save(&achievement).Error; err != nil {
+		utils.InternalError(c, "保存成就失败")
+		return
+	}
 	utils.Success(c, achievement)
 }
 
 func DeleteAchievement(c *gin.Context) {
 	id := c.Param("id")
-	database.DB.Where("achievement_id = ?", id).Delete(&models.UserAchievement{})
-	database.DB.Delete(&models.Achievement{}, id)
+	// 解锁记录与成就本身同进同退，避免只删掉一半
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("achievement_id = ?", id).Delete(&models.UserAchievement{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.Achievement{}, id).Error
+	})
+	if err != nil {
+		utils.InternalError(c, "删除失败")
+		return
+	}
 	utils.SuccessMsg(c, "删除成功")
 }
 
@@ -250,16 +300,29 @@ func UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	for key, value := range req.Settings {
-		if key == "admin_password" || key == "app_password" {
-			continue
+	// 一次提交的多项设置同进同退，避免部分写入后仍提示"更新成功"。
+	// 先写后读：UPDATE 一上来就拿写锁，不会出现"先读后写升级锁时被别的连接抢先提交"的 SQLITE_BUSY；
+	// 用 Update("value", ...) 而不是结构体 Assign：结构体会跳过零值，设置无法被清空成 ""。
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		for key, value := range req.Settings {
+			if key == "admin_password" || key == "app_password" {
+				continue
+			}
+			res := tx.Model(&models.Setting{}).Where("`key` = ?", key).Update("value", value)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				if err := tx.Create(&models.Setting{Key: key, Value: value}).Error; err != nil {
+					return err
+				}
+			}
 		}
-		var existing models.Setting
-		if err := database.DB.Where("`key` = ?", key).First(&existing).Error; err == nil {
-			database.DB.Model(&models.Setting{}).Where("`key` = ?", key).Update("value", value)
-		} else {
-			database.DB.Create(&models.Setting{Key: key, Value: value})
-		}
+		return nil
+	})
+	if err != nil {
+		utils.InternalError(c, "保存设置失败")
+		return
 	}
 
 	utils.SuccessMsg(c, "更新成功")

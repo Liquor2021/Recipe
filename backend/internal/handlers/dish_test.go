@@ -9,6 +9,7 @@ func TestDishMatchesKeyword(t *testing.T) {
 	tomatoEgg := models.Dish{ID: 1, Name: "番茄炒蛋", Ingredients: `[{"name":"番茄","amount":"2个"},{"name":"鸡蛋","amount":"3个"},{"name":"小葱","amount":"1根"}]`}
 	potatoBeef := models.Dish{ID: 2, Name: "土豆烧牛腩", Ingredients: `[{"name":"马铃薯","amount":"1个"},{"name":"牛腩","amount":"500g"}]`}
 	braisedPork := models.Dish{ID: 3, Name: "红烧排骨", Ingredients: `[{"name":"排骨","amount":"500g"}]`}
+	spicyChicken := models.Dish{ID: 4, Name: "宫保鸡丁", Category: "川菜", Taste: "麻辣", Tags: `["下饭","快手"]`, Ingredients: `[{"name":"鸡腿","amount":"300g"}]`}
 
 	tests := []struct {
 		dish    models.Dish
@@ -40,6 +41,13 @@ func TestDishMatchesKeyword(t *testing.T) {
 		{tomatoEgg, "e", false, "单字母不走拼音路径（fanqiechaodan 含 e，否则全库误召回）"},
 		{tomatoEgg, "a", false, "单字母不走拼音路径（fanqiechaodan 含 a）"},
 		{tomatoEgg, "n", false, "单字母不走拼音路径（fanqiechaodan 含 n）"},
+
+		// —— 菜系/口味/标签 ——
+		{spicyChicken, "川菜", true, "菜系命中"},
+		{spicyChicken, "麻辣", true, "口味命中"},
+		{spicyChicken, "下饭", true, "标签命中"},
+		{spicyChicken, "粤菜", false, "菜系不符"},
+		{tomatoEgg, "下饭", false, "没有该标签"},
 	}
 	for _, tt := range tests {
 		if got := dishMatchesKeyword(tt.dish, tt.keyword); got != tt.want {

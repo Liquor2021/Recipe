@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi } from "@/api"
+import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi, getUploadErrorMessage } from "@/api"
 import type { Dish } from "@/types"
 import DishImage from "@/components/DishImage"
 import DishCard from "@/components/DishCard"
@@ -47,13 +47,14 @@ export default function Home() {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const appName = useAppInfoStore((s) => s.appName)
 
+  // 今日推荐/换一个/猜你喜欢与转盘都是推荐位：strict 忌口模式下由后端剔除命中忌口的菜
   const { data: dishesData } = useQuery({
     queryKey: ["dishes", "enabled"],
-    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc" }),
+    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", exclude_disliked: "1" }),
   })
   const { data: wheelData } = useQuery({
     queryKey: ["dishes", "wheel"],
-    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "12", sort: "random" }),
+    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "12", sort: "random", exclude_disliked: "1" }),
   })
   const { data: recordsData } = useQuery({
     queryKey: ["records"],
@@ -127,7 +128,8 @@ export default function Home() {
       toast.success(`${meal === "lunch" ? "🍳 午餐" : "🍲 晚餐"}推荐：${dish.name}`)
       requestAnimationFrame(() => scrollToElement(recCardRef.current, { block: "center" }))
     },
-    onError: () => toast.error("推荐失败，稍后再试"),
+    // 显示后端的原因（如 strict 忌口过滤后"没有可推荐的菜品"），不笼统说"稍后再试"
+    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "推荐失败，稍后再试")),
   })
 
   const recordMut = useMutation({

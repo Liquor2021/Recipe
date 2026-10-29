@@ -1,6 +1,187 @@
 package services
 
-import "testing"
+import (
+	"ninimenu/internal/database"
+	"ninimenu/internal/models"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestAddShoppingListItems(t *testing.T) {
+	setupTestDB(t, &models.Dish{}, &models.ShoppingCheck{})
+	dish := models.Dish{
+		Name:        "番茄牛腩",
+		Ingredients: `[{"name":"西红柿","amount":"2个"},{"name":"牛腩","amount":"500g"}]`,
+		Seasonings:  `[{"name":"生抽","amount":"1勺"}]`,
+		Enabled:     true,
+	}
+	database.DB.Create(&dish)
+	// 清单里已有菜品联动写入的"番茄"（真别名 = 西红柿）
+	database.DB.Create(&models.ShoppingCheck{MealDate: "2026-10-28", MealType: "lunch", DishID: 99, ItemName: "番茄"})
+
+	added, err := AddShoppingListItems([]ShoppingItem{
+		{Name: "西红柿"},              // 别名已在清单 → 跳过
+		{Name: " 牛腩 "},             // 未带用量 → 按菜谱补 500g
+		{Name: "生抽", Amount: "2勺"}, // 自带用量优先
+		{Name: "牛腩"},               // 同一请求内重复 → 跳过
+		{Name: "  "},
+	}, dish.ID, dish.Name, "2026-10-28")
+	if err != nil || added != 2 {
+		t.Fatalf("added=%d err=%v, want 2 nil", added, err)
+	}
+	var rows []models.ShoppingCheck
+	database.DB.Where("meal_type = ?", "extra").Order("id ASC").Find(&rows)
+	if len(rows) != 2 || rows[0].ItemName != "牛腩" || rows[0].ItemAmount != "500g" || rows[1].ItemName != "生抽" || rows[1].ItemAmount != "2勺" {
+		t.Fatalf("rows = %+v, want 牛腩 500g / 生抽 2勺", rows)
+	}
+
+	// 再补一次：全部已存在，返回 0 且不是错误
+	if added, err := AddShoppingListItems([]ShoppingItem{{Name: "牛腩"}}, dish.ID, dish.Name, "2026-10-28"); err != nil || added != 0 {
+		t.Fatalf("重复补料 added=%d err=%v, want 0 nil", added, err)
+	}
+}
+
+func TestAddShoppingListItemsConcurrentNoDuplicate(t *testing.T) {
+	setupTestDB(t, &models.Dish{}, &models.ShoppingCheck{})
+	// 模拟双击补料：并发请求同一食材只能写入一条
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := AddShoppingListItems([]ShoppingItem{{Name: "洋葱"}}, 0, "", "2026-10-28"); err != nil {
+				t.Errorf("并发补料返回错误: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	var n int64
+	database.DB.Model(&models.ShoppingCheck{}).Where("item_name = ?", "洋葱").Count(&n)
+	if n != 1 {
+		t.Fatalf("并发补料写入了 %d 条洋葱, want 1", n)
+	}
+}
+
+func TestAddShoppingListItemsReportsDBError(t *testing.T) {
+	// 没有 shopping_checks 表：查询/写入失败必须返回 error，不能伪装成"已存在"的 0
+	setupTestDB(t, &models.Dish{})
+	if _, err := AddShoppingListItems([]ShoppingItem{{Name: "洋葱"}}, 0, "", "2026-10-28"); err == nil {
+		t.Fatalf("数据库失败时应返回 error")
+	}
+}
+
+func dateFromNow(days int) string {
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
+}
+
+func TestShoppingListInStockIgnoresExpiredAndMatchesAlias(t *testing.T) {
+	setupTestDB(t, &models.ShoppingCheck{}, &models.InventoryBatch{}, &models.ShoppingItemCategory{})
+	today := dateFromNow(0)
+	for _, name := range []string{"西红柿", "牛奶", "鸡蛋"} {
+		database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "lunch", DishID: 1, ItemName: name, ItemAmount: "1个"})
+	}
+	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(3)})  // 别名
+	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: ""})              // 未设保质期也算有
+	database.DB.Create(&models.InventoryBatch{ItemName: "牛奶", InStock: true, ExpiryDate: dateFromNow(-1)}) // 已过期
+
+	items := shoppingItemsByName(t, today)
+	if it := items["西红柿"]; !it.InStock || it.StockBatches != 2 {
+		t.Fatalf("冰箱记的是番茄（别名），西红柿应显示家中有 2 批, got %+v", it)
+	}
+	if it := items["牛奶"]; it.InStock || it.StockBatches != 0 {
+		t.Fatalf("已过期的牛奶不算家中有, got %+v", it)
+	}
+	if it := items["鸡蛋"]; it.InStock {
+		t.Fatalf("鸡蛋不在冰箱, got %+v", it)
+	}
+}
+
+func shoppingItemsByName(t *testing.T, dates ...string) map[string]ShoppingItem {
+	t.Helper()
+	list, err := BuildShoppingList(dates)
+	if err != nil {
+		t.Fatalf("BuildShoppingList: %v", err)
+	}
+	items := map[string]ShoppingItem{}
+	for _, cat := range list {
+		for _, it := range cat.Items {
+			items[it.Name] = it
+		}
+	}
+	return items
+}
+
+func TestShoppingListExtraNotDoubleCountedAfterRecording(t *testing.T) {
+	setupTestDB(t, &models.ShoppingCheck{}, &models.InventoryBatch{}, &models.ShoppingItemCategory{})
+	today := dateFromNow(0)
+	// 先补料（带菜谱用量），再真的记录这道菜：同一份需求，用量只算一次
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "extra", DishID: 7, ItemName: "牛腩", ItemAmount: "500g", Checked: true})
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 7, ItemName: "牛腩", ItemAmount: "500g"})
+	// 另一道菜的同名需求照常累加
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "lunch", DishID: 8, ItemName: "牛腩", ItemAmount: "200g"})
+	// 没有对应菜品记录的补料照常计入
+	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "extra", DishID: 9, ItemName: "洋葱", ItemAmount: "1个"})
+
+	items := shoppingItemsByName(t, today)
+	if it := items["牛腩"]; it.Amount != "700g" || !it.Checked {
+		t.Fatalf("牛腩应为 500g(同一份需求只算一次)+200g = 700g 且保留勾选, got %+v", it)
+	}
+	if it := items["洋葱"]; it.Amount != "1个" {
+		t.Fatalf("独立的补料条目应照常计入, got %+v", it)
+	}
+}
+
+func TestToggleHomeInventoryOffRemovesOnlyAvailableBatches(t *testing.T) {
+	setupTestDB(t, &models.InventoryBatch{})
+	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(3)})
+	database.DB.Create(&models.InventoryBatch{ItemName: "西红柿", InStock: true, ExpiryDate: dateFromNow(5)})
+	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(-2)}) // 已过期：留给冰箱页处理
+	database.DB.Create(&models.InventoryBatch{ItemName: "鸡蛋", InStock: true})
+
+	if err := ToggleHomeInventory("西红柿", false); err != nil {
+		t.Fatal(err)
+	}
+	var left []models.InventoryBatch
+	database.DB.Order("id ASC").Find(&left)
+	if len(left) != 2 || left[0].ExpiryDate != dateFromNow(-2) || left[1].ItemName != "鸡蛋" {
+		t.Fatalf("应只移出番茄/西红柿的未过期批次, left %+v", left)
+	}
+	if err := ToggleHomeInventory("  ", true); err != ErrEmptyItemName {
+		t.Fatalf("空名应返回 ErrEmptyItemName, got %v", err)
+	}
+}
+
+func TestToggleShoppingCheckOnlyTouchesVisibleDates(t *testing.T) {
+	setupTestDB(t, &models.ShoppingCheck{})
+	for _, offset := range []int{-3, 0, 1, 5} {
+		database.DB.Create(&models.ShoppingCheck{MealDate: dateFromNow(offset), MealType: "lunch", DishID: 1, ItemName: "鸡蛋"})
+	}
+	if err := ToggleShoppingCheck("鸡蛋", true); err != nil {
+		t.Fatal(err)
+	}
+	var rows []models.ShoppingCheck
+	database.DB.Order("meal_date ASC").Find(&rows)
+	got := []bool{rows[0].Checked, rows[1].Checked, rows[2].Checked, rows[3].Checked}
+	want := []bool{false, true, true, false}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("只应勾选今天/明天的条目, checked = %v (dates %s..%s)", got, rows[0].MealDate, rows[3].MealDate)
+		}
+	}
+}
+
+func TestAvailableBatchCountsDistinctFoods(t *testing.T) {
+	setupTestDB(t, &models.InventoryBatch{})
+	for i := 0; i < 10; i++ {
+		database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true})
+	}
+	database.DB.Create(&models.InventoryBatch{ItemName: "西红柿", InStock: true})
+	counts, err := availableBatchCounts()
+	if err != nil || len(counts) != 1 || counts["番茄"] != 11 {
+		t.Fatalf("10 批番茄 + 1 批西红柿是同一种食材（库存成就只算 1 项）, got %v %v", counts, err)
+	}
+}
 
 func TestCompactShoppingAmounts(t *testing.T) {
 	tests := []struct {

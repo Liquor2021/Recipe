@@ -15,11 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-type nameAmount struct {
-	Name   string `json:"name"`
-	Amount string `json:"amount"`
-}
-
 func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string, mealDate string) error {
 	var dish models.Dish
 	if err := db.Unscoped().First(&dish, dishID).Error; err != nil {
@@ -27,14 +22,11 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 		return nil
 	}
 
+	// 食材与调料都可能是旧版字符串数组 ["鸡蛋"]，统一按两种格式兼容解析，
+	// 否则旧菜品记录后买菜清单联动会静默丢失
 	var items []models.ShoppingCheck
-
-	var ingredients []nameAmount
-	if err := json.Unmarshal([]byte(dish.Ingredients), &ingredients); err != nil {
-		ingredients = nil
-	}
-	for _, ing := range ingredients {
-		if ing.Name != "" {
+	for _, list := range []string{dish.Ingredients, dish.Seasonings} {
+		for _, ing := range services.ParseIngredientList(list) {
 			items = append(items, models.ShoppingCheck{
 				MealDate:   mealDate,
 				MealType:   mealType,
@@ -42,23 +34,6 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 				DishName:   dishName,
 				ItemName:   ing.Name,
 				ItemAmount: ing.Amount,
-			})
-		}
-	}
-
-	var seasonings []nameAmount
-	if err := json.Unmarshal([]byte(dish.Seasonings), &seasonings); err != nil {
-		seasonings = nil
-	}
-	for _, s := range seasonings {
-		if s.Name != "" {
-			items = append(items, models.ShoppingCheck{
-				MealDate:   mealDate,
-				MealType:   mealType,
-				DishID:     dishID,
-				DishName:   dishName,
-				ItemName:   s.Name,
-				ItemAmount: s.Amount,
 			})
 		}
 	}
@@ -286,7 +261,7 @@ func BatchCreateRecords(c *gin.Context) {
 	}
 
 	var created []models.MealRecord
-	var skipped int
+	var skipped, failed int
 	for _, r := range req.Records {
 		var existing int64
 		database.DB.Model(&models.MealRecord{}).
@@ -315,17 +290,25 @@ func BatchCreateRecords(c *gin.Context) {
 			}
 			return addShoppingItems(tx, r.DishID, r.DishName, r.MealType, r.MealDate)
 		})
-		if err == nil {
-			created = append(created, record)
+		if err != nil {
+			failed++
+			continue
 		}
+		created = append(created, record)
 	}
 	if len(created) > 0 {
 		services.QueueAutoAchievementSync()
+	}
+	// 一条都没写进去且确有失败：按失败处理，不能让前端提示"已记录"
+	if len(created) == 0 && failed > 0 {
+		utils.InternalError(c, "记录失败")
+		return
 	}
 
 	utils.Success(c, gin.H{
 		"created": created,
 		"skipped": skipped,
+		"failed":  failed,
 		"total":   len(req.Records),
 	})
 }
@@ -355,7 +338,10 @@ func UpdateRecord(c *gin.Context) {
 	record.Remark = req.Remark
 	record.Mood = req.Mood
 	record.Photo = req.Photo
-	database.DB.Save(&record)
+	if err := database.DB.Save(&record).Error; err != nil {
+		utils.InternalError(c, "保存记录失败")
+		return
+	}
 	services.QueueAutoAchievementSync()
 	utils.Success(c, record)
 }
@@ -483,7 +469,10 @@ func CreateOrUpdateHomeMood(c *gin.Context) {
 		if rating.Photos == "" {
 			rating.Photos = "[]"
 		}
-		database.DB.Save(&rating)
+		if err := database.DB.Save(&rating).Error; err != nil {
+			utils.InternalError(c, "保存心情失败")
+			return
+		}
 	}
 
 	services.QueueAutoAchievementSync()
@@ -521,7 +510,10 @@ func CreateOrUpdateDayRating(c *gin.Context) {
 		}
 		rating.Remark = req.Remark
 		rating.Photos = photos
-		database.DB.Save(&rating)
+		if err := database.DB.Save(&rating).Error; err != nil {
+			utils.InternalError(c, "保存评价失败")
+			return
+		}
 	}
 
 	services.QueueAutoAchievementSync()

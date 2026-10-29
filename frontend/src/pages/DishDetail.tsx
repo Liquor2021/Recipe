@@ -137,12 +137,16 @@ export default function DishDetail() {
   const dishRecords = dishRecordsData?.records || []
   const dishStats: DishRecordsStats = dishRecordsData?.stats || { total_count: 0, lunch_count: 0, dinner_count: 0, yum_percent: 0, ok_percent: 0, no_percent: 0, avg_rating: 0, last_date: "", avg_interval: 0 }
 
-  const { data: dishesData } = useQuery({
-    queryKey: ["dishes", "all"],
-    queryFn: () => dishesApi.list({ pageSize: "100" }),
+  // 同类推荐按分类向后端取已启用的菜（过去在"最新 100 道"里筛，老分类常常一道都凑不出，还会混进已停用的菜）
+  const { data: sameCategoryData } = useQuery({
+    queryKey: ["dishes", "same-category", dish?.category],
+    queryFn: () => dishesApi.list({ enabled: "true", category: dish!.category, pageSize: "7" }),
+    enabled: !!dish?.category,
   })
-  const allDishes = dishesData?.items || []
-  const sameCategoryDishes = useMemo(() => allDishes.filter((d: Dish) => d.category === dish?.category && d.id !== dishId).slice(0, 6), [allDishes, dish?.category, dishId])
+  const sameCategoryDishes = useMemo(
+    () => (sameCategoryData?.items || []).filter((d: Dish) => d.id !== dishId).slice(0, 6),
+    [sameCategoryData, dishId],
+  )
 
   const favMut = useMutation({
     mutationFn: () => isFav ? favoritesApi.remove(dishId) : favoritesApi.add(dishId),

@@ -8,6 +8,14 @@ const client = axios.create({
 
 export const APP_TOKEN_KEY = "ninimenu_app_password"
 
+// 应用口令失效时通知 Service Worker 清掉离线 API 副本（缓存名由 sw.js 自己管理）
+function clearOfflineApiCache() {
+  if (!("serviceWorker" in navigator)) return
+  navigator.serviceWorker.ready
+    .then((reg) => reg.active?.postMessage({ type: "clear-api-cache" }))
+    .catch(() => {})
+}
+
 client.interceptors.request.use((config) => {
   const appToken = localStorage.getItem(APP_TOKEN_KEY)
   if (appToken) {
@@ -31,6 +39,7 @@ client.interceptors.response.use(
         window.dispatchEvent(new Event("admin-auth-expired"))
       } else {
         localStorage.removeItem(APP_TOKEN_KEY)
+        clearOfflineApiCache()
         window.dispatchEvent(new Event("app-auth-expired"))
       }
     }

@@ -162,11 +162,19 @@ export default function More() {
 
   const recordMut = useMutation({
     mutationFn: (data: Partial<MealRecord>[]) => recordsApi.batchCreate(data),
-    onSuccess: () => {
+    onSuccess: ({ created, skipped, failed }) => {
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       qc.refetchQueries({ queryKey: ["shopping-list"] })
-      toast.success("❤ 已记录！")
+      // 按实际结果提示：全部已记录过/部分失败都不能笼统地说"已记录"
+      const n = created?.length ?? 0
+      if (n === 0) {
+        toast("这些菜之前都记录过了", { icon: "ℹ️" })
+      } else {
+        const extra = [skipped > 0 ? `${skipped} 道已记录过` : "", failed > 0 ? `${failed} 道失败` : ""].filter(Boolean).join("，")
+        if (failed > 0) toast.error(`已记录 ${n} 道，${extra}`)
+        else toast.success(extra ? `❤ 已记录 ${n} 道（${extra}）` : "❤ 已记录！")
+      }
       setModalDay(null)
     },
     onError: () => toast.error("记录失败"),
@@ -216,6 +224,10 @@ export default function More() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["shopping-list"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      // "家中有"会增删冰箱批次
+      qc.invalidateQueries({ queryKey: ["fridge"] })
+      qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
+      qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
     },
     onError: (_err, _data, ctx) => {
       if (ctx?.prev) qc.setQueryData(["shopping-list"], ctx.prev)
@@ -325,6 +337,11 @@ export default function More() {
             {regenerateMut.isPending ? "生成中..." : "🔄 重新生成"}
           </button>
         </div>
+        {weekPlan && days.length === 0 && (
+          <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center text-sm text-text3 mb-2`}>
+            暂时排不出一周菜单：没有可用的菜品，或全部被「严格过滤」忌口排除了
+          </div>
+        )}
         <div ref={weekListRef} className="flex flex-col gap-2.5 mb-1">
           {displayDays.map((day: WeekDayPlan) => (
             <div
@@ -372,7 +389,12 @@ export default function More() {
                     <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                       <span className="text-xs text-text3">{item.amount}</span>
                       <button
-                        onClick={() => inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock })}
+                        onClick={() => {
+                          // 取消"家中有"会把冰箱里这个食材的批次一起移出，先确认
+                          if (item.in_stock && item.stock_batches > 0 &&
+                            !confirm(`取消后会从冰箱移出 ${item.stock_batches} 批「${item.name}」，确定吗？`)) return
+                          inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock })
+                        }}
                         disabled={inventoryMut.isPending}
                         className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
                       >

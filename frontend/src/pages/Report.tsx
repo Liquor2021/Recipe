@@ -79,7 +79,9 @@ function ReportShareSheet({ report, appName, onClose }: { report: DietReport; ap
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
         a.href = url
-        a.download = `NiniMenu-${report.range === "month" ? "month" : "week"}报告-${report.end_date || ""}.png`
+        // 应用名可在后台自定义：去掉文件名里不允许的字符
+        const safeName = (appName || "NiniMenu").replace(/[\\/:*?"<>|\s]+/g, "") || "NiniMenu"
+        a.download = `${safeName}-${report.range === "month" ? "本月" : "本周"}饮食报告-${report.end_date || ""}.png`
         document.body.appendChild(a)
         a.click()
         a.remove()
