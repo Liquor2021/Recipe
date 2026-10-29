@@ -17,7 +17,8 @@ function expiryText(daysLeft: number): string {
 // 后端按菜谱主料精确/别名匹配出真实库存批次（/fridge/consumption），
 // 默认只勾选每项主料里最早到期的未过期批次；同类不同部位（菜要排骨、冰箱是五花肉）
 // 只列出供参考、不默认勾选，避免扣错食材。
-export default function ConsumeInventorySheet({ dish, onClose }: { dish: Dish | null; onClose: () => void }) {
+// zIndexClass：在全屏层（如做菜模式 z-[300]）上打开时需要更高的层级
+export default function ConsumeInventorySheet({ dish, onClose, zIndexClass }: { dish: Dish | null; onClose: () => void; zIndexClass?: string }) {
   const { data, isError } = useQuery({
     queryKey: ["fridge-consumption", dish?.id],
     queryFn: () => fridgeApi.consumption(dish!.id),
@@ -38,10 +39,10 @@ export default function ConsumeInventorySheet({ dish, onClose }: { dish: Dish | 
 
   if (!dish || !data || data.dish_id !== dish.id || data.slots.length === 0) return null
   // key 按菜区分：换一道菜时重置勾选状态
-  return <ConsumeSheetBody key={dish.id} dish={dish} slots={data.slots} onClose={onClose} />
+  return <ConsumeSheetBody key={dish.id} dish={dish} slots={data.slots} onClose={onClose} zIndexClass={zIndexClass} />
 }
 
-function ConsumeSheetBody({ dish, slots, onClose }: { dish: Dish; slots: ConsumptionSlot[]; onClose: () => void }) {
+function ConsumeSheetBody({ dish, slots, onClose, zIndexClass }: { dish: Dish; slots: ConsumptionSlot[]; onClose: () => void; zIndexClass?: string }) {
   const qc = useQueryClient()
   const batchById = new Map(slots.flatMap((s) => s.batches.map((b) => [b.batch_id, b] as const)))
   const [selected, setSelected] = useState<number[]>(() =>
@@ -115,7 +116,7 @@ function ConsumeSheetBody({ dish, slots, onClose }: { dish: Dish; slots: Consump
   }
 
   return (
-    <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5">
+    <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5" zIndexClass={zIndexClass}>
       {({ close }) => (
         <>
           <div className="text-lg font-extrabold mb-0.5">🧊 做完{dish.name}，更新一下冰箱？</div>

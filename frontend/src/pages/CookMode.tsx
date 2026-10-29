@@ -1,11 +1,18 @@
 import { useState, useRef, useMemo, useCallback } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { useQuery } from "@tanstack/react-query"
-import { dishesApi } from "@/api"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { dishesApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
+import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
+import type { Dish } from "@/types"
 import toast from "react-hot-toast"
 
 interface Step { text: string; time?: number }
+
+function todayKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
 
 function parseSteps(value: unknown): Step[] {
   return asArray(value).map((item) => {
@@ -34,6 +41,25 @@ export default function CookMode() {
   const [timerActive, setTimerActive] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // 最后一步做完：给出"记为午餐/晚餐"，记完接着弹扣库存
+  const [finished, setFinished] = useState(false)
+  const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
+  const qc = useQueryClient()
+  const suggestedMeal: "lunch" | "dinner" = new Date().getHours() < 15 ? "lunch" : "dinner"
+  const recordMut = useMutation({
+    mutationFn: (mealType: "lunch" | "dinner") =>
+      recordsApi.create({ dish_id: dishId, dish_name: dish?.name || "", meal_type: mealType, meal_date: todayKey() }),
+    onSuccess: () => {
+      toast.success("❤ 已记录！")
+      qc.invalidateQueries({ queryKey: ["records"] })
+      qc.invalidateQueries({ queryKey: ["achievements"] })
+      qc.invalidateQueries({ queryKey: ["dish-records", dishId] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      if (dish) setConsumeDish(dish)
+    },
+    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "记录失败")),
+  })
+
   const stepTime = steps[currentStep]?.time || 0
   const totalSec = stepTime * 60
 
@@ -49,6 +75,8 @@ export default function CookMode() {
 
   function startTimer(secs: number) {
     if (timerRef.current) clearInterval(timerRef.current)
+    // 计时开始时就确定是不是最后一步：时间到后最后一步直接进入"做好了"
+    const isLastStep = currentStep >= steps.length - 1
     setActiveTotal(secs)
     setSecondsLeft(secs)
     setPaused(false)
@@ -63,11 +91,8 @@ export default function CookMode() {
           toast("⏰ 时间到！该进行下一步了~", { icon: "⏰" })
           speakStep()
           setTimeout(() => {
-            setCurrentStep((prev) => {
-              if (prev < steps.length - 1) return prev + 1
-              toast.success("🎉 全部步骤完成！")
-              return prev
-            })
+            if (isLastStep) setFinished(true)
+            else setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1))
           }, 3000)
           return 0
         }
@@ -144,8 +169,42 @@ export default function CookMode() {
         <button onClick={speakStep} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all">🔊</button>
         <button onClick={toggleTimer} className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-[28px] bg-primary transition-all active:scale-90">{paused ? "▶" : "⏸"}</button>
         <button onClick={() => currentStep < steps.length - 1 && goToStep(currentStep + 1)} className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all ${currentStep >= steps.length - 1 ? "opacity-30" : ""}`}>▶▶</button>
-        <button onClick={() => { if (currentStep < steps.length - 1) goToStep(currentStep + 1); else toast.success("🎉 全部完成！") }} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all">⏭</button>
+        <button
+          onClick={() => { if (currentStep < steps.length - 1) goToStep(currentStep + 1); else setFinished(true) }}
+          aria-label={currentStep < steps.length - 1 ? "下一步" : "做好了"}
+          className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all"
+        >
+          {currentStep < steps.length - 1 ? "⏭" : "✓"}
+        </button>
       </div>
+
+      {finished && (
+        <div className="absolute inset-0 z-[10] bg-[#1A1A2E]/96 flex flex-col items-center justify-center px-8 text-center">
+          <div className="text-[56px] mb-3">🎉</div>
+          <div className="text-xl font-extrabold mb-1">{dish.name} 做好了！</div>
+          <div className="text-sm text-white/60 mb-8">记一笔，顺便更新冰箱</div>
+          <div className="w-full max-w-[320px] flex flex-col gap-3">
+            {(suggestedMeal === "lunch" ? (["lunch", "dinner"] as const) : (["dinner", "lunch"] as const)).map((meal, i) => (
+              <button
+                key={meal}
+                disabled={recordMut.isPending || recordMut.isSuccess}
+                onClick={() => recordMut.mutate(meal)}
+                className={`w-full py-3 rounded-full text-[15px] font-bold transition-all active:scale-96 disabled:opacity-50 ${i === 0 ? "bg-primary text-white" : "bg-white/10 text-white"}`}
+              >
+                {meal === "lunch" ? "🍳 记为午餐" : "🍲 记为晚餐"}
+              </button>
+            ))}
+            <button
+              onClick={() => navigate(-1)}
+              className="w-full py-2.5 text-sm font-semibold text-white/60"
+            >
+              不记了，返回
+            </button>
+          </div>
+        </div>
+      )}
+      {/* 做菜模式是 z-[300] 的全屏层，扣库存弹层要盖在它上面；关掉后回到菜品详情 */}
+      <ConsumeInventorySheet dish={consumeDish} onClose={() => navigate(-1)} zIndexClass="z-[320]" />
     </div>
   )
 }
