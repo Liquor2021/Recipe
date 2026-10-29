@@ -126,7 +126,8 @@ func loadFavoriteRecordStats(dishIDs []uint) (map[uint]FavoriteRecordStats, erro
 	}
 
 	var rows []FavoriteRecordStats
-	err := database.DB.Model(&models.MealRecord{}).
+	// 只统计已经吃过的（明日菜单等未来日期的记录是计划，不算"吃过""上次吃"）
+	err := database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).
 		Select(`
 			dish_id,
 			count(*) as record_count,

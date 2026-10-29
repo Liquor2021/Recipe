@@ -264,8 +264,9 @@ func buildAchievementSnapshot() achievementSnapshot {
 		}
 	}
 
+	// 成就只按已经吃过的记录算：保存的明日菜单是计划，不能提前解锁"晚餐小队"之类的成就
 	var records []models.MealRecord
-	database.DB.
+	database.DB.Scopes(EatenRecords).
 		Select("id", "dish_id", "meal_type", "meal_date", "remark", "mood", "created_at").
 		Order("created_at ASC, id ASC").
 		Find(&records)

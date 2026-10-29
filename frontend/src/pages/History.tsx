@@ -34,6 +34,13 @@ const homeMoodLabelMap: Record<string, string> = { happy: "开心", tired: "疲�
 
 const todayStr = () => `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-${String(new Date().getDate()).padStart(2,"0")}`
 
+// 明日菜单等未来日期的记录是计划：还没吃，不能评价，也不计入累计做饭等统计
+const isPlanned = (r: MealRecord) => r.meal_date > todayStr()
+
+function PlannedPill() {
+  return <span className="flex-shrink-0 px-2 py-1 rounded-full text-[10px] font-medium bg-bg text-text3">计划</span>
+}
+
 function SwipeRowBg({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   return (
     <SwipeDeleteRow actionWidth={80} onDelete={onDelete} className="bg-red">
@@ -160,6 +167,7 @@ export default function History() {
   })
 
   const selectedDateKey = selectedDay !== null ? `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}` : ""
+  const selectedIsFuture = selectedDateKey > todayStr()
   const monthStartKey = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`
   const monthEndKey = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(new Date(calYear, calMonth + 1, 0).getDate()).padStart(2, "0")}`
 
@@ -432,15 +440,21 @@ export default function History() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={openMealRating}
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${dayRating?.mood ? "bg-mint text-white" : "bg-primary text-white"}`}
-              >
-                {dayRating?.mood ? "✓ 已评价" : "😌 评价"}
-              </button>
+              {selectedIsFuture ? (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/80 text-text2">计划中</span>
+              ) : (
+                <button
+                  onClick={openMealRating}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${dayRating?.mood ? "bg-mint text-white" : "bg-primary text-white"}`}
+                >
+                  {dayRating?.mood ? "✓ 已评价" : "😌 评价"}
+                </button>
+              )}
             </div>
             {selectedRecords.length === 0 ? (
-              <div className="py-5 px-4 text-center text-[13px] text-text3">{selectedDateKey === todayStr() ? "今天还没有记录哦~" : "这天没有记录"}</div>
+              <div className="py-5 px-4 text-center text-[13px] text-text3">
+                {selectedDateKey === todayStr() ? "今天还没有记录哦~" : selectedIsFuture ? "这天还没有安排" : "这天没有记录"}
+              </div>
             ) : (
               selectedRecords.map((r) => (
                 <SwipeRowBg key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
@@ -452,7 +466,9 @@ export default function History() {
                       <div className="text-sm font-semibold mb-px">{r.dish_name}</div>
                       <div className="text-[11px] text-text2">{r.meal_type === "lunch" ? "午餐" : "晚餐"}</div>
                     </div>
-                    {r.mood ? (
+                    {isPlanned(r) ? (
+                      <PlannedPill />
+                    ) : r.mood ? (
                       <div onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 transition-transform">
                         <span className="text-lg">{moodEmojiMap[r.mood]}</span>
                         {r.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{r.rating}</span>}
@@ -478,7 +494,8 @@ export default function History() {
             {(() => {
               const dayPhotos = dayRating?.photos ? parsePhotos(dayRating.photos) : []
               const hasPhotos = dayPhotos.length > 0
-              if (!hasPhotos && !selectedDateKey) return null
+              // 还没到的日子没有饭可拍
+              if (!hasPhotos && (!selectedDateKey || selectedIsFuture)) return null
               return (
                 <div className="px-4 py-2.5 border-t border-border">
                   <div className="text-[11px] text-text3 mb-1.5">{hasPhotos ? `📷 照片 (${dayPhotos.length})` : "📷 拍张照记录一下？"}</div>
@@ -531,7 +548,9 @@ export default function History() {
                   <div className="text-sm font-semibold mb-px">{r.dish_name}</div>
                   <div className="text-xs text-text2">{r.meal_date} · {r.meal_type === "lunch" ? "午餐" : "晚餐"}</div>
                 </div>
-                {r.mood ? (
+                {isPlanned(r) ? (
+                  <PlannedPill />
+                ) : r.mood ? (
                   <div onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 transition-transform">
                     <span className="text-lg">{moodEmojiMap[r.mood]}</span>
                     {r.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{r.rating}</span>}

@@ -402,9 +402,10 @@ func DeleteRecord(c *gin.Context) {
 	utils.Success(c, nil)
 }
 
+// GetStats 累计做饭等统计：只算已经吃过的（明日菜单等未来日期的记录是计划）
 func GetStats(c *gin.Context) {
 	var totalRecords int64
-	database.DB.Model(&models.MealRecord{}).Count(&totalRecords)
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).Count(&totalRecords)
 
 	var totalDishes int64
 	database.DB.Model(&models.Dish{}).Where("enabled = ?", true).Count(&totalDishes)
@@ -414,7 +415,7 @@ func GetStats(c *gin.Context) {
 		Count    int64  `json:"count"`
 	}
 	var topDishes []TopDish
-	database.DB.Model(&models.MealRecord{}).
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).
 		Select("dish_name, count(*) as count").
 		Group("dish_id, dish_name").
 		Order("count DESC").
@@ -422,10 +423,10 @@ func GetStats(c *gin.Context) {
 		Find(&topDishes)
 
 	var lunchCount int64
-	database.DB.Model(&models.MealRecord{}).Where("meal_type = ?", "lunch").Count(&lunchCount)
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).Where("meal_type = ?", "lunch").Count(&lunchCount)
 
 	var dinnerCount int64
-	database.DB.Model(&models.MealRecord{}).Where("meal_type = ?", "dinner").Count(&dinnerCount)
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).Where("meal_type = ?", "dinner").Count(&dinnerCount)
 
 	utils.Success(c, gin.H{
 		"total_records": totalRecords,

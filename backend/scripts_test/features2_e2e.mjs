@@ -52,6 +52,16 @@ async function main() {
   r = await req("POST", "/shopping-list/stock-in", { items: [] })
   check("空列表返回 400", r.status === 400, JSON.stringify(r))
 
+  console.log("== 计划与已吃分开统计 ==")
+  const statsBefore = (await req("GET", "/stats")).data
+  const plan = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E入库测试菜", meal_type: "lunch", meal_date: dayFromNow(1) })
+  check("保存明天的计划", plan.code === 0, JSON.stringify(plan))
+  const statsAfter = (await req("GET", "/stats")).data
+  check("明天的计划不计入累计做饭/午餐次数", statsAfter.total_records === statsBefore.total_records && statsAfter.lunch_count === statsBefore.lunch_count, JSON.stringify({ statsBefore, statsAfter }))
+  const dishRecs = (await req("GET", `/dishes/${dishID}/records`)).data
+  check("菜品详情列表里有计划，但\"做了几次/上次做\"只算吃过的", dishRecs.records.length === 2 && dishRecs.stats.total_count === 1 && dishRecs.stats.last_date === dayFromNow(0), JSON.stringify(dishRecs.stats))
+  if (plan.data?.id) await req("DELETE", `/records/${plan.data.id}`)
+
   // 清理
   await req("DELETE", `/fridge/${encodeURIComponent("E2E入库食材")}`)
   if (rec.data?.id) await req("DELETE", `/records/${rec.data.id}`)

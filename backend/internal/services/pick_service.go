@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type TomorrowPickOptions struct {
@@ -248,6 +250,18 @@ func tomorrowDishScore(d models.Dish, profile string, dislikes map[string]bool) 
 		}
 	}
 	return score
+}
+
+// TodayDate 今天的日期（本地时区，YYYY-MM-DD，与记录的 meal_date 同格式）
+func TodayDate() string {
+	return time.Now().Format("2006-01-02")
+}
+
+// EatenRecords 只取已经吃过的用餐记录（meal_date 不晚于今天）。保存的明日菜单会生成
+// 未来日期的记录，那是计划：累计次数、上次吃、成就等统计都不能把它算进去。
+// 推荐去重（recentDishIDMap）仍然算上计划——明天要吃的菜今天不必再推荐。
+func EatenRecords(db *gorm.DB) *gorm.DB {
+	return db.Where("meal_date <= ?", TodayDate())
 }
 
 func recentDishIDMap(days int) map[uint]bool {

@@ -581,6 +581,9 @@ func GetDishRecords(c *gin.Context) {
 	totalRating := 0
 	ratingCount := 0
 	lunchCount := 0
+	// 列表里保留未来日期的记录（明日菜单是计划），但"做了几次/上次做/平均间隔"等只算吃过的
+	today := services.TodayDate()
+	eatenDates := make([]string, 0, len(records)) // 与 records 一样按日期倒序
 
 	for _, r := range records {
 		var photos []string
@@ -597,20 +600,23 @@ func GetDishRecords(c *gin.Context) {
 			photos = []string{}
 		}
 
-		switch r.Mood {
-		case "yum", "great":
-			yumCount++
-		case "ok":
-			okCount++
-		case "no", "meh":
-			noCount++
-		}
-		if r.Rating > 0 {
-			totalRating += r.Rating
-			ratingCount++
-		}
-		if r.MealType == "lunch" {
-			lunchCount++
+		if r.MealDate <= today {
+			eatenDates = append(eatenDates, r.MealDate)
+			switch r.Mood {
+			case "yum", "great":
+				yumCount++
+			case "ok":
+				okCount++
+			case "no", "meh":
+				noCount++
+			}
+			if r.Rating > 0 {
+				totalRating += r.Rating
+				ratingCount++
+			}
+			if r.MealType == "lunch" {
+				lunchCount++
+			}
 		}
 
 		result = append(result, DishRecordWithDay{
@@ -628,7 +634,7 @@ func GetDishRecords(c *gin.Context) {
 		})
 	}
 
-	total := len(records)
+	total := len(eatenDates)
 	yumPct := 0
 	okPct := 0
 	noPct := 0
@@ -644,14 +650,14 @@ func GetDishRecords(c *gin.Context) {
 		avgRating = float64(totalRating) / float64(ratingCount)
 	}
 
-	lastDate := records[0].MealDate
+	lastDate := ""
+	if total > 0 {
+		lastDate = eatenDates[0]
+	}
 
 	var avgInterval int
 	if total >= 2 {
-		sorted := make([]string, len(records))
-		for i, r := range records {
-			sorted[i] = r.MealDate
-		}
+		sorted := eatenDates
 		totalDays := 0
 		for i := 0; i < len(sorted)-1; i++ {
 			d1, e1 := time.Parse("2006-01-02", sorted[i])

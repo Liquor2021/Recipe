@@ -192,6 +192,18 @@ func TestGenerateWeekPlanAvoidModeDownweightsDislikes(t *testing.T) {
 	}
 }
 
+func TestEatenRecordsExcludesPlans(t *testing.T) {
+	setupTestDB(t, &models.MealRecord{})
+	for _, d := range []string{dateFromNow(-1), dateFromNow(0), dateFromNow(1), dateFromNow(5)} {
+		database.DB.Create(&models.MealRecord{DishID: 1, DishName: "菜", MealType: "dinner", MealDate: d})
+	}
+	var n int64
+	database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).Count(&n)
+	if n != 2 {
+		t.Fatalf("只算今天及以前的记录, got %d", n)
+	}
+}
+
 func TestPickDishesStrictFilterBeforeRecency(t *testing.T) {
 	setupWeekPlanTestDB(t)
 	// A 是辣菜但最近没吃；B 合规但昨天刚吃过

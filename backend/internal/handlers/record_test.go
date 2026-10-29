@@ -6,6 +6,7 @@ import (
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -67,6 +68,54 @@ func TestRecordRatingValidation(t *testing.T) {
 	})
 	if w.Code != 400 {
 		t.Fatalf("新建记录评分超出 0-5 应返回 400, got %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestStatsAndDishRecordsIgnorePlannedMeals(t *testing.T) {
+	setupHandlerTestDB(t, &models.Dish{}, &models.MealRecord{}, &models.DayRating{})
+	dish := models.Dish{Name: "番茄炒蛋", Enabled: true}
+	database.DB.Create(&dish)
+	day := func(n int) string { return time.Now().AddDate(0, 0, n).Format("2006-01-02") }
+	for _, r := range []models.MealRecord{
+		{DishID: dish.ID, DishName: dish.Name, MealType: "lunch", MealDate: day(-3), Rating: 4},
+		{DishID: dish.ID, DishName: dish.Name, MealType: "dinner", MealDate: day(0)},
+		{DishID: dish.ID, DishName: dish.Name, MealType: "lunch", MealDate: day(1), Rating: 1}, // 明日菜单：计划
+	} {
+		database.DB.Create(&r)
+	}
+
+	w := serveJSON(t, GetStats, "GET", "/api/stats", nil)
+	var stats struct {
+		Data struct {
+			TotalRecords int64 `json:"total_records"`
+			LunchCount   int64 `json:"lunch_count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &stats); err != nil || stats.Data.TotalRecords != 2 || stats.Data.LunchCount != 1 {
+		t.Fatalf("累计做饭只算吃过的（2 次，午餐 1 次）, got %s", w.Body.String())
+	}
+
+	w = serveJSON(t, GetDishRecords, "GET", fmt.Sprintf("/api/dishes/%d/records", dish.ID), nil, gin.Param{Key: "id", Value: fmt.Sprint(dish.ID)})
+	var dr struct {
+		Data struct {
+			Records []struct {
+				MealDate string `json:"meal_date"`
+			} `json:"records"`
+			Stats struct {
+				TotalCount int     `json:"total_count"`
+				LastDate   string  `json:"last_date"`
+				AvgRating  float64 `json:"avg_rating"`
+			} `json:"stats"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &dr); err != nil {
+		t.Fatal(err)
+	}
+	if len(dr.Data.Records) != 3 {
+		t.Fatalf("列表里保留计划记录, got %d", len(dr.Data.Records))
+	}
+	if dr.Data.Stats.TotalCount != 2 || dr.Data.Stats.LastDate != day(0) || dr.Data.Stats.AvgRating != 4 {
+		t.Fatalf("做了几次/上次做/平均分只算吃过的, got %+v", dr.Data.Stats)
 	}
 }
 
