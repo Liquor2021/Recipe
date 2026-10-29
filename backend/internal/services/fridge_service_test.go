@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
+	"strings"
 	"testing"
 	"time"
 )
@@ -484,6 +485,36 @@ func TestMatchDishesSlotDedup(t *testing.T) {
 	// 菜B 的 matched 展示保留原始名"瘦肉"，缺失显示青椒
 	if m := byName["菜B"]; len(m.Matched) != 1 || m.Matched[0] != "瘦肉" || len(m.Missing) != 1 || m.Missing[0] != "青椒" {
 		t.Fatalf("菜B matched=%v missing=%v, want [瘦肉] / [青椒]", m.Matched, m.Missing)
+	}
+}
+
+func TestMatchDishesHaveShowsStockNames(t *testing.T) {
+	// 冰箱里是五花肉、菜椒，菜谱写的是瘦肉、青椒：卡片要显示冰箱里的真实名字
+	dishes := []models.Dish{
+		dishWithIngredients(1, "青椒肉丝", false, `[{"name":"瘦肉","amount":"200克"},{"name":"青椒","amount":"2个"},{"name":"鸡蛋","amount":"1个"}]`),
+	}
+	stock := []StockItem{{Name: "五花肉", DaysLeft: 3, BatchID: 1}, {Name: "菜椒", DaysLeft: 5, BatchID: 2}, {Name: "鸡蛋", DaysLeft: 20, BatchID: 3}}
+	matches := matchDishesWithInventory(dishes, stock, 12)
+	if len(matches) != 1 || matches[0].Coverage != 100 {
+		t.Fatalf("want 1 match at 100%%, got %v", matchNames(matches))
+	}
+	m := matches[0]
+	want := []FridgeHave{
+		{Stock: "五花肉", Recipe: "瘦肉", Substitute: true}, // 同属猪肉，不是同一种
+		{Stock: "菜椒", Recipe: "青椒", Substitute: false}, // 真别名
+		{Stock: "鸡蛋", Recipe: "鸡蛋", Substitute: false},
+	}
+	if len(m.Have) != len(want) {
+		t.Fatalf("have = %+v, want %+v", m.Have, want)
+	}
+	for i := range want {
+		if m.Have[i] != want[i] {
+			t.Fatalf("have[%d] = %+v, want %+v", i, m.Have[i], want[i])
+		}
+	}
+	// matched 仍是菜谱里的名字（与 have 一一对应），旧前端照常能用
+	if strings.Join(m.Matched, ",") != "瘦肉,青椒,鸡蛋" {
+		t.Fatalf("matched = %v, want 菜谱原名", m.Matched)
 	}
 }
 

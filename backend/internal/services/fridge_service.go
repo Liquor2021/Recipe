@@ -18,11 +18,21 @@ import (
 // FridgeMatch 一道菜与当前冰箱存货的匹配结果
 type FridgeMatch struct {
 	Dish         models.Dish `json:"dish"`
-	Matched      []string    `json:"matched"`
+	Matched      []string    `json:"matched"` // 命中的菜谱食材名
 	Missing      []string    `json:"missing"`
 	MatchedCount int         `json:"matched_count"`
 	Coverage     int         `json:"coverage"` // 0-100，主要食材命中率
 	UsingUrgent  []string    `json:"using_urgent"`
+	// Have 与 Matched 一一对应：冰箱里实际对上的是什么（卡片显示冰箱里的真实名字）
+	Have []FridgeHave `json:"have"`
+}
+
+// FridgeHave 推荐卡片上"有"的一项
+type FridgeHave struct {
+	Stock  string `json:"stock"`  // 冰箱里的名字（如"五花肉"）
+	Recipe string `json:"recipe"` // 对应菜谱里的哪样（如"瘦肉"）
+	// Substitute 不是同一种、只是同一大类（五花肉当瘦肉用）；同名或真别名（番茄/西红柿）为 false
+	Substitute bool `json:"substitute"`
 }
 
 // StockItem 参与匹配的一批库存
@@ -145,6 +155,7 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 		matched := []string{}
 		missing := []string{}
 		usingUrgent := []string{}
+		have := []FridgeHave{}
 		for _, ing := range mainIngs {
 			item, ok := stockByName[ingredients.CategoryOf(ing)]
 			if !ok {
@@ -152,6 +163,11 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 				continue
 			}
 			matched = append(matched, ing)
+			have = append(have, FridgeHave{
+				Stock:      item.Name,
+				Recipe:     ing,
+				Substitute: ingredients.Normalize(item.Name) != ingredients.Normalize(ing),
+			})
 			if item.DaysLeft <= 4 {
 				usingUrgent = append(usingUrgent, ing)
 			}
@@ -166,6 +182,7 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 			MatchedCount: len(matched),
 			Coverage:     len(matched) * 100 / len(mainIngs),
 			UsingUrgent:  usingUrgent,
+			Have:         have,
 		})
 	}
 

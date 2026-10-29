@@ -49,6 +49,10 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
   const matched = match.matched || []
   const missing = match.missing || []
   const urgent = match.using_urgent || []
+  // 写冰箱里的真实名字：冰箱里是五花肉、菜谱写瘦肉 → "五花肉（当瘦肉用）"
+  const haveText = match.have
+    ? match.have.map((h) => (h.substitute ? `${h.stock}（当${h.recipe}用）` : h.stock)).join("、")
+    : matched.join("、")
   // 只有 100% 才叫"可以做"，其余是部分匹配，不夸大
   const badgeText = match.coverage === 100 ? "可以做" : `匹配 ${match.coverage}%`
   return (
@@ -74,7 +78,7 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
         </div>
         <div className="text-[11px] leading-relaxed text-text2 flex items-center gap-1.5">
           <span className="min-w-0 truncate">
-            <span className="text-mint font-medium">有 {matched.join("、")}</span>
+            <span className="text-mint font-medium">有 {haveText}</span>
             {missing.length > 0 && (
               <span className="text-text3"> · 缺 {missing.slice(0, 3).join("、")}{missing.length > 3 ? "…" : ""}</span>
             )}

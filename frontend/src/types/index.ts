@@ -300,11 +300,19 @@ export interface InventoryBatch {
 
 export interface FridgeMatch {
   dish: Dish
-  matched: string[]
+  matched: string[] // 命中的菜谱食材名
   missing: string[]
   matched_count: number
   coverage: number
   using_urgent: string[]
+  // 与 matched 一一对应：冰箱里实际对上的是什么（离线缓存的旧响应可能没有）
+  have?: FridgeHave[]
+}
+
+export interface FridgeHave {
+  stock: string // 冰箱里的名字（如"五花肉"）
+  recipe: string // 对应菜谱里的哪样（如"瘦肉"）
+  substitute: boolean // 不是同一种、只是同一大类（五花肉当瘦肉用）
 }
 
 // 扣库存匹配类型：exact=同名/别名，generic=一方是大类泛称（猪肉↔排骨），similar=同类不同部位（只供参考）
