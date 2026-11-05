@@ -500,6 +500,9 @@ export function renderReportImage(report: DietReport, appName: string): HTMLCanv
   const ctx = canvas.getContext("2d")
   if (!ctx) return canvas
   ctx.scale(DPR, DPR)
+  // 先铺满页面底色：canvas 默认透明，透明 PNG 在微信（转成 JPG）和深色相册里底色发黑，深色标题看不清
+  ctx.fillStyle = C.bg
+  ctx.fillRect(0, 0, WIDTH, totalH)
   let y = 0
   for (const paint of painters) y = paint(ctx, y)
   return canvas
