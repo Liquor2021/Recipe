@@ -3,10 +3,12 @@ package services
 import (
 	"math"
 	"ninimenu/internal/database"
+	"ninimenu/internal/ingredients"
 	"ninimenu/internal/models"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type TasteShare struct {
@@ -38,6 +40,133 @@ type DietReport struct {
 	TasteShares    []TasteShare    `json:"taste_shares"`
 	CategoryShares []TasteShare    `json:"category_shares"`
 	MoodShares     []TasteShare    `json:"mood_shares"`
+	Balance        DietBalance     `json:"balance"`
+}
+
+// DietBalance 荤素搭配：按吃到的每一份菜统计（同一道菜吃两次算两次），归类看菜谱主料
+type DietBalance struct {
+	MixedCount   int          `json:"mixed_count"`    // 有荤有素
+	MeatCount    int          `json:"meat_count"`     // 只有荤
+	VegCount     int          `json:"veg_count"`      // 没有荤（素菜、蛋、豆腐、主食）
+	Meals        int          `json:"meals"`          // 吃了几顿（同一天同一餐算一顿）
+	MealsWithVeg int          `json:"meals_with_veg"` // 其中吃到蔬菜的顿数
+	Vegetables   []TasteShare `json:"vegetables"`     // 吃到的蔬菜（按次数降序）
+}
+
+// notVegServing 买菜清单归在"蔬菜"、但不算吃了一份蔬菜的：香菜紫苏这类点缀、
+// 干辣椒小米辣这类调味辣椒、豆沙馅、干豆子（葱蒜见 ingredients.IsStaple，姜按字判）
+var notVegServing = map[string]bool{
+	"香菜": true, "芫荽": true, "紫苏": true, "薄荷": true, "香茅": true, "罗勒": true, "九层塔": true,
+	"干辣椒": true, "干红辣椒": true, "小米辣": true, "小米椒": true, "泡椒": true, "剁椒": true,
+	"朝天椒": true, "野山椒": true, "糟辣椒": true,
+	"豆沙": true, "红豆沙": true, "红豆馅": true, "黄豆": true, "绿豆": true, "红豆": true, "黑豆": true,
+	"香菜根": true, "蘸水辣椒": true, "玉米面": true,
+}
+
+func isVegServing(name string) bool {
+	n := strings.TrimSpace(name)
+	return n != "" && !ingredients.IsStaple(n) && !strings.Contains(n, "姜") && !notVegServing[n]
+}
+
+// 数"吃到几种蔬菜"时去掉的前后缀：干香菇=香菇、长茄子=茄子、土豆片=土豆
+// （不去"条"：二荆条、豆角条的"条"是名字的一部分）
+var (
+	vegKindPrefixes = []string{"有机", "泡发", "铁棍", "新鲜", "鲜", "干", "嫩", "长"}
+	vegKindSuffixes = []string{"片", "丝", "丁", "块", "段", "末", "碎"}
+)
+
+// vegKind 蔬菜的"种类名"：各种豆腐算一种，藕片=莲藕，去掉切法和干鲜前后缀（去完至少留两个字），再按真别名归一
+func vegKind(name string) string {
+	n := strings.TrimSpace(name)
+	if strings.Contains(n, "豆腐") {
+		return "豆腐"
+	}
+	if strings.HasPrefix(n, "藕") {
+		return "莲藕"
+	}
+	for _, p := range vegKindPrefixes {
+		if rest := strings.TrimPrefix(n, p); rest != n && utf8.RuneCountInString(rest) >= 2 {
+			n = rest
+			break
+		}
+	}
+	for _, s := range vegKindSuffixes {
+		if rest := strings.TrimSuffix(n, s); rest != n && utf8.RuneCountInString(rest) >= 2 {
+			n = rest
+			break
+		}
+	}
+	return ingredients.Normalize(n)
+}
+
+// dishBalanceInfo 一道菜的荤素归类
+type dishBalanceInfo struct {
+	hasMeat  bool
+	vegKinds []string // 去重后的蔬菜种类
+}
+
+// classifyDishBalance 按菜谱主料归类：食材分类与买菜清单一致（含后台改过的分类）；
+// 鸡蛋、咸蛋黄在买菜清单里归肉类，但家常说法里不算荤
+func classifyDishBalance(d models.Dish, overrides map[string]string) dishBalanceInfo {
+	var info dishBalanceInfo
+	seen := make(map[string]bool)
+	for _, ing := range ParseIngredientList(d.Ingredients) {
+		switch classifyShoppingItem(ing.Name, overrides) {
+		case "肉类":
+			if !strings.Contains(ing.Name, "蛋") {
+				info.hasMeat = true
+			}
+		case "蔬菜":
+			if isVegServing(ing.Name) {
+				if k := vegKind(ing.Name); !seen[k] {
+					seen[k] = true
+					info.vegKinds = append(info.vegKinds, k)
+				}
+			}
+		}
+	}
+	return info
+}
+
+// buildDietBalance 纯函数：周期内每条用餐记录归成荤素搭配/纯荤/素，并统计每顿有没有蔬菜、吃到了哪些蔬菜。
+// 菜已删除（查不到菜谱）的记录不参与
+func buildDietBalance(records []models.MealRecord, dishByID map[uint]models.Dish, overrides map[string]string) DietBalance {
+	b := DietBalance{Vegetables: []TasteShare{}}
+	infoByDish := make(map[uint]dishBalanceInfo)
+	type mealKey struct{ date, meal string }
+	mealHasVeg := make(map[mealKey]bool)
+	var vegTokens []string
+	for _, r := range records {
+		dish, ok := dishByID[r.DishID]
+		if !ok {
+			continue
+		}
+		info, done := infoByDish[r.DishID]
+		if !done {
+			info = classifyDishBalance(dish, overrides)
+			infoByDish[r.DishID] = info
+		}
+		hasVeg := len(info.vegKinds) > 0
+		switch {
+		case info.hasMeat && hasVeg:
+			b.MixedCount++
+		case info.hasMeat:
+			b.MeatCount++
+		default:
+			b.VegCount++
+		}
+		k := mealKey{r.MealDate, r.MealType}
+		mealHasVeg[k] = mealHasVeg[k] || hasVeg
+		vegTokens = append(vegTokens, info.vegKinds...)
+	}
+	b.Meals = len(mealHasVeg)
+	for _, has := range mealHasVeg {
+		if has {
+			b.MealsWithVeg++
+		}
+	}
+	b.Vegetables = countShares(vegTokens, 0)
+	return b
 }
 
 // countShares 统计词频并按次数降序取前 N（稳定排序，同次数按出现顺序）
@@ -256,5 +385,7 @@ func GetDietReport(rng string) *DietReport {
 		moodTokens = append(moodTokens, dr.Mood)
 	}
 
-	return buildDietReport(rng, start, end, records, dishByID, firstCookedAt, int(prevCookDays), moodTokens)
+	report := buildDietReport(rng, start, end, records, dishByID, firstCookedAt, int(prevCookDays), moodTokens)
+	report.Balance = buildDietBalance(records, dishByID, getShoppingCategoryOverrideMap())
+	return report
 }

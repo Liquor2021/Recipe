@@ -9,7 +9,7 @@ import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import { cardShadow } from "@/components/Card"
 import { renderReportImage } from "@/lib/reportImage"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
-import type { DietReport, ReportShare } from "@/types"
+import type { DietBalance, DietReport, ReportShare } from "@/types"
 
 const MOOD_EMOJI: Record<string, string> = { yum: "😋", ok: "😐", no: "😒" }
 const MOOD_LABEL: Record<string, string> = { yum: "吃得美滋滋", ok: "还行", no: "不太满意" }
@@ -33,6 +33,65 @@ function ShareBars({ shares, tone }: { shares: ReportShare[]; tone: "primary" | 
           <span className="w-6 flex-shrink-0 text-right text-xs font-bold text-text3">{s.count}</span>
         </div>
       ))}
+    </div>
+  )
+}
+
+// 荤素搭配三段的配色（与分享长图一致）
+const BALANCE_SEGMENTS = [
+  { key: "mixed_count", label: "有荤有素", color: "bg-mint" },
+  { key: "veg_count", label: "没有荤", color: "bg-[#C8A23C]" },
+  { key: "meat_count", label: "全是荤", color: "bg-primary" },
+] as const
+
+function BalanceCard({ balance }: { balance?: DietBalance }) {
+  const total = balance ? balance.mixed_count + balance.meat_count + balance.veg_count : 0
+  const vegetables = balance?.vegetables || []
+  const shown = vegetables.slice(0, 12)
+  return (
+    <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-3`}>
+      <div className="text-[15px] font-bold mb-3">🥗 荤素搭配</div>
+      {!balance || total === 0 ? (
+        <div className="py-3 text-center text-xs text-text3">这个周期还没有做饭记录</div>
+      ) : (
+        <>
+          <div className="flex h-3 rounded-full overflow-hidden bg-bg mb-2.5">
+            {BALANCE_SEGMENTS.map((s) => balance[s.key] > 0 && (
+              <div key={s.key} className={s.color} style={{ width: `${(balance[s.key] / total) * 100}%` }} />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+            {BALANCE_SEGMENTS.map((s) => (
+              <span key={s.key} className="flex items-center gap-1.5 text-xs text-text2">
+                <span className={`w-2 h-2 rounded-full ${s.color}`} />
+                {s.label} <span className="font-bold text-text">{balance[s.key]}</span> 道
+              </span>
+            ))}
+          </div>
+          <div className="text-[13px] text-text2">
+            {balance.meals} 顿里有 <span className="font-bold text-mint">{balance.meals_with_veg}</span> 顿吃到了蔬菜
+            {vegetables.length > 0 && <>，一共 <span className="font-bold text-text">{vegetables.length}</span> 种</>}
+          </div>
+          {shown.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2.5">
+              {shown.map((v) => (
+                <span key={v.name} className="px-2.5 py-1 rounded-full text-xs font-medium bg-mint-light text-[#2E8577]">
+                  {v.name}{v.count > 1 && <span className="ml-0.5 text-[#2E8577]/70">×{v.count}</span>}
+                </span>
+              ))}
+              {vegetables.length > shown.length && (
+                <span className="px-2.5 py-1 text-xs text-text3">等 {vegetables.length} 种</span>
+              )}
+            </div>
+          )}
+          {balance.meals >= 4 && balance.meals_with_veg * 2 < balance.meals && (
+            <div className="mt-3 rounded-xl bg-yellow-light px-3 py-2 text-xs text-[#8A6D1C]">
+              有一半以上的顿没吃到蔬菜，下次点菜可以加一道青菜
+            </div>
+          )}
+          <div className="text-[11px] text-text3 mt-2.5">按菜谱主料算；蛋和豆腐不算荤，葱姜蒜、香菜、干辣椒不算一份蔬菜</div>
+        </>
+      )}
     </div>
   )
 }
@@ -265,6 +324,8 @@ export default function Report() {
                 </div>
               )}
             </div>
+
+            <BalanceCard balance={report.balance} />
 
             {/* 口味 & 分类分布 */}
             <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-3`}>

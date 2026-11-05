@@ -368,6 +368,18 @@ export interface DietReport {
   taste_shares: ReportShare[]
   category_shares: ReportShare[]
   mood_shares: ReportShare[]
+  // 荤素搭配（离线缓存的旧响应可能没有）
+  balance?: DietBalance
+}
+
+// 荤素搭配：按吃到的每一份菜统计，归类看菜谱主料
+export interface DietBalance {
+  mixed_count: number // 有荤有素
+  meat_count: number // 只有荤
+  veg_count: number // 没有荤（素菜、蛋、豆腐、主食）
+  meals: number
+  meals_with_veg: number
+  vegetables: ReportShare[] // 吃到的蔬菜，按次数降序
 }
 
 export interface FamilyMember {

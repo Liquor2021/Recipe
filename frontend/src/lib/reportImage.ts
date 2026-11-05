@@ -1,5 +1,5 @@
 // 报告分享长图：用原生 canvas 2D 绘制竖版海报，配色与 app 主题（src/index.css @theme）一致
-import type { DietReport, ReportShare, ReportTopDish } from "@/types"
+import type { DietBalance, DietReport, ReportShare, ReportTopDish } from "@/types"
 
 // 逻辑宽度 750，实际输出按 DPR=2 放大（canvas 位图宽 1500px）
 const WIDTH = 750
@@ -275,6 +275,79 @@ function makeTopDishesPainter(dishes: ReportTopDish[]): Painter {
   }
 }
 
+// 荤素搭配：三段比例条 + 图例 + 吃到蔬菜的顿数 + 蔬菜名（配色与报告页一致）
+function makeBalancePainter(b: DietBalance | undefined): Painter {
+  const segs = [
+    { label: "有荤有素", count: num(b?.mixed_count), color: C.mint },
+    { label: "没有荤", count: num(b?.veg_count), color: C.ratingGold },
+    { label: "全是荤", count: num(b?.meat_count), color: C.primary },
+  ]
+  const total = segs.reduce((s, x) => s + x.count, 0)
+  const vegetables = Array.isArray(b?.vegetables) ? b.vegetables : []
+  return (ctx, y) => {
+    const top = y + GAP
+    if (total === 0) {
+      const h = 148
+      drawCard(ctx, top, h)
+      drawSectionTitle(ctx, "🥗 荤素搭配", top)
+      ctx.font = font(400, 24)
+      ctx.fillStyle = C.text3
+      ctx.textAlign = "center"
+      ctx.textBaseline = "middle"
+      ctx.fillText("暂无数据", WIDTH / 2, top + 110)
+      return top + h
+    }
+    const h = vegetables.length > 0 ? 276 : 236
+    drawCard(ctx, top, h)
+    drawSectionTitle(ctx, "🥗 荤素搭配", top)
+
+    // 比例条：圆角轨道裁剪，各段按占比铺满
+    const barY = top + 90
+    ctx.save()
+    roundRectPath(ctx, IN_X, barY, IN_W, 20, 10)
+    ctx.clip()
+    let x = IN_X
+    segs.forEach((s) => {
+      if (s.count <= 0) return
+      const w = (IN_W * s.count) / total
+      ctx.fillStyle = s.color
+      ctx.fillRect(x, barY, w + 0.5, 20)
+      x += w
+    })
+    ctx.restore()
+
+    // 图例：三列
+    const colW = IN_W / 3
+    ctx.textBaseline = "middle"
+    segs.forEach((s, i) => {
+      const cx = IN_X + colW * i
+      const cy = top + 146
+      ctx.beginPath()
+      ctx.arc(cx + 8, cy, 8, 0, Math.PI * 2)
+      ctx.fillStyle = s.color
+      ctx.fill()
+      ctx.font = font(500, 22)
+      ctx.fillStyle = C.text2
+      ctx.textAlign = "left"
+      ctx.fillText(`${s.label} ${s.count} 道`, cx + 24, cy)
+    })
+
+    ctx.font = font(600, 24)
+    ctx.fillStyle = C.text
+    ctx.textAlign = "left"
+    const kinds = vegetables.length > 0 ? `，一共 ${vegetables.length} 种` : ""
+    ctx.fillText(ellipsize(ctx, `${num(b?.meals)} 顿里有 ${num(b?.meals_with_veg)} 顿吃到了蔬菜${kinds}`, IN_W), IN_X, top + 196)
+
+    if (vegetables.length > 0) {
+      ctx.font = font(400, 22)
+      ctx.fillStyle = C.text2
+      const names = vegetables.slice(0, 8).map((v) => v.name).join("、") + (vegetables.length > 8 ? " 等" : "")
+      ctx.fillText(ellipsize(ctx, names, IN_W), IN_X, top + 236)
+    }
+    return top + h
+  }
+}
+
 // 分布横条（口味偏好 / 菜系分布）：按最大值归一
 function makeSharesPainter(title: string, shares: ReportShare[], barColor: string): Painter {
   return (ctx, y) => {
@@ -394,11 +467,12 @@ function buildPainters(report: DietReport, appName: string): Painter[] {
   const tastes = (Array.isArray(r.taste_shares) ? r.taste_shares : []).slice(0, 6)
   const categories = (Array.isArray(r.category_shares) ? r.category_shares : []).slice(0, 6)
   const moods = (Array.isArray(r.mood_shares) ? r.mood_shares : []).slice(0, 3)
-  // 区块顺序与报告页一致：常做菜 → 口味 → 菜系 → 心情
+  // 区块顺序与报告页一致：常做菜 → 荤素搭配 → 口味 → 菜系 → 心情
   return [
     makeHeaderPainter(r, appName),
     makeStatsPainter(num(r.cook_days), num(r.total_meals), num(r.repeat_rate), num(r.new_dish_rate), num(r.avg_rating)),
     makeTopDishesPainter(topDishes),
+    makeBalancePainter(r.balance),
     makeSharesPainter("👅 口味偏好", tastes, C.primary),
     makeSharesPainter("🍽 菜系分布", categories, C.mint),
     makeMoodPainter(moods),
@@ -416,8 +490,8 @@ export function renderReportImage(report: DietReport, appName: string): HTMLCanv
   if (measureCtx) {
     for (const paint of painters) totalH = paint(measureCtx, totalH)
   }
-  // 极端兜底：量不到高度时给一个不小于满数据布局（约 2114）的保守值，避免底部被裁
-  if (!Number.isFinite(totalH) || totalH <= 0) totalH = 2200
+  // 极端兜底：量不到高度时给一个不小于满数据布局（约 2410）的保守值，避免底部被裁
+  if (!Number.isFinite(totalH) || totalH <= 0) totalH = 2500
 
   const canvas = document.createElement("canvas")
   canvas.width = WIDTH * DPR

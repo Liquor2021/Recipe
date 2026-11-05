@@ -2,6 +2,7 @@ package services
 
 import (
 	"ninimenu/internal/models"
+	"strings"
 	"testing"
 	"time"
 )
@@ -133,5 +134,80 @@ func TestBuildDietReport(t *testing.T) {
 	}
 	if report.MoodShares[0].Name != "yum" || report.MoodShares[0].Count != 2 {
 		t.Fatalf("MoodShares[0] = %+v, want yum x2", report.MoodShares[0])
+	}
+}
+
+func TestBuildDietBalance(t *testing.T) {
+	dish := func(id uint, name string, ings ...string) models.Dish {
+		parts := make([]string, 0, len(ings))
+		for _, n := range ings {
+			parts = append(parts, `{"name":"`+n+`","amount":"1份"}`)
+		}
+		return models.Dish{ID: id, Name: name, Ingredients: "[" + strings.Join(parts, ",") + "]"}
+	}
+	dishByID := map[uint]models.Dish{
+		1: dish(1, "青椒肉丝", "瘦肉", "青椒", "小葱"), // 荤素搭配（葱不算一份蔬菜）
+		2: dish(2, "红烧肉", "五花肉", "姜"),        // 只有荤
+		3: dish(3, "辣子鸡", "鸡腿", "干辣椒", "花椒"), // 只有荤（干辣椒是调味）
+		4: dish(4, "番茄炒蛋", "西红柿", "鸡蛋"),      // 素：鸡蛋不算荤，西红柿记成番茄
+		5: dish(5, "香菇土豆片", "干香菇", "土豆片"),    // 素：干香菇=香菇、土豆片=土豆
+		6: dish(6, "阳春面", "面条", "小葱"),        // 素（没有蔬菜）
+		7: dish(7, "菜花蛇", "菜花蛇段"),            // 只有荤（名字带"菜"也是蛇肉）
+	}
+	rec := func(dishID uint, date, meal string) models.MealRecord {
+		return models.MealRecord{DishID: dishID, MealDate: date, MealType: meal}
+	}
+	records := []models.MealRecord{
+		rec(1, "2026-10-26", "lunch"), rec(4, "2026-10-26", "lunch"),
+		rec(2, "2026-10-26", "dinner"), rec(3, "2026-10-26", "dinner"),
+		rec(4, "2026-10-27", "lunch"), rec(5, "2026-10-27", "lunch"),
+		rec(6, "2026-10-27", "dinner"),
+		rec(99, "2026-10-28", "lunch"), // 菜已删除：不参与
+		rec(7, "2026-10-28", "dinner"),
+	}
+
+	b := buildDietBalance(records, dishByID, nil)
+	if b.MixedCount != 1 || b.MeatCount != 3 || b.VegCount != 4 {
+		t.Fatalf("mixed/meat/veg = %d/%d/%d, want 1/3/4", b.MixedCount, b.MeatCount, b.VegCount)
+	}
+	if b.Meals != 5 || b.MealsWithVeg != 2 {
+		t.Fatalf("meals = %d, with veg = %d, want 5 / 2 (只有已删菜的那顿不算)", b.Meals, b.MealsWithVeg)
+	}
+	want := []TasteShare{{"番茄", 2}, {"青椒", 1}, {"香菇", 1}, {"土豆", 1}}
+	if len(b.Vegetables) != len(want) {
+		t.Fatalf("vegetables = %+v, want %+v", b.Vegetables, want)
+	}
+	for i := range want {
+		if b.Vegetables[i] != want[i] {
+			t.Fatalf("vegetables[%d] = %+v, want %+v (all: %+v)", i, b.Vegetables[i], want[i], b.Vegetables)
+		}
+	}
+
+	// 后台把"面条"改成蔬菜分类：归类跟着买菜清单的分类走
+	b = buildDietBalance(records[6:7], dishByID, map[string]string{"面条": "蔬菜"})
+	if b.MealsWithVeg != 1 || len(b.Vegetables) != 1 || b.Vegetables[0].Name != "面条" {
+		t.Fatalf("分类改写应生效, got %+v", b)
+	}
+
+	// 没有记录：蔬菜列表是空数组不是 nil（JSON 里是 []）
+	if b := buildDietBalance(nil, dishByID, nil); b.Vegetables == nil || b.Meals != 0 {
+		t.Fatalf("空记录应返回零值和空列表, got %+v", b)
+	}
+}
+
+func TestVegKindAndServing(t *testing.T) {
+	kinds := map[string]string{
+		"干香菇": "香菇", "长茄子": "茄子", "土豆片": "土豆", "嫩豆腐": "豆腐", "冻豆腐": "豆腐",
+		"藕片": "莲藕", "二荆条": "二荆条", "西红柿": "番茄", "笋片": "笋片", // 去完只剩一个字就不去
+	}
+	for in, want := range kinds {
+		if got := vegKind(in); got != want {
+			t.Errorf("vegKind(%q) = %q, want %q", in, got, want)
+		}
+	}
+	for name, want := range map[string]bool{"青椒": true, "豆腐": true, "香菜": false, "小米辣": false, "嫩姜": false, "小葱": false} {
+		if got := isVegServing(name); got != want {
+			t.Errorf("isVegServing(%q) = %v, want %v", name, got, want)
+		}
 	}
 }

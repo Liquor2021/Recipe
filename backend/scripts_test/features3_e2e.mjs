@@ -1,4 +1,4 @@
-// 第三批功能 E2E：周菜单只换一道菜 / 清冰箱推荐显示真实库存名
+// 第三批功能 E2E：周菜单只换一道菜 / 清冰箱推荐显示真实库存名 / 饮食报告荤素搭配
 // 会改动本周菜单缓存、清掉冰箱里的猪肉批次，请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/features3_e2e.mjs
 const BASE = "http://localhost:8080/api"
@@ -65,6 +65,27 @@ async function main() {
   await req("DELETE", `/fridge/${encodeURIComponent("五花肉")}`)
   await req("DELETE", `/fridge/${encodeURIComponent("E2E独有菜")}`)
   if (dishID) await req("DELETE", `/dishes/${dishID}`, undefined, AH)
+
+  console.log("== 饮食报告：荤素搭配 ==")
+  // 其他脚本会在临时库里留下记录，这里只看记录前后的增量
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
+  const balBefore = (await req("GET", "/report?range=week")).data?.balance
+  check("周报带荤素搭配字段", balBefore && Number.isInteger(balBefore.mixed_count) && Array.isArray(balBefore.vegetables), JSON.stringify(balBefore))
+  // 蔬菜名用纯中文：统计时按真别名归一，拉丁字母会被转成小写
+  const testVeg = "测试荤素专用菜"
+  const mixDish = await req("POST", "/dishes", {
+    name: "E2E荤素测试菜", category: "家常菜", meal_type: "all",
+    ingredients: JSON.stringify([{ name: "瘦肉", amount: "200克" }, { name: testVeg, amount: "1把" }, { name: "小葱", amount: "1根" }]),
+  }, AH)
+  const mixRec = await req("POST", "/records", { dish_id: mixDish.data?.id, dish_name: "E2E荤素测试菜", meal_type: "dinner", meal_date: todayStr })
+  check("记录一道荤素搭配的菜", mixDish.code === 0 && mixRec.code === 0, JSON.stringify({ d: mixDish.code, r: mixRec }))
+  const balAfter = (await req("GET", "/report?range=week")).data?.balance
+  check("有荤有素 +1，另外两类不变", balAfter && balAfter.mixed_count === balBefore.mixed_count + 1 && balAfter.meat_count === balBefore.meat_count && balAfter.veg_count === balBefore.veg_count, JSON.stringify({ balBefore, balAfter }))
+  const v = (balAfter?.vegetables || []).find((x) => x.name === testVeg)
+  check("吃到的蔬菜里有它，葱不算", v && v.count === 1 && !(balAfter?.vegetables || []).some((x) => x.name === "小葱"), JSON.stringify(balAfter?.vegetables))
+  if (mixRec.data?.id) await req("DELETE", `/records/${mixRec.data.id}`)
+  if (mixDish.data?.id) await req("DELETE", `/dishes/${mixDish.data.id}`, undefined, AH)
 
   console.log(`\n结果: ${passed} 通过, ${failed} 失败`)
   process.exit(failed > 0 ? 1 : 0)
