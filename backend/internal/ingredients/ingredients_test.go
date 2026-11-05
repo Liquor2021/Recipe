@@ -61,6 +61,42 @@ func TestIsTapWater(t *testing.T) {
 	}
 }
 
+func TestMeatCutNames(t *testing.T) {
+	tests := []struct{ in, normalized, category string }{
+		{"猪肉末", "肉末", "猪肉"},
+		{"猪肉馅", "肉末", "猪肉"},
+		{"猪里脊肉", "里脊肉", "猪肉"},
+		{"猪肋排", "排骨", "猪肉"},
+		{"猪瘦肉", "瘦肉", "猪肉"},
+		{"带皮五花肉", "五花肉", "猪肉"},
+		{"五花肉片", "五花肉", "猪肉"},
+		{"猪肉丝", "猪肉", "猪肉"},
+		{"牛肉片", "牛肉", "牛肉"},
+		{"羊肉片", "羊肉", "羊肉"},
+		{"牛腱子", "牛腱肉", "牛肉"},
+		{"肥牛卷", "肥牛", "牛肉"},
+		{"牛里脊", "牛里脊", "牛肉"},
+		{"鸡腿肉", "鸡腿", "鸡肉"},
+		{"鸡胸肉", "鸡胸肉", "鸡肉"},
+		{"羊排", "羊排", "羊肉"},
+		{"羊腿肉", "羊腿肉", "羊肉"},
+		// 内脏、腊肉不能顶替鲜肉，不进大类
+		{"猪肝", "猪肝", "猪肝"},
+		{"腊肉", "腊肉", "腊肉"},
+	}
+	for _, tt := range tests {
+		if got := Normalize(tt.in); got != tt.normalized {
+			t.Errorf("Normalize(%q) = %q, want %q", tt.in, got, tt.normalized)
+		}
+		if got := CategoryOf(tt.in); got != tt.category {
+			t.Errorf("CategoryOf(%q) = %q, want %q", tt.in, got, tt.category)
+		}
+	}
+	if !IsCategoryHead("羊肉") {
+		t.Errorf("羊肉 应是大类泛称")
+	}
+}
+
 func TestShelfLifeFor(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -70,6 +106,9 @@ func TestShelfLifeFor(t *testing.T) {
 		{"西红柿", 7}, // 别名也能查到保质期
 		{"豆腐", 3},
 		{"火腿肠", 90},
+		{"猪里脊肉", 3}, // 归到猪肉大类后按猪肉 3 天，不再按未收录兜底 5 天
+		{"羊排", 3},
+		{"鸡胸肉", 2},
 		{"山姆买的神秘菜", 5}, // 未收录食材兜底 5 天
 	}
 	for _, tt := range tests {
@@ -87,6 +126,24 @@ func TestAliasGroupsAreConsistent(t *testing.T) {
 			if got := Normalize(name); got != want {
 				t.Fatalf("alias group %v broken: Normalize(%q) = %q, want %q", group, name, got, want)
 			}
+		}
+	}
+	// 大类组成员必须是规范名：写了别名会被归一成别的名字，这一项在大类里静默失效
+	for _, group := range CategoryGroups {
+		for _, name := range group {
+			if got := Normalize(name); got != name {
+				t.Fatalf("category group %v: %q is an alias of %q, list the canonical name instead", group, name, got)
+			}
+		}
+	}
+	// 同一个名字不能出现在两个别名组里（后一组会静默覆盖前一组）
+	seen := map[string]bool{}
+	for _, group := range AliasGroups {
+		for _, name := range group {
+			if seen[name] {
+				t.Fatalf("%q appears in more than one alias group", name)
+			}
+			seen[name] = true
 		}
 	}
 	// 常备配料不能同时出现在别名组（避免归一化把它变成非常备名）

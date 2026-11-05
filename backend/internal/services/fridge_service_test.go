@@ -518,6 +518,32 @@ func TestMatchDishesHaveShowsStockNames(t *testing.T) {
 	}
 }
 
+func TestMatchDishesPorkCutAliases(t *testing.T) {
+	// 菜谱写"猪肉末"、冰箱里是五花肉：以前认不出是猪肉，卡片写"缺 猪肉末"
+	dishes := []models.Dish{
+		dishWithIngredients(1, "红三剁", false, `[{"name":"猪肉末","amount":"150克"},{"name":"番茄","amount":"1个"}]`),
+	}
+	stock := []StockItem{{Name: "五花肉", DaysLeft: 3, BatchID: 1}, {Name: "番茄", DaysLeft: 5, BatchID: 2}}
+	matches := matchDishesWithInventory(dishes, stock, 12)
+	if len(matches) != 1 || matches[0].Coverage != 100 || len(matches[0].Missing) != 0 {
+		t.Fatalf("猪肉末应能用五花肉顶上, got %+v", matches)
+	}
+	if h := matches[0].Have[0]; h.Stock != "五花肉" || h.Recipe != "猪肉末" || !h.Substitute {
+		t.Fatalf("have[0] = %+v, want 五花肉（当猪肉末用）", h)
+	}
+
+	// 扣库存：猪肉末 = 肉末（同一样），猪肉末 vs 五花肉 只是相近部位（不默认勾选）
+	if k := consumeKind("猪肉末", "肉末"); k != consumeExact {
+		t.Fatalf("consumeKind(猪肉末, 肉末) = %q, want exact", k)
+	}
+	if k := consumeKind("猪肉末", "五花肉"); k != consumeSimilar {
+		t.Fatalf("consumeKind(猪肉末, 五花肉) = %q, want similar", k)
+	}
+	if k := consumeKind("羊排", "羊肉"); k != consumeGeneric {
+		t.Fatalf("consumeKind(羊排, 羊肉) = %q, want generic", k)
+	}
+}
+
 func TestDaysLeftFor(t *testing.T) {
 	today := time.Date(2026, 10, 27, 15, 0, 0, 0, time.Local) // 带时分，验证按自然日计算
 	tests := []struct {
