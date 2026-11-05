@@ -147,7 +147,7 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
       <div className="flex flex-col gap-1.5">
         {day.lunch.length > 0 && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-primary font-semibold w-8 shrink-0">午餐</span>
+            <span className="text-[11px] text-primary font-semibold w-8 shrink-0">午餐</span>
             <div className="flex flex-wrap gap-1.5">
               {day.lunch.map((dish) => (
                 <div
@@ -163,7 +163,7 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
         )}
         {day.dinner.length > 0 && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-mint font-semibold w-8 shrink-0">晚餐</span>
+            <span className="text-[11px] text-mint font-semibold w-8 shrink-0">晚餐</span>
             <div className="flex flex-wrap gap-1.5">
               {day.dinner.map((dish) => (
                 <div
@@ -356,16 +356,17 @@ export default function More() {
   const needBuyItems = mainItems.filter((item) => !item.checked && !item.in_stock).length
   const stapleNeedCount = stapleItems.filter((item) => !item.checked && !item.in_stock).length
 
-  // 买菜清单的一行（普通函数而不是组件：避免每次渲染都重新挂载行）
+  // 买菜清单的一行（普通函数而不是组件：避免每次渲染都重新挂载行）。
+  // 行里的小按钮用透明的 ::after 把点击区撑大、外观不变；删除 × 向左不扩，免得点"库存"误删
   const renderShoppingRow = (item: ShoppingItem) => (
     <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock ? "opacity-70" : ""}`}>
       <button
         onClick={() => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked })}
         disabled={item.in_stock}
-        className={`w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
+        className={`relative after:absolute after:-inset-x-2.5 after:-inset-y-1.5 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
       >{item.in_stock ? "家" : "✓"}</button>
       <span className={`transition-all ${item.checked || item.in_stock ? "line-through text-text3" : ""}`}>{item.name}</span>
-      <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+      <div className="ml-auto flex items-center gap-2.5 flex-shrink-0">
         <span className="text-xs text-text3">{item.amount}</span>
         <button
           onClick={() => {
@@ -375,7 +376,7 @@ export default function More() {
             inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock })
           }}
           disabled={inventoryMut.isPending}
-          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
+          className={`relative after:absolute after:-inset-x-1 after:-inset-y-2 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
         >
           {item.in_stock ? "家中有" : "库存"}
         </button>
@@ -384,7 +385,7 @@ export default function More() {
             onClick={() => removeItemMut.mutate(item.name)}
             disabled={removeItemMut.isPending}
             aria-label={`从清单移除${item.name}`}
-            className="w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
+            className="relative after:absolute after:-inset-y-2 after:-right-2.5 after:left-0 w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
           >
             ×
           </button>
@@ -483,7 +484,7 @@ export default function More() {
               {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
               <span className="text-[32px] block mb-1.5">{a.icon}</span>
               <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
-              <div className="text-[10px] text-text2 line-clamp-2">{a.description}</div>
+              <div className="text-[11px] text-text2 line-clamp-2">{a.description}</div>
             </div>
           ))}
         </div>

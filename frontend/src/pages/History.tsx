@@ -39,7 +39,7 @@ const todayStr = () => `${new Date().getFullYear()}-${String(new Date().getMonth
 const isPlanned = (r: MealRecord) => r.meal_date > todayStr()
 
 function PlannedPill() {
-  return <span className="flex-shrink-0 px-2 py-1 rounded-full text-[10px] font-medium bg-bg text-text3">计划</span>
+  return <span className="flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium bg-bg text-text3">计划</span>
 }
 
 function SwipeRowBg({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
@@ -406,7 +406,7 @@ export default function History() {
             </div>
           </div>
           <div className="grid grid-cols-7 gap-1 text-center">
-            {weekdays.map((w) => <div key={w} className="text-[10px] text-text3 font-semibold py-0.5">{w}</div>)}
+            {weekdays.map((w) => <div key={w} className="text-[11px] text-text3 font-semibold py-0.5">{w}</div>)}
             {calCells.map((cell, i) => {
               const hasRecord = recordByDate.has(cell.dateKey)
               const recs = recordByDate.get(cell.dateKey) || []
@@ -434,9 +434,9 @@ export default function History() {
             <div className="px-4 py-3 bg-primary-light text-sm font-semibold text-primary flex items-center justify-between">
               <div className="flex items-center gap-1.5 flex-wrap">
                 {calMonth + 1}月{selectedDay}日
-                {selectedDateKey === todayStr() && <span className="text-[10px] font-medium bg-primary text-white px-1.5 py-px rounded-full">今天</span>}
+                {selectedDateKey === todayStr() && <span className="text-[11px] font-medium bg-primary text-white px-1.5 py-px rounded-full">今天</span>}
                 {dayRating?.home_mood && (
-                  <span className="text-[10px] font-medium bg-white/80 text-primary px-1.5 py-px rounded-full">
+                  <span className="text-[11px] font-medium bg-white/80 text-primary px-1.5 py-px rounded-full">
                     {homeMoodEmojiMap[dayRating.home_mood] || "😃"} {homeMoodLabelMap[dayRating.home_mood] || "心情"}
                   </span>
                 )}
@@ -476,7 +476,7 @@ export default function History() {
                         {r.remark && <span className="text-[11px] text-text2 max-w-[60px] truncate">{r.remark}</span>}
                       </div>
                     ) : (
-                      <button onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 px-2 py-1 rounded-full text-[10px] font-medium bg-primary-light text-primary active:scale-95 transition-all">评价</button>
+                      <button onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium bg-primary-light text-primary active:scale-95 transition-all">评价</button>
                     )}
                   </div>
                 </SwipeRowBg>
@@ -511,7 +511,7 @@ export default function History() {
                           {isAdminLoggedIn && (
                             <button
                              onClick={(e) => { e.stopPropagation(); removeDayPhoto(i) }}
-                             className="absolute top-0 right-0 w-[16px] h-[16px] rounded-bl-md bg-black/50 text-white text-[9px] flex items-center justify-center active:bg-red"
+                             className="absolute top-0 right-0 w-[22px] h-[22px] rounded-bl-md bg-black/50 text-white text-xs flex items-center justify-center active:bg-red"
                            >✕</button>
                          )}
                        </div>
@@ -521,7 +521,7 @@ export default function History() {
                       className="w-14 h-14 rounded-md flex-shrink-0 border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary text-text3"
                     >
                       <span className="text-base leading-none">+</span>
-                      <span className="text-[9px]">添加</span>
+                      <span className="text-[11px]">添加</span>
                     </div>
                   </div>
                 </div>
@@ -558,7 +558,7 @@ export default function History() {
                     {r.remark && <span className="text-[11px] text-text2 max-w-[60px] truncate">{r.remark}</span>}
                   </div>
                 ) : (
-                  <button onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 px-2 py-1 rounded-full text-[10px] font-medium bg-primary-light text-primary active:scale-95 transition-all">评价</button>
+                  <button onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium bg-primary-light text-primary active:scale-95 transition-all">评价</button>
                 )}
               </div>
             </SwipeRowCard>
@@ -628,7 +628,7 @@ export default function History() {
                     <img src={ratingPhoto} alt="" className="w-full h-full object-cover" />
                     <button
                       onClick={() => setRatingPhoto("")}
-                      className="absolute top-0.5 right-0.5 w-[18px] h-[18px] rounded-full bg-black/50 text-white text-[10px] flex items-center justify-center"
+                      className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-black/50 text-white text-xs flex items-center justify-center"
                     >✕</button>
                   </div>
                 ) : (
@@ -637,7 +637,7 @@ export default function History() {
                     className={`w-20 h-20 rounded-[10px] border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary ${isAdminLoggedIn ? "text-text3" : "text-text4 bg-bg/60"}`}
                   >
                     <span className="text-xl leading-none">+</span>
-                    <span className="text-[9px]">添加</span>
+                    <span className="text-[11px]">添加</span>
                   </div>
                 )}
               </div>
@@ -692,7 +692,7 @@ export default function History() {
                     className={`w-16 h-16 rounded-[10px] border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary flex-shrink-0 ${isAdminLoggedIn ? "text-text3" : "text-text4 bg-bg/60"}`}
                   >
                     <span className="text-xl leading-none">+</span>
-                    <span className="text-[9px]">添加</span>
+                    <span className="text-[11px]">添加</span>
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     {mealPhotos.map((p, i) => (
@@ -700,7 +700,7 @@ export default function History() {
                           <img src={p} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           <button
                             onClick={(e) => { e.stopPropagation(); removeMealPhoto(i) }}
-                            className="absolute top-0.5 right-0.5 w-[18px] h-[18px] rounded-full bg-black/50 text-white text-[10px] flex items-center justify-center active:bg-red"
+                            className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-black/50 text-white text-xs flex items-center justify-center active:bg-red"
                          >✕</button>
                        </div>
                      ))}

@@ -445,8 +445,8 @@ export default function Home() {
                 <DishImage dish={currentRec} className="w-full h-full" emojiSize="text-[64px]" />
                 <span className="absolute top-3 left-3 bg-white/92 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold text-primary z-[1]">🔥 推荐</span>
                 <div className="absolute top-3 right-3 flex gap-1.5">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${recMeal === "lunch" ? "bg-primary text-white" : "bg-white/90 text-primary"}`}>🍳 午餐</span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${recMeal === "dinner" ? "bg-mint text-white" : "bg-white/90 text-mint"}`}>🍲 晚餐</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${recMeal === "lunch" ? "bg-primary text-white" : "bg-white/90 text-primary"}`}>🍳 午餐</span>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${recMeal === "dinner" ? "bg-mint text-white" : "bg-white/90 text-mint"}`}>🍲 晚餐</span>
                 </div>
               </div>
               <div className="p-4">

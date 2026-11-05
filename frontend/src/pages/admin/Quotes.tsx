@@ -149,8 +149,8 @@ export default function AdminQuotes() {
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium leading-relaxed">{q.content}</div>
               <div className="flex gap-1.5 mt-1">
-                <span className="px-1.5 py-px rounded-full text-[10px] bg-primary-light text-primary">{sceneLabel(q.scene)}</span>
-                {!q.enabled && <span className="px-1.5 py-px rounded-full text-[10px] bg-bg text-text3">已禁用</span>}
+                <span className="px-1.5 py-px rounded-full text-[11px] bg-primary-light text-primary">{sceneLabel(q.scene)}</span>
+                {!q.enabled && <span className="px-1.5 py-px rounded-full text-[11px] bg-bg text-text3">已禁用</span>}
               </div>
             </div>
             <div className="flex gap-1.5 flex-shrink-0">

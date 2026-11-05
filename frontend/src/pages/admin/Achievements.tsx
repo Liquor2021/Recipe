@@ -155,10 +155,10 @@ export default function AdminAchievements() {
               <div className="text-sm font-semibold">{a.name}</div>
               <div className="text-[11px] text-text2">{a.description} · {a.code}</div>
               <div className="flex gap-1.5 mt-1">
-                <span className={`px-1.5 py-px rounded-full text-[10px] ${a.condition === "auto" ? "bg-mint-light text-mint" : "bg-bg text-text3"}`}>
+                <span className={`px-1.5 py-px rounded-full text-[11px] ${a.condition === "auto" ? "bg-mint-light text-mint" : "bg-bg text-text3"}`}>
                   {a.condition === "auto" ? "自动检测" : "手动"}
                 </span>
-                {a.is_unlocked && <span className="px-1.5 py-px rounded-full text-[10px] bg-primary-light text-primary">已解锁</span>}
+                {a.is_unlocked && <span className="px-1.5 py-px rounded-full text-[11px] bg-primary-light text-primary">已解锁</span>}
               </div>
             </div>
             <div className="flex gap-1.5 flex-shrink-0">

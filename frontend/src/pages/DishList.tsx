@@ -319,7 +319,7 @@ export default function DishList() {
                       : "text-text2 bg-card"
                   }`}
                 >
-                  {cat}<span className="block text-[10px] text-text3 font-normal">{count}道</span>
+                  {cat}<span className="block text-[11px] text-text3 font-normal">{count}道</span>
                 </button>
               )
             })}
@@ -431,7 +431,7 @@ export default function DishList() {
           <div className="flex items-center gap-2">
             <div className="relative">
               <ChefHat size={22} className="text-primary" />
-              <span className="absolute -top-1.5 -right-2 bg-primary text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{totalPicked}</span>
+              <span className="absolute -top-1.5 -right-2 bg-primary text-white text-[11px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{totalPicked}</span>
             </div>
             <div className="text-[13px]">
               {todayLunchIds.size > 0 && <span className="text-primary font-semibold">🍳午餐{todayLunchIds.size}道</span>}

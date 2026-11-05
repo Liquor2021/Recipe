@@ -182,7 +182,7 @@ export default function AdminDishes() {
       </div>
 
       <div className="flex items-center gap-1 mt-2 px-5 flex-wrap">
-        <span className="text-[10px] text-text3 font-semibold mr-0.5">餐次</span>
+        <span className="text-[11px] text-text3 font-semibold mr-0.5">餐次</span>
         <button onClick={() => { setFilterMealType(""); setPage(1) }} className={miniCls(filterMealType === "")}>全部</button>
         <button onClick={() => { setFilterMealType("lunch"); setPage(1) }} className={miniCls(filterMealType === "lunch")}>午餐</button>
         <button onClick={() => { setFilterMealType("dinner"); setPage(1) }} className={miniCls(filterMealType === "dinner")}>晚餐</button>
@@ -205,7 +205,7 @@ export default function AdminDishes() {
       </div>
 
       <div className="flex items-center gap-1 mt-1.5 px-5">
-        <span className="text-[10px] text-text3 font-semibold mr-0.5">难度</span>
+        <span className="text-[11px] text-text3 font-semibold mr-0.5">难度</span>
         <button onClick={() => { setFilterDifficulty(""); setPage(1) }} className={miniCls(filterDifficulty === "")}>全部</button>
         <button onClick={() => { setFilterDifficulty("easy"); setPage(1) }} className={miniCls(filterDifficulty === "easy")}>简单</button>
         <button onClick={() => { setFilterDifficulty("medium"); setPage(1) }} className={miniCls(filterDifficulty === "medium")}>中等</button>
@@ -262,7 +262,7 @@ export default function AdminDishes() {
                   <div className="flex gap-1 flex-shrink-0">
                     <button
                       onClick={(e) => { e.stopPropagation(); toggleMut.mutate(d.id) }}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0 transition-all active:scale-95 ${d.enabled ? "bg-mint-light text-mint" : "bg-bg text-text3"}`}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 transition-all active:scale-95 ${d.enabled ? "bg-mint-light text-mint" : "bg-bg text-text3"}`}
                     >
                       {d.enabled ? "开" : "关"}
                     </button>

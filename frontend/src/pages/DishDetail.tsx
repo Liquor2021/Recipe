@@ -63,11 +63,12 @@ function IngredientCard({ ing, scale }: { ing: Ingredient; scale: number }) {
       <div className="font-semibold mb-0.5">{ing.name}</div>
       {parsed ? (
         <div className="flex items-center justify-center gap-1.5 mt-0.5">
+          {/* 透明 ::after 撑大 20px 的 −/+ 点击区、外观不变：朝外和上下扩 8px，朝中间的数量只扩 4px，两边不会叠在一起 */}
           <button onClick={() => setNum((n) => Math.max(0, Math.round((n - 1) * 100) / 100))}
-            className="w-5 h-5 rounded-full bg-bg border border-border text-text2 flex items-center justify-center text-xs leading-none active:bg-primary-light">−</button>
+            className="relative after:absolute after:-inset-y-2 after:-left-2 after:-right-1 w-5 h-5 rounded-full bg-bg border border-border text-text2 flex items-center justify-center text-xs leading-none active:bg-primary-light">−</button>
           <span className="text-[11px] text-text2 min-w-[28px]">{scale === 1 ? num : displayNum}{parsed.unit}</span>
           <button onClick={() => setNum((n) => Math.round((n + 1) * 100) / 100)}
-            className="w-5 h-5 rounded-full bg-bg border border-border text-text2 flex items-center justify-center text-xs leading-none active:bg-primary-light">+</button>
+            className="relative after:absolute after:-inset-y-2 after:-left-1 after:-right-2 w-5 h-5 rounded-full bg-bg border border-border text-text2 flex items-center justify-center text-xs leading-none active:bg-primary-light">+</button>
         </div>
       ) : (
         ing.amount && <div className="text-[11px] text-text2">{scale === 1 ? ing.amount : ing.amount}</div>
@@ -247,7 +248,7 @@ export default function DishDetail() {
         {dishTags.length > 0 && (
           <div className="flex gap-1.5 flex-wrap mb-3">
             {dishTags.map((t) => (
-              <span key={t} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-bg text-text2 border border-border">#{t}</span>
+              <span key={t} className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-bg text-text2 border border-border">#{t}</span>
             ))}
           </div>
         )}
@@ -264,7 +265,7 @@ export default function DishDetail() {
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold">做菜记录</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${mastery.color}`}>{mastery.icon} {mastery.label}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${mastery.color}`}>{mastery.icon} {mastery.label}</span>
               </div>
               <span className="text-[12px] text-text3">做了 {dishStats.total_count} 次</span>
             </div>
@@ -272,15 +273,15 @@ export default function DishDetail() {
             <div className="grid grid-cols-3 gap-2 mb-3">
               <div className="text-center bg-bg rounded-lg py-2">
                 <div className="text-base font-bold text-primary">{dishStats.lunch_count}</div>
-                <div className="text-[10px] text-text3">午餐</div>
+                <div className="text-[11px] text-text3">午餐</div>
               </div>
               <div className="text-center bg-bg rounded-lg py-2">
                 <div className="text-base font-bold text-mint">{dishStats.dinner_count}</div>
-                <div className="text-[10px] text-text3">晚餐</div>
+                <div className="text-[11px] text-text3">晚餐</div>
               </div>
               <div className="text-center bg-bg rounded-lg py-2">
                 <div className="text-base font-bold text-text">{dishStats.avg_interval > 0 ? `${dishStats.avg_interval}天` : "-"}</div>
-                <div className="text-[10px] text-text3">平均间隔</div>
+                <div className="text-[11px] text-text3">平均间隔</div>
               </div>
             </div>
 
@@ -297,9 +298,9 @@ export default function DishDetail() {
                   {dishStats.no_percent > 0 && <div className="bg-pink transition-all" style={{ width: `${dishStats.no_percent}%` }} />}
                 </div>
                 <div className="flex gap-3 mt-1.5">
-                  {dishStats.yum_percent > 0 && <span className="text-[10px] text-text3 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-mint" />😋 好吃 {dishStats.yum_percent}%</span>}
-                  {dishStats.ok_percent > 0 && <span className="text-[10px] text-text3 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow" />😐 一般 {dishStats.ok_percent}%</span>}
-                  {dishStats.no_percent > 0 && <span className="text-[10px] text-text3 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-pink" />😵 不行 {dishStats.no_percent}%</span>}
+                  {dishStats.yum_percent > 0 && <span className="text-[11px] text-text3 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-mint" />😋 好吃 {dishStats.yum_percent}%</span>}
+                  {dishStats.ok_percent > 0 && <span className="text-[11px] text-text3 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow" />😐 一般 {dishStats.ok_percent}%</span>}
+                  {dishStats.no_percent > 0 && <span className="text-[11px] text-text3 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-pink" />😵 不行 {dishStats.no_percent}%</span>}
                 </div>
               </div>
             )}
@@ -430,7 +431,7 @@ export default function DishDetail() {
                       ))}
                     </svg>
                   </div>
-                  <div className="flex justify-between text-[10px] text-text3 mt-1">
+                  <div className="flex justify-between text-[11px] text-text3 mt-1">
                     <span>{rated[0].meal_date.slice(5)}</span>
                     <span>{last.meal_date.slice(5)}</span>
                   </div>
@@ -467,8 +468,8 @@ export default function DishDetail() {
                       <div className="flex items-center justify-between mb-1.5">
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] font-semibold">{formatRelativeDate(r.meal_date)}</span>
-                          <span className="text-[10px] text-text3">{formatWeekday(r.meal_date)}</span>
-                          <span className={`px-1.5 py-px rounded-full text-[10px] font-medium ${r.meal_type === "lunch" ? "bg-primary-light text-primary" : "bg-mint-light text-mint"}`}>
+                          <span className="text-[11px] text-text3">{formatWeekday(r.meal_date)}</span>
+                          <span className={`px-1.5 py-px rounded-full text-[11px] font-medium ${r.meal_type === "lunch" ? "bg-primary-light text-primary" : "bg-mint-light text-mint"}`}>
                             {r.meal_type === "lunch" ? "午餐" : "晚餐"}
                           </span>
                         </div>
@@ -485,7 +486,7 @@ export default function DishDetail() {
                           </div>
                         )}
                         {r.home_mood && (
-                          <span className="text-[10px] text-text3 flex items-center gap-0.5 bg-bg px-1.5 py-px rounded-full">
+                          <span className="text-[11px] text-text3 flex items-center gap-0.5 bg-bg px-1.5 py-px rounded-full">
                             {homeMoodEmojiMap[r.home_mood]} {homeMoodLabelMap[r.home_mood]}
                           </span>
                         )}
@@ -513,7 +514,7 @@ export default function DishDetail() {
                             </div>
                           ))}
                           {(r.photo ? r.photos.length - 3 : r.photos.length - 4) > 0 && (
-                            <div className="w-11 h-11 rounded-md flex-shrink-0 bg-bg border border-border2 flex items-center justify-center text-[10px] text-text3 font-medium">+{r.photo ? r.photos.length - 3 : r.photos.length - 4}</div>
+                            <div className="w-11 h-11 rounded-md flex-shrink-0 bg-bg border border-border2 flex items-center justify-center text-[11px] text-text3 font-medium">+{r.photo ? r.photos.length - 3 : r.photos.length - 4}</div>
                           )}
                         </div>
                       )}

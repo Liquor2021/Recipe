@@ -314,7 +314,7 @@ export default function Report() {
                       onClick={() => navigate(`/dishes/${d.dish_id}`)}
                       className="flex items-center gap-3 py-2 cursor-pointer active:opacity-60 transition-opacity"
                     >
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${i < 3 ? "bg-primary text-white" : "bg-bg text-text3"}`}>
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${i < 3 ? "bg-primary text-white" : "bg-bg text-text3"}`}>
                         {i + 1}
                       </div>
                       <span className="flex-1 text-sm font-medium truncate">{d.dish_name}</span>
@@ -347,7 +347,7 @@ export default function Report() {
                     <div key={m.name} className="flex-1 rounded-xl bg-bg py-3 text-center">
                       <div className="text-2xl mb-0.5">{MOOD_EMOJI[m.name] || "🍽"}</div>
                       <div className="text-[11px] font-semibold text-text2">{MOOD_LABEL[m.name] || m.name}</div>
-                      <div className="text-[10px] text-text3">{m.count} 天</div>
+                      <div className="text-[11px] text-text3">{m.count} 天</div>
                     </div>
                   ))}
                 </div>

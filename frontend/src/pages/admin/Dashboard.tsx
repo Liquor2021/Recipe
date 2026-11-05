@@ -67,12 +67,12 @@ export default function AdminDashboard() {
             <div className="flex items-end gap-1.5 h-20">
               {trend.map((w, i) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[10px] text-text2 font-semibold">{w.count}</span>
+                  <span className="text-[11px] text-text2 font-semibold">{w.count}</span>
                   <div
                     className="w-full rounded-t-md bg-primary/70 transition-all"
                     style={{ height: `${Math.max((w.count / maxTrend) * 48, 3)}px` }}
                   />
-                  <span className="text-[9px] text-text3">{w.date.slice(5)}</span>
+                  <span className="text-[11px] text-text3">{w.date.slice(5)}</span>
                 </div>
               ))}
             </div>

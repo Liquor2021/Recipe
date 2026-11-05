@@ -266,7 +266,7 @@ export default function MainLayout() {
                   }
                 }}
                 className={() =>
-                  `group relative flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[13px] text-[10px] font-semibold transition-all active:scale-95 ${isActive ? "text-primary" : "text-text3 hover:text-text2"}`
+                  `group relative flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[13px] text-[11px] font-semibold transition-all active:scale-95 ${isActive ? "text-primary" : "text-text3 hover:text-text2"}`
                 }
               >
                 {() => (

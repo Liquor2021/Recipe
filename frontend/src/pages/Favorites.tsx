@@ -199,7 +199,7 @@ export default function Favorites() {
                     <button
                       onClick={() => setSearch("")}
                       aria-label="清空搜索"
-                      className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-text3 transition-colors hover:bg-border"
+                      className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-text3 transition-colors hover:bg-border after:absolute after:-inset-2"
                     >
                       <X size={14} strokeWidth={2.4} />
                     </button>
@@ -352,7 +352,7 @@ function SmartShelf({
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-[12px] font-extrabold text-text">{item.dish.name}</div>
-                    <div className="truncate text-[10px] font-medium text-text3">
+                    <div className="truncate text-[11px] font-medium text-text3">
                       {group.key === "repeat" ? `${item.record_count} 次` : `${item.dish.cook_time || "-"} 分钟`}
                     </div>
                   </div>
@@ -390,7 +390,7 @@ function CategoryChip({
       title={summary ? `${summary.quick_dish_name}最快，平均${summary.avg_cook_time}分钟` : undefined}
     >
       <span className="max-w-[84px] truncate">{label}</span>
-      <span className={`rounded-full px-1.5 py-0.5 text-[10px] leading-none ${active ? "bg-white/18 text-white" : "bg-bg text-text3"}`}>
+      <span className={`rounded-full px-1.5 py-0.5 text-[11px] leading-none ${active ? "bg-white/18 text-white" : "bg-bg text-text3"}`}>
         {count}
       </span>
     </button>
@@ -444,22 +444,22 @@ function FavoriteRow({
         </div>
 
         <div className="mb-1.5 flex items-center gap-1.5 overflow-hidden">
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${diffClass(dish.difficulty)}`}>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold ${diffClass(dish.difficulty)}`}>
             {diffLabel(dish.difficulty)}
           </span>
           {dish.taste && (
-            <span className="truncate rounded-full bg-bg px-2 py-0.5 text-[10px] font-bold text-text2">
+            <span className="truncate rounded-full bg-bg px-2 py-0.5 text-[11px] font-bold text-text2">
               {dish.taste}
             </span>
           )}
           {(dish.tags || []).slice(0, 1).map((tag) => (
-            <span key={tag} className="truncate rounded-full bg-bg px-2 py-0.5 text-[10px] font-bold text-text3">
+            <span key={tag} className="truncate rounded-full bg-bg px-2 py-0.5 text-[11px] font-bold text-text3">
               {tag}
             </span>
           ))}
         </div>
 
-        <div className="truncate text-[10px] font-medium text-text3">
+        <div className="truncate text-[11px] font-medium text-text3">
           {item.last_eaten_at ? `上次吃：${formatDate(item.last_eaten_at)}` : `收藏于：${formatDate(item.favorite_created_at)}`}
         </div>
       </div>

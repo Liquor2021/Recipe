@@ -64,11 +64,11 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[15px] font-bold truncate">{match.dish.name}</span>
-          <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${tone.bg} ${tone.text}`}>
+          <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${tone.bg} ${tone.text}`}>
             {badgeText}
           </span>
           {urgent.length > 0 && (
-            <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-light text-red">
+            <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-light text-red">
               清临期
             </span>
           )}
@@ -88,7 +88,7 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
               type="button"
               disabled={addingMissing}
               onClick={(e) => { e.stopPropagation(); onAddMissing() }}
-              className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-light text-[#C8A23C] transition-all active:scale-95 disabled:opacity-50"
+              className="relative after:absolute after:-inset-2 flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold bg-yellow-light text-[#C8A23C] transition-all active:scale-95 disabled:opacity-50"
             >
               🛒 补料
             </button>
@@ -296,7 +296,7 @@ export default function Fridge() {
                   <div className="flex items-center justify-between mb-2">
                     <span className={`text-[15px] font-bold ${hasUrgent ? "text-red" : ""}`}>{name}</span>
                     {batches.length > 1 && (
-                      <span className="text-[10px] font-semibold text-text3 bg-bg px-2 py-0.5 rounded-full">{batches.length} 批</span>
+                      <span className="text-[11px] font-semibold text-text3 bg-bg px-2 py-0.5 rounded-full">{batches.length} 批</span>
                     )}
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -314,13 +314,14 @@ export default function Fridge() {
                         >
                           {b.quantity && <span className="font-semibold">{b.quantity}</span>}
                           {badge && (
-                            <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${badge.cls}`}>{badge.text}</span>
+                            <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${badge.cls}`}>{badge.text}</span>
                           )}
                           <button
                             type="button"
                             aria-label={`移出${name}该批`}
                             onClick={(e) => { e.stopPropagation(); removeBatchMut.mutate(b.id) }}
-                            className="ml-auto w-5 h-5 rounded-full flex items-center justify-center opacity-50 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90 text-base leading-none"
+                            // 透明 ::after 撑大点击区；删除不用确认，向左只扩一点，点行内其他地方仍是编辑
+                            className="relative after:absolute after:-inset-y-2 after:-right-3 after:-left-1 ml-auto w-5 h-5 rounded-full flex items-center justify-center opacity-50 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90 text-base leading-none"
                           >
                             ×
                           </button>

@@ -215,10 +215,10 @@ function BatchChip({ batch, active, onToggle }: { batch: ConsumptionBatch; activ
       }`}
     >
       {active ? "✓ " : ""}
-      {batch.kind === "similar" && <span className="mr-1 text-[10px] font-bold text-[#C8A23C]">相近</span>}
+      {batch.kind === "similar" && <span className="mr-1 text-[11px] font-bold text-[#C8A23C]">相近</span>}
       {batch.stock_name}
       {batch.quantity && <span className="ml-1 opacity-80">{batch.quantity}</span>}
-      {expiry && <span className={`ml-1 text-[10px] ${batch.days_left < 0 ? "text-red" : "opacity-70"}`}>{expiry}</span>}
+      {expiry && <span className={`ml-1 text-[11px] ${batch.days_left < 0 ? "text-red" : "opacity-70"}`}>{expiry}</span>}
     </button>
   )
 }

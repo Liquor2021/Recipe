@@ -36,7 +36,7 @@ export default function DishCard({ dish, onClick, showFav, favActive, onToggleFa
           </span>
         )}
         {showDifficulty && (
-          <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/90 backdrop-blur-sm ${diffColor(dish.difficulty)}`}>
+          <span className={`absolute bottom-2 left-2 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/90 backdrop-blur-sm ${diffColor(dish.difficulty)}`}>
             {diffLabel(dish.difficulty)}
           </span>
         )}

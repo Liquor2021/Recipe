@@ -214,7 +214,7 @@ function ProfileButton({
       </span>
       <span className="min-w-0">
         <span className="block text-[13px] font-bold leading-tight">{option.label}</span>
-        <span className="block truncate text-[10px] font-medium leading-tight opacity-70">{option.hint}</span>
+        <span className="block truncate text-[11px] font-medium leading-tight opacity-70">{option.hint}</span>
       </span>
     </button>
   )
@@ -325,12 +325,12 @@ function DishRow({
       <button onClick={onOpen} className="min-w-0 flex-1 text-left">
         <div className="mb-1 truncate text-[15px] font-extrabold leading-tight">{dish.name}</div>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {dish.category && <span className="max-w-[92px] truncate rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold text-text2">{dish.category}</span>}
-          <span className="flex items-center gap-1 rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold text-text2">
+          {dish.category && <span className="max-w-[92px] truncate rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-text2">{dish.category}</span>}
+          <span className="flex items-center gap-1 rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-text2">
             <Clock size={10} strokeWidth={2.5} />
             {cookTimeText(dish)}
           </span>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${difficultyTone(dish.difficulty)}`}>{diffLabel(dish.difficulty)}</span>
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${difficultyTone(dish.difficulty)}`}>{diffLabel(dish.difficulty)}</span>
         </div>
       </button>
       <div className="flex shrink-0 items-center gap-1">
