@@ -110,19 +110,8 @@ func DeleteImage(c *gin.Context) {
 		return
 	}
 
-	uploadRoot, err := filepath.Abs(config.C.UploadDir)
-	if err != nil {
-		utils.InternalError(c, "上传目录无效")
-		return
-	}
-	target, err := filepath.Abs(filepath.Join(uploadRoot, strings.TrimPrefix(relURL, "uploads/")))
-	if err != nil {
-		utils.BadRequest(c, "图片URL无效")
-		return
-	}
-
-	rel, err := filepath.Rel(uploadRoot, target)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+	uploadRoot, target, ok := resolveUploadPath(strings.TrimPrefix(relURL, "uploads/"))
+	if !ok {
 		utils.BadRequest(c, "图片URL无效")
 		return
 	}
@@ -133,6 +122,7 @@ func DeleteImage(c *gin.Context) {
 			return
 		}
 	}
+	removeThumbnail(uploadRoot, target)
 
 	utils.SuccessMsg(c, "删除成功")
 }

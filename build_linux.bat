@@ -69,9 +69,9 @@ if not exist dist\data mkdir dist\data
 REM Copy env.bak
 if exist .env copy /Y .env dist\env.bak >nul
 
-REM Copy uploads directory
+REM Copy uploads directory (skip _thumbs: list thumbnails are generated at runtime)
 if exist backend\uploads (
-    robocopy backend\uploads dist\uploads /E /NFL /NDL /NJH /NJS /NC /NS >nul 2>nul
+    robocopy backend\uploads dist\uploads /E /XD _thumbs /NFL /NDL /NJH /NJS /NC /NS >nul 2>nul
 ) else (
     if not exist dist\uploads mkdir dist\uploads
 )

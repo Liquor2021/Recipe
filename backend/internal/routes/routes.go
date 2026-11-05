@@ -24,6 +24,8 @@ func Setup(r *gin.Engine) {
 		})
 		uploads.StaticFS("/", http.Dir(absDir))
 	}
+	// 列表缩略图（与 /uploads 一样不需要口令）：/thumbs/<路径> 是 /uploads/<路径> 的小图
+	r.GET("/thumbs/*filepath", handlers.GetThumbnail)
 
 	api := r.Group("/api")
 	{

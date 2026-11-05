@@ -442,7 +442,7 @@ export default function Home() {
             />
             <div ref={recCardRef} onClick={() => navigate(`/dishes/${currentRec.id}`)} className={`bg-card rounded-2xl overflow-hidden ${cardShadow} mb-2 cursor-pointer border border-border transition-all active:scale-98 animate-fadeUp`}>
               <div className="relative h-[200px] bg-gradient-to-br from-primary-light to-pink-light">
-                <DishImage dish={currentRec} className="w-full h-full" emojiSize="text-[64px]" />
+                <DishImage dish={currentRec} full className="w-full h-full" emojiSize="text-[64px]" />
                 <span className="absolute top-3 left-3 bg-white/92 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold text-primary z-[1]">🔥 推荐</span>
                 <div className="absolute top-3 right-3 flex gap-1.5">
                   <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${recMeal === "lunch" ? "bg-primary text-white" : "bg-white/90 text-primary"}`}>🍳 午餐</span>
@@ -543,7 +543,7 @@ export default function Home() {
             </div>
             {blindRevealed && blindBoxMut.data && (
               <div onClick={(e) => e.stopPropagation()} className={`absolute inset-0 flex flex-col rounded-2xl bg-card border-[1.5px] border-border2 ${cardShadow} overflow-hidden`} style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-                <DishImage dish={blindBoxMut.data.dish} className="flex-1 min-h-0 bg-gradient-to-br from-primary-light to-pink-light" emojiSize="text-[48px] animate-pop" />
+                <DishImage dish={blindBoxMut.data.dish} full className="flex-1 min-h-0 bg-gradient-to-br from-primary-light to-pink-light" emojiSize="text-[48px] animate-pop" />
                 <div className="p-4 flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="text-base font-bold mb-0.5">{blindBoxMut.data.dish.name}</div>
@@ -577,7 +577,7 @@ export default function Home() {
         <AnimatedBottomSheet onClose={() => setWheelResult(null)} className="rounded-t-3xl overflow-hidden">
           <div className="relative">
             <div className="relative h-[190px] bg-gradient-to-br from-primary-light to-pink-light">
-              <DishImage dish={wheelResult} className="w-full h-full" emojiSize="text-[52px]" />
+              <DishImage dish={wheelResult} full className="w-full h-full" emojiSize="text-[52px]" />
               <span className="absolute top-3 left-3 bg-white/92 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-primary z-10">🎯 转盘结果</span>
               <button
                 onClick={() => setWheelResult(null)}

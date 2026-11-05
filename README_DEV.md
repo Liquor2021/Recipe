@@ -90,9 +90,12 @@ chmod +x ninimenu
 
 PNG 截图转 JPG quality=85 通常减少 70-90% 体积，视觉几乎无损。
 
+列表缩略图：菜品列表、记录、照片墙等小图请求 `/thumbs/<路径>`（对应 `/uploads/<路径>`）。后端第一次收到请求时按原图生成短边 400px 的 JPG，缓存在 `UPLOAD_DIR/_thumbs/`，原图更新后自动重新生成；原图本来就小或生成失败时直接返回原图。种子菜谱的图片一页约 1.7MB，换成缩略图后约 0.8MB。`_thumbs/` 可以随时删掉，会按需重新生成；构建脚本复制 uploads 时会跳过它。
+
 相关代码：
 - 压缩核心：`backend/internal/imaging/compress.go`
 - 上传处理：`backend/internal/handlers/upload.go`
+- 缩略图：`backend/internal/handlers/thumb.go`
 - 配置项：`backend/internal/config/config.go`
 
 上传失败时前端会展示后端返回的具体错误信息（如"图片大小不能超过5MB"），而非通用提示。

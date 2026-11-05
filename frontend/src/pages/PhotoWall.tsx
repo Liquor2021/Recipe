@@ -7,6 +7,7 @@ import PhotoViewer from "@/components/PhotoViewer"
 import PageHeader from "@/components/PageHeader"
 import type { PhotoWallDay } from "@/types"
 import { Images } from "lucide-react"
+import { thumbUrl } from "@/lib/dishImage"
 
 const moodEmojiMap: Record<string, string> = { yum: "😋", ok: "😐", no: "😵", great: "😋", meh: "😕" }
 const moodLabelMap: Record<string, string> = { yum: "好吃", ok: "一般", no: "不想再吃", great: "超满足", meh: "还行吧" }
@@ -80,7 +81,7 @@ function MemoryDay({ day, onOpen }: { day: PhotoWallDay; onOpen: (photos: string
             >
               <div className="bg-white p-1.5 pb-5 rounded-[6px] shadow-[0_2px_8px_rgba(0,0,0,.10)] border border-[#f0eee9]">
                 <div className={`overflow-hidden bg-bg rounded-[3px] ${cover.length === 1 ? "aspect-[4/3]" : "aspect-square"}`}>
-                  <img src={p} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  <img src={thumbUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" />
                 </div>
               </div>
               {i === cover.length - 1 && extra > 0 && (

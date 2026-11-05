@@ -1,5 +1,5 @@
 import type { Dish } from "@/types"
-import { getDishEmoji, getDishImageUrl } from "@/lib/dishImage"
+import { getDishEmoji, getDishImageUrl, thumbUrl } from "@/lib/dishImage"
 import SafeImage from "@/components/SafeImage"
 
 interface DishImageProps {
@@ -7,10 +7,13 @@ interface DishImageProps {
   className?: string
   imgClassName?: string
   emojiSize?: string
+  // 默认用列表缩略图；整宽的大卡片（首页推荐、盲盒、转盘结果）传 full 用原图
+  full?: boolean
 }
 
-export default function DishImage({ dish, className, imgClassName, emojiSize = "text-4xl" }: DishImageProps) {
-  const url = getDishImageUrl(dish)
+export default function DishImage({ dish, className, imgClassName, emojiSize = "text-4xl", full }: DishImageProps) {
+  const original = getDishImageUrl(dish)
+  const url = full ? original : thumbUrl(original)
   const emoji = (
     <div className={`w-full h-full flex items-center justify-center ${emojiSize}`}>
       {getDishEmoji(dish)}

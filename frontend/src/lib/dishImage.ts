@@ -23,3 +23,11 @@ export function getDishImageUrl(d: Dish): string | null {
   if (arr.length > 0 && typeof arr[0] === "string" && isImageUrl(arr[0])) return arr[0]
   return null
 }
+
+// 列表/卡片用的缩略图地址：/uploads/… → /thumbs/…（后端第一次请求时按原图生成，约为原图的 1/3 大小）。
+// 外链和非上传图原样返回；大图（详情头图、照片查看器、首页推荐大卡片）继续用原图
+export function thumbUrl(url: string): string
+export function thumbUrl(url: string | null | undefined): string | null | undefined
+export function thumbUrl(url: string | null | undefined): string | null | undefined {
+  return url && url.startsWith("/uploads/") ? "/thumbs/" + url.slice("/uploads/".length) : url
+}

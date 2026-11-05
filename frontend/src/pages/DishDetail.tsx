@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, favoritesApi, recordsApi } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import { asArray } from "@/lib/utils"
-import { getDishImageUrl, getDishEmoji } from "@/lib/dishImage"
+import { getDishImageUrl, getDishEmoji, thumbUrl } from "@/lib/dishImage"
 import SafeImage from "@/components/SafeImage"
 import PhotoViewer from "@/components/PhotoViewer"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
@@ -449,7 +449,7 @@ export default function DishDetail() {
                       onClick={() => { setViewerPhotos(allPhotos.map(x => x.url)); setViewerIdx(i); setShowViewer(true) }}
                       className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-card border border-border cursor-pointer active:scale-95 transition-transform shadow-sm"
                     >
-                      <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      <img src={thumbUrl(p.url)} alt="" className="w-full h-full object-cover" loading="lazy" />
                     </div>
                   ))}
                 </div>
@@ -501,7 +501,7 @@ export default function DishDetail() {
                               onClick={() => { const all = [r.photo, ...r.photos]; setViewerPhotos(all); setViewerIdx(0); setShowViewer(true) }}
                               className="w-14 h-14 rounded-md overflow-hidden flex-shrink-0 cursor-pointer active:scale-95 transition-transform border border-primary/20 ring-1 ring-primary/10"
                             >
-                              <img src={r.photo} alt="" className="w-full h-full object-cover" loading="lazy" />
+                              <img src={thumbUrl(r.photo)} alt="" className="w-full h-full object-cover" loading="lazy" />
                             </div>
                           )}
                           {r.photos.slice(0, r.photo ? 3 : 4).map((p, pi) => (
@@ -510,7 +510,7 @@ export default function DishDetail() {
                               onClick={() => { const all = r.photo ? [r.photo, ...r.photos] : r.photos; setViewerPhotos(all); setViewerIdx(r.photo ? pi + 1 : pi); setShowViewer(true) }}
                               className="w-11 h-11 rounded-md overflow-hidden flex-shrink-0 cursor-pointer active:scale-95 transition-transform border border-border"
                             >
-                              <img src={p} alt="" className="w-full h-full object-cover" loading="lazy" />
+                              <img src={thumbUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" />
                             </div>
                           ))}
                           {(r.photo ? r.photos.length - 3 : r.photos.length - 4) > 0 && (

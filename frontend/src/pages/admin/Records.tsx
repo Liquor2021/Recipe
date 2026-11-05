@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { recordsApi } from "@/api"
 import type { MealRecord } from "@/types"
 import toast from "react-hot-toast"
+import { thumbUrl } from "@/lib/dishImage"
 
 function moodEmoji(m: string) {
   if (m === "yum" || m === "great") return "😋"
@@ -87,7 +88,7 @@ export default function AdminRecords() {
                 </div>
               </div>
               {r.photo && (
-                <img src={r.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" loading="lazy" decoding="async" />
+                <img src={thumbUrl(r.photo)} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" loading="lazy" decoding="async" />
               )}
               <button
                 onClick={() => { if (confirm("确定删除此记录？")) deleteMut.mutate(r.id) }}

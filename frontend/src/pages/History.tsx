@@ -14,6 +14,7 @@ import SwipeDeleteRow from "@/components/SwipeDeleteRow"
 import { cardShadow } from "@/components/Card"
 import toast from "react-hot-toast"
 import { CalendarDays, Star } from "lucide-react"
+import { thumbUrl } from "@/lib/dishImage"
 
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 
@@ -461,7 +462,7 @@ export default function History() {
                 <SwipeRowBg key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
                   <div className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 transition-all active:bg-bg w-full text-left cursor-pointer">
                     <span onClick={() => navigate(`/dishes/${r.dish_id}`)} className={`w-10 h-10 rounded-[10px] flex items-center justify-center text-xl flex-shrink-0 overflow-hidden ${r.meal_type === "lunch" ? "bg-primary-light" : "bg-mint-light"}`}>
-                      <SafeImage src={r.dish_image_url} alt={r.dish_name} className="w-full h-full object-cover" fallback={r.dish_emoji} />
+                      <SafeImage src={thumbUrl(r.dish_image_url)} alt={r.dish_name} className="w-full h-full object-cover" fallback={r.dish_emoji} />
                     </span>
                     <div className="flex-1 min-w-0" onClick={() => navigate(`/dishes/${r.dish_id}`)}>
                       <div className="text-sm font-semibold mb-px">{r.dish_name}</div>
@@ -507,7 +508,7 @@ export default function History() {
                          className="w-14 h-14 rounded-md overflow-hidden flex-shrink-0 bg-bg border border-border flex items-center justify-center cursor-pointer transition-all active:scale-95 relative"
                          onClick={() => openViewer(dayPhotos, i)}
                        >
-                          <img src={p} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                          <img src={thumbUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           {isAdminLoggedIn && (
                             <button
                              onClick={(e) => { e.stopPropagation(); removeDayPhoto(i) }}
@@ -543,7 +544,7 @@ export default function History() {
             <SwipeRowCard key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
               <div className="p-3.5 px-4 flex items-center gap-3.5 w-full text-left cursor-pointer transition-all active:bg-primary-light">
                 <span onClick={() => navigate(`/dishes/${r.dish_id}`)} className={`w-12 h-12 rounded-[10px] flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden ${r.meal_type === "lunch" ? "bg-primary-light" : "bg-mint-light"}`}>
-                  <SafeImage src={r.dish_image_url} alt={r.dish_name} className="w-full h-full object-cover" fallback={r.dish_emoji} />
+                  <SafeImage src={thumbUrl(r.dish_image_url)} alt={r.dish_name} className="w-full h-full object-cover" fallback={r.dish_emoji} />
                 </span>
                 <div className="flex-1 min-w-0" onClick={() => navigate(`/dishes/${r.dish_id}`)}>
                   <div className="text-sm font-semibold mb-px">{r.dish_name}</div>
@@ -697,7 +698,7 @@ export default function History() {
                   <div className="flex gap-2 flex-wrap">
                     {mealPhotos.map((p, i) => (
                        <div key={i} className="w-16 h-16 rounded-[10px] overflow-hidden relative bg-bg flex items-center justify-center border border-border">
-                          <img src={p} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                          <img src={thumbUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           <button
                             onClick={(e) => { e.stopPropagation(); removeMealPhoto(i) }}
                             className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-black/50 text-white text-xs flex items-center justify-center active:bg-red"

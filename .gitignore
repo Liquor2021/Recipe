@@ -4,6 +4,9 @@ backend/data/
 # 用户上传原图备份
 backend/uploads_backup/
 
+# 列表缩略图缓存（运行时按原图生成）
+backend/uploads/_thumbs/
+
 # 本地环境变量
 .env
 env.bak
