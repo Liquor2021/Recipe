@@ -395,11 +395,61 @@ var seafoodSigns = []string{"虾", "鱼", "蟹", "贝", "鱿", "蛤", "蛏", "�
 // offalSigns 内脏类食材的识别子串
 var offalSigns = []string{"肝", "腰", "肚", "胗"}
 
+// offalExcept 名字带内脏字却不是内脏的：腰果、牛肝菌、羊肚菌
+var offalExcept = []string{"腰果", "肝菌", "肚菌"}
+
+// meatDislikeRule "不吃猪肉/牛肉/羊肉"的识别规则。食材大类只收了几样常见部位，
+// 按大类判会漏掉猪肉末、猪里脊、猪油、牛里脊、羊排这类写法，所以按动物字判
+type meatDislikeRule struct {
+	sign        string   // 动物字，出现即命中
+	signExcept  []string // 带动物字却不是这种肉：牛奶、牛肝菌、羊肚菌
+	extra       []string // 不带动物字、约定俗成就是这种肉的叫法
+	extraExcept []string // 命中 extra 但其实是别的：牛肉、鸡肉末、素肉、果肉、蒸肉米粉
+}
+
+var meatDislikeRules = map[string]meatDislikeRule{
+	// 家常菜谱里不带动物字的"肉/肉末/五花/排骨/腊肉/火腿"默认是猪肉
+	"猪肉": {
+		sign:  "猪",
+		extra: []string{"肉", "五花", "排骨", "里脊", "肥膘", "腊肠", "香肠", "火腿", "培根", "叉烧", "肘子"},
+		extraExcept: []string{"牛", "羊", "鸡", "鸭", "鹅", "鸽", "鹑", "鱼", "虾", "蟹", "贝", "蛤", "螺", "蚌", "蚝", "鱿", "兔", "驴", "马", "鹿", "蛙",
+			"素", "果肉", "椰肉", "桂圆肉", "龙眼肉", "肉桂", "肉豆蔻", "蒸肉米粉", "蒸肉粉", "叉烧酱"},
+	},
+	"牛肉": {
+		sign:       "牛",
+		signExcept: []string{"牛奶", "牛油果", "牛肝菌", "牛蛙", "蜗牛", "牛蒡", "牛角", "牛至", "牛轧", "牛心菜", "牛皮菜"},
+		extra:      []string{"毛肚"},
+	},
+	"羊肉": {
+		sign:       "羊",
+		signExcept: []string{"羊奶", "羊肚菌", "羊角", "羊栖菜"},
+	},
+}
+
+// matches 某样食材是否算这种肉
+func (r meatDislikeRule) matches(name string) bool {
+	if strings.Contains(name, r.sign) {
+		return !hasKeyword(name, r.signExcept)
+	}
+	return hasKeyword(name, r.extra) && !hasKeyword(name, r.extraExcept)
+}
+
 // dishMatchesDislike 判断菜品是否命中某项忌口：
 // 辣看口味/菜名/菜系（与 spicy profile 口径对齐，"辣子鸡丁"漏不掉），
+// 猪/牛/羊肉按动物字识别主料和调料（猪油、牛骨汤也算），
 // 海鲜/内脏按食材子串（偏好过滤够用；过敏场景请以实际食材为准），
-// 其余按食材大类匹配（不吃猪肉 → 瘦肉/五花肉/排骨全部命中）。
+// 其余按食材大类匹配（不吃五花肉 → 写瘦肉的菜也命中）。
 func dishMatchesDislike(d models.Dish, dislike string) bool {
+	if rule, ok := meatDislikeRules[dislike]; ok {
+		for _, list := range []string{d.Ingredients, d.Seasonings} {
+			for _, ing := range ParseIngredientList(list) {
+				if rule.matches(ing.Name) {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	switch dislike {
 	case "辣":
 		return strings.Contains(d.Taste, "辣") ||
@@ -416,6 +466,9 @@ func dishMatchesDislike(d models.Dish, dislike string) bool {
 		return false
 	case "内脏":
 		for _, ing := range ParseDishIngredientNames(d) {
+			if hasKeyword(ing, offalExcept) {
+				continue
+			}
 			for _, sign := range offalSigns {
 				if strings.Contains(ing, sign) {
 					return true

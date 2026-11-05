@@ -42,6 +42,58 @@ func TestDishMatchesDislike(t *testing.T) {
 	}
 }
 
+func TestDishMatchesMeatAndOffalDislikes(t *testing.T) {
+	dish := func(ings, seasonings string) models.Dish {
+		d := dishWithIngredients(1, "测试菜", false, ings)
+		d.Seasonings = seasonings
+		return d
+	}
+	one := func(name string) string { return `[{"name":"` + name + `","amount":"1份"}]` }
+	tests := []struct {
+		dish    models.Dish
+		dislike string
+		want    bool
+	}{
+		// 不吃猪肉：猪字头的各种写法、调料里的猪油、不带动物字的家常叫法都要命中
+		{dish(one("猪肉末"), ""), "猪肉", true},
+		{dish(one("猪里脊肉"), ""), "猪肉", true},
+		{dish(one("猪肋排"), ""), "猪肉", true},
+		{dish(one("猪肝"), ""), "猪肉", true},
+		{dish(one("土豆"), one("猪油")), "猪肉", true},
+		{dish(one("肥膘肉"), ""), "猪肉", true},
+		{dish(one("腊肉"), ""), "猪肉", true},
+		{dish(one("火腿"), ""), "猪肉", true},
+		{dish(one("肉末"), ""), "猪肉", true},
+		{dish(one("猪肉马蹄馅"), ""), "猪肉", true},
+		{dish(one("牛里脊"), ""), "猪肉", false},
+		{dish(one("鸡胸肉"), ""), "猪肉", false},
+		{dish(one("蟹肉棒"), ""), "猪肉", false},
+		{dish(one("牛肉"), one("蒸肉米粉")), "猪肉", false},
+		{dish(one("鸡腿"), one("叉烧酱")), "猪肉", false},
+		// 不吃牛肉：牛奶、牛肝菌、牛蛙不算；毛肚、牛骨汤算
+		{dish(one("肥牛卷"), ""), "牛肉", true},
+		{dish(one("毛肚"), ""), "牛肉", true},
+		{dish(one("白萝卜"), one("牛骨汤")), "牛肉", true},
+		{dish(one("全脂牛奶"), ""), "牛肉", false},
+		{dish(one("牛肝菌"), ""), "牛肉", false},
+		{dish(one("牛蛙"), ""), "牛肉", false},
+		// 不吃羊肉
+		{dish(one("羊排"), ""), "羊肉", true},
+		{dish(one("胡萝卜"), one("羊油")), "羊肉", true},
+		{dish(one("羊肚菌"), ""), "羊肉", false},
+		// 内脏：腰果、牛肝菌、羊肚菌名字带内脏字但不是内脏
+		{dish(one("鸡胗"), ""), "内脏", true},
+		{dish(one("腰果"), ""), "内脏", false},
+		{dish(one("牛肝菌"), ""), "内脏", false},
+		{dish(one("羊肚菌"), ""), "内脏", false},
+	}
+	for _, tt := range tests {
+		if got := dishMatchesDislike(tt.dish, tt.dislike); got != tt.want {
+			t.Errorf("不吃%s：主料 %s 调料 %s → %v, want %v", tt.dislike, tt.dish.Ingredients, tt.dish.Seasonings, got, tt.want)
+		}
+	}
+}
+
 func TestDishHitsDislikes(t *testing.T) {
 	dish := dishWithIngredients(1, "麻辣香锅", false, `[{"name":"虾仁","amount":"200g"}]`)
 	dish.Taste = "香辣"
