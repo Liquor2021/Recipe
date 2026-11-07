@@ -1,0 +1,135 @@
+.kitchen-shell,
+.kitchen-surface {
+  --k-paper: #f4efe5;
+  --k-card: #fbf8f1;
+  --k-ink: #2b2520;
+  --k-muted: #776957;
+  --k-faint: #9c8c75;
+  --k-line: #d7c9b3;
+  --k-red: #c2492f;
+  --k-green: #5f7a52;
+  --k-kraft: #e8dcc6;
+  --k-shadow: 0 3px 9px rgb(64 45 25 / 8%), 0 1px 2px rgb(64 45 25 / 5%);
+  color-scheme: light;
+  color: var(--k-ink);
+  background-color: var(--k-paper);
+}
+
+.kitchen-shell[data-kitchen-theme="night"],
+.kitchen-surface.kitchen-night {
+  --k-paper: #191512;
+  --k-card: #25201b;
+  --k-ink: #f1e8d8;
+  --k-muted: #c0af96;
+  --k-faint: #9e8d74;
+  --k-line: #4b4033;
+  --k-red: #eb7856;
+  --k-green: #a0b58b;
+  --k-kraft: #342c22;
+  --k-shadow: 0 4px 12px rgb(0 0 0 / 24%), 0 1px 2px rgb(0 0 0 / 18%);
+  color-scheme: dark;
+}
+
+.kitchen-surface[data-tab-scroll="/"] {
+  padding-bottom: calc(90px + env(safe-area-inset-bottom));
+}
+
+/* 主页保留挂载以支持滑回预览；相邻旧页面仍使用原来的底色和文字。 */
+.kitchen-shell [data-tab-scroll]:not([data-tab-scroll="/"]) {
+  color-scheme: light;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.kitchen-bookmarks {
+  position: fixed;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 100;
+  width: calc(100% - 24px);
+  max-width: 640px;
+  transform: translateX(-50%);
+  border: 1px solid var(--k-line);
+  border-radius: 12px;
+  background: var(--k-card);
+  box-shadow: 0 4px 18px rgb(51 36 20 / 9%);
+}
+
+.kitchen-bookmarks-grid {
+  display: grid;
+  height: 62px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: center;
+  padding: 0 6px;
+}
+
+.kitchen-bookmark {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 52px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 6px;
+  color: var(--k-faint);
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 160ms ease, background-color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kitchen-bookmark.is-active {
+  color: var(--k-red);
+  font-weight: 700;
+}
+
+.kitchen-bookmark.is-active::before {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  width: 11px;
+  height: 18px;
+  transform: translateX(-50%);
+  background: var(--k-red);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+  content: "";
+}
+
+.kitchen-bookmark-icon {
+  display: flex;
+  height: 21px;
+  align-items: center;
+  justify-content: center;
+}
+
+.kitchen-bookmark-label {
+  max-width: 100%;
+  overflow: hidden;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--k-muted);
+}
+
+.kitchen-bookmark.is-active .kitchen-bookmark-label {
+  color: var(--k-ink);
+}
+
+.kitchen-bookmark:focus-visible {
+  outline: 2px solid var(--k-red);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .kitchen-bookmark:hover {
+    color: var(--k-red);
+    background: var(--k-kraft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kitchen-bookmark { transition: none; }
+}

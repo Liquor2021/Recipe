@@ -1,23 +1,22 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi, getUploadErrorMessage } from "@/api"
 import type { Dish } from "@/types"
 import DishImage from "@/components/DishImage"
-import DishCard from "@/components/DishCard"
-import SectionHeader from "@/components/SectionHeader"
-import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
-import { cardShadow } from "@/components/Card"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { isCurrentMoodChoice, savedHomeMood, selectedHomeMood } from "@/lib/homeMood"
 import type { HomeMood, HomeMoodChoice } from "@/lib/homeMood"
 import { gsap, motionDuration, scrollToElement, useGSAP } from "@/lib/gsap"
-import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import toast from "react-hot-toast"
-import { Home as HomeIcon, Settings } from "lucide-react"
+import { ArrowRight, Check, ChefHat, Clock3, Dices, Gift, Moon, RefreshCw, Settings, Soup, Sun, Utensils, X } from "lucide-react"
+import KitchenSheet from "@/components/KitchenSheet"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
+import "@/styles/kitchen-fonts.css"
+import "@/styles/kitchen-home.css"
 
 const moods: Array<{ key: HomeMood; emoji: string; label: string }> = [
   { key: "happy", emoji: "😊", label: "开心" },
@@ -29,11 +28,11 @@ const moods: Array<{ key: HomeMood; emoji: string; label: string }> = [
 
 function getGreeting(): string {
   const h = new Date().getHours()
-  if (h < 6) return "夜深了~"
-  if (h < 11) return "早上好 ☀️"
-  if (h < 14) return "中午好 🍳"
-  if (h < 18) return "下午好 ☀️"
-  return "晚上好 🌙"
+  if (h < 6) return "夜深了"
+  if (h < 11) return "早上好"
+  if (h < 14) return "中午好"
+  if (h < 18) return "下午好"
+  return "晚上好"
 }
 
 function diffLabel(d: string) { return d === "easy" ? "简单" : d === "medium" ? "中等" : "困难" }
@@ -43,6 +42,16 @@ function dateKey(d = new Date()) {
 
 export default function Home() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const theme = useKitchenTheme((s) => s.theme)
+  const toggleTheme = useKitchenTheme((s) => s.toggleTheme)
+  const [playPanel, setPlayPanel] = useState<"wheel" | "blind" | null>(null)
+  // Home stays mounted between tabs; changing routes must dismiss its portal.
+  const [panelPath, setPanelPath] = useState(location.pathname)
+  if (panelPath !== location.pathname) {
+    setPanelPath(location.pathname)
+    if (playPanel) setPlayPanel(null)
+  }
   const qc = useQueryClient()
   const [todayKey, setTodayKey] = useState(dateKey)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
@@ -50,7 +59,7 @@ export default function Home() {
 
   // 今日推荐/换一个/猜你喜欢与转盘都是推荐位：后端按家庭忌口处理
   // （strict 剔除命中忌口的菜，avoid 把它们排到最后）
-  const { data: dishesData } = useQuery({
+  const { data: dishesData, isPending: dishesLoading, isError: dishesError, refetch: reloadDishes } = useQuery({
     queryKey: ["dishes", "enabled"],
     queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", recommend: "1" }),
   })
@@ -90,7 +99,6 @@ export default function Home() {
   const wheelHighlightRef = useRef(-1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wheelRef = useRef<HTMLDivElement>(null)
-  const blindBoxRef = useRef<HTMLDivElement>(null)
   const confettiRef = useRef<HTMLDivElement>(null)
   const recCardRef = useRef<HTMLDivElement>(null)
 
@@ -245,7 +253,7 @@ export default function Home() {
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const cx = 106, cy = 106, r = 105
-    const colors = ["#E8734A", "#F5D76E", "#6EC6B8", "#F4A8A0", "#8B5CF6", "#C89B6C"]
+    const colors = ["#9B4935", "#7D684E", "#5F7052", "#AA714A", "#76604F", "#536657"]
     const n = wheelDishes.length
     const angle = (2 * Math.PI) / n
     ctx.clearRect(0, 0, size, size)
@@ -298,15 +306,19 @@ export default function Home() {
 
   useEffect(() => {
     drawWheel()
-  }, [drawWheel])
+  }, [drawWheel, playPanel])
 
   useGSAP(() => {
-    gsap.set(wheelRef.current, { rotation: wheelDegRef.current, transformOrigin: "50% 50%" })
-  }, { scope: wheelRef })
+    if (playPanel !== "wheel" || !wheelRef.current) return
+    const wheel = wheelRef.current
+    gsap.set(wheel, { rotation: wheelDegRef.current, transformOrigin: "50% 50%" })
+    return () => { gsap.killTweensOf(wheel) }
+  }, { dependencies: [playPanel], revertOnUpdate: true, scope: wheelRef })
 
   function spinWheel() {
     if (spinning || wheelDishes.length === 0) return
     setSpinning(true)
+    setWheelResult(null)
     const pickIdx = Math.floor(Math.random() * wheelDishes.length)
     const seg = 360 / wheelDishes.length
     const targetWithin = (360 - (pickIdx * seg + seg / 2)) % 360
@@ -330,33 +342,21 @@ export default function Home() {
         setRecQuote("")
         setRecMeal(null)
         setWheelResult(pick)
-        launchConfetti(confettiRef.current)
         qc.invalidateQueries({ queryKey: ["achievements"] })
       },
     })
   }
 
-  function handleConfetti() {
-    launchConfetti(confettiRef.current)
-  }
-
-  function finishBlindBoxReveal() {
-    setBlindRevealed(true)
-    handleConfetti()
-  }
-
-  function animateBlindBox() {
-    gsap.fromTo(blindBoxRef.current, { rotationY: 0 }, { rotationY: 180, duration: motionDuration(0.5), ease: "power2.inOut" })
-  }
-
-  function showBlindBoxResult() {
-    requestAnimationFrame(animateBlindBox)
-  }
-
   function resetBlindBox() {
     blindBoxMut.reset()
     setBlindRevealed(false)
-    gsap.set(blindBoxRef.current, { rotationY: 0 })
+  }
+
+  function closePlayPanel() {
+    gsap.killTweensOf(wheelRef.current)
+    setSpinning(false)
+    setPlayPanel(null)
+    setWheelResult(null)
   }
 
   function recordForDish(dish: Dish, mealType: "lunch" | "dinner") {
@@ -373,7 +373,7 @@ export default function Home() {
       meal_type: mealType,
       meal_date: todayKey,
     })
-    setWheelResult(null)
+    closePlayPanel()
   }
 
   function handlePickMeal(mealType: "lunch" | "dinner") {
@@ -392,11 +392,10 @@ export default function Home() {
   }
 
   function handleBlindBox() {
-    if (blindRevealed) return
+    if (blindRevealed || blindBoxMut.isPending) return
     blindBoxMut.mutate(undefined, {
       onSuccess: () => {
-        finishBlindBoxReveal()
-        showBlindBoxResult()
+        setBlindRevealed(true)
         qc.invalidateQueries({ queryKey: ["achievements"] })
       },
       onError: () => toast.error("暂无盲盒菜品"),
@@ -413,250 +412,304 @@ export default function Home() {
   }
 
   const moodDishes = moodPick?.dishes
+  const date = new Date(todayKey + "T12:00:00")
+  const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日 · 周${"日一二三四五六"[date.getDay()]}`
+  const brand = appName === "NiniMenu" ? "小灶手账" : appName
+  const isPlanned = (dish: Dish, meal: "lunch" | "dinner") => todayRecords.some(
+    (r) => r.status !== "cancelled" && r.dish_id === dish.id && r.meal_type === meal && r.meal_date === todayKey
+  )
+
+  const mealButtons = (dish: Dish) => (
+    <div className="kitchen-meal-actions">
+      {(["lunch", "dinner"] as const).map((meal) => {
+        const added = isPlanned(dish, meal)
+        const Icon = added ? Check : meal === "lunch" ? Utensils : Soup
+        return (
+          <button
+            key={meal}
+            className={`kitchen-button ${meal === "lunch" ? "kitchen-button-ink" : "kitchen-button-outline"}`}
+            disabled={recordMut.isPending || added}
+            onClick={() => dish === currentRec ? handlePickMeal(meal) : recordForDish(dish, meal)}
+          >
+            <Icon size={17} strokeWidth={1.6} aria-hidden="true" />
+            {added ? `已加入${meal === "lunch" ? "午餐" : "晚餐"}` : `加入${meal === "lunch" ? "午餐" : "晚餐"}`}
+          </button>
+        )
+      })}
+    </div>
+  )
 
   return (
-    <div className="animate-fadeUp">
-      {createPortal(<div ref={confettiRef} className="fixed inset-0 z-50 pointer-events-none overflow-hidden" />, document.body)}
-
-      <PageHeader
-        title={<span>{appName.slice(0, Math.max(1, appName.length - 4))}<span className="text-primary">{appName.slice(Math.max(1, appName.length - 4))}</span></span>}
-        subtitle="今天也好好吃饭"
-        icon={HomeIcon}
-        actions={
-           <HeaderIconButton onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} aria-label="管理设置">
-            <Settings size={18} strokeWidth={2.3} />
-          </HeaderIconButton>
-        }
-      />
-
-      <div className="px-5 py-4 max-w-[640px] mx-auto">
-        <div className="mb-5">
-          <div className="text-sm text-text2 mb-1">{getGreeting()}</div>
-          <div className="text-[26px] font-extrabold tracking-tight leading-tight">今天<em className="not-italic text-primary">想吃什么</em>？</div>
+    <div className="kitchen-home">
+      {createPortal(
+        <div ref={confettiRef} className="fixed inset-0 z-50 pointer-events-none overflow-hidden" />,
+        document.body,
+      )}
+      <header className="kitchen-masthead">
+        <div className="kitchen-brand">
+          <span className="kitchen-seal" aria-hidden="true">灶</span>
+          <span title={brand}>{brand}</span>
         </div>
-
-        {/* 临期提醒：冰箱里有快过期/已过期食材时出现，点关闭后当天不再打扰 */}
-        {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
+        <div className="kitchen-header-actions">
+          <time dateTime={todayKey}>{dateLabel}</time>
           <button
-            onClick={() => navigate(`/fridge?filter=${urgentSummary.filter}`)}
-            className={`w-full mb-4 rounded-2xl border border-red/15 bg-red-light/60 px-4 py-3 flex items-center gap-3 text-left transition-all active:scale-98`}
+            className="kitchen-icon-button"
+            onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")}
+            aria-label="管理设置"
           >
-            <span className="text-xl flex-shrink-0">⚠️</span>
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold text-red">{urgentSummary.title}</div>
-              <div className="text-[11px] text-text2 truncate">
-                {urgentSummary.names}，{urgentSummary.filter === "expired" ? "先检查并处理已过期批次" : "看看能做什么消耗掉"}
-              </div>
-            </div>
-            <span
-              role="button"
-              aria-label="关闭提醒"
-              onClick={(e) => {
-                e.stopPropagation()
-                setUrgentDismissedDate(todayKey)
-                try { localStorage.setItem("urgent_dismissed_date", todayKey) } catch { /* 隐私模式忽略 */ }
-              }}
-              className="w-6 h-6 rounded-full flex items-center justify-center text-text3 hover:bg-black/5 flex-shrink-0"
-            >
-              ×
-            </span>
-          </button>
-        )}
-
-        {/* 午/晚餐入口：点击真正触发推荐并同步到下方推荐卡 */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <button
-            onClick={() => pickMealMut.mutate("lunch")}
-            disabled={pickMealMut.isPending}
-            className={`relative p-5 rounded-2xl overflow-hidden transition-all active:scale-97 bg-primary-light border-[1.5px] min-h-[100px] text-left disabled:opacity-60 ${recMeal === "lunch" ? "border-primary" : "border-primary/12"}`}
-          >
-            <span className="text-[28px] block mb-2">🍳</span>
-            <div className="text-[15px] font-bold mb-0.5">中午吃点好的</div>
-            <div className="text-xs text-text2">{pickMealMut.isPending && recMeal === null ? "推荐中..." : "午餐推荐 →"}</div>
-          </button>
-          <button
-            onClick={() => pickMealMut.mutate("dinner")}
-            disabled={pickMealMut.isPending}
-            className={`relative p-5 rounded-2xl overflow-hidden transition-all active:scale-97 bg-mint-light border-[1.5px] min-h-[100px] text-left disabled:opacity-60 ${recMeal === "dinner" ? "border-mint" : "border-mint/12"}`}
-          >
-            <span className="text-[28px] block mb-2">🍲</span>
-            <div className="text-[15px] font-bold mb-0.5">晚上吃点温暖的</div>
-            <div className="text-xs text-text2">晚餐推荐 →</div>
+            <Settings size={18} strokeWidth={1.5} />
           </button>
         </div>
+      </header>
 
-        {/* 今日推荐卡：提到首屏，紧随入口 */}
-        {currentRec && (
-          <>
-            <SectionHeader
-              title="✨ 今日推荐"
-              action={
-                <button onClick={changeRecommend} className="text-sm font-semibold text-text2 hover:text-primary hover:bg-primary-light px-3 py-1.5 rounded-full transition-all">🔄 换一个</button>
-              }
-            />
-            <div ref={recCardRef} onClick={() => navigate(`/dishes/${currentRec.id}`)} className={`bg-card rounded-2xl overflow-hidden ${cardShadow} mb-2 cursor-pointer border border-border transition-all active:scale-98 animate-fadeUp`}>
-              <div className="relative h-[200px] bg-gradient-to-br from-primary-light to-pink-light">
-                <DishImage dish={currentRec} full className="w-full h-full" emojiSize="text-[64px]" />
-                <span className="absolute top-3 left-3 bg-white/92 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold text-primary z-[1]">🔥 推荐</span>
-                <div className="absolute top-3 right-3 flex gap-1.5">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${recMeal === "lunch" ? "bg-primary text-white" : "bg-white/90 text-primary"}`}>🍳 午餐</span>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${recMeal === "dinner" ? "bg-mint text-white" : "bg-white/90 text-mint"}`}>🍲 晚餐</span>
-                </div>
-              </div>
-              <div className="p-4">
-                <div className="text-xl font-bold mb-1">{currentRec.name}</div>
-                <div className="flex gap-2 flex-wrap mb-3">
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{currentRec.category}</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-mint-light text-mint">{currentRec.cook_time}分钟</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{diffLabel(currentRec.difficulty)}</span>
-                </div>
-                <div className="flex gap-2.5">
-                  <button onClick={(e) => { e.stopPropagation(); handlePickMeal("lunch") }} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 hover:bg-primary-dark">🍳 中午吃这个</button>
-                  <button onClick={(e) => { e.stopPropagation(); handlePickMeal("dinner") }} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96">🍲 晚上吃这个</button>
-                </div>
-              </div>
-            </div>
-            {/* 今日推荐语 */}
-            {recQuote && (
-              <div className="text-center text-[13px] text-text2 italic mb-6 px-4 leading-relaxed">"{recQuote}"</div>
-            )}
-            {!recQuote && <div className="mb-6" />}
-          </>
-        )}
-
-        {/* 更多玩法（下移） */}
-        <div className="text-[13px] font-semibold text-text3 mb-3 flex items-center gap-2">
-          <span className="flex-1 h-px bg-border" /> 更多玩法 <span className="flex-1 h-px bg-border" />
-        </div>
-
-        <SectionHeader title="😃 今天的心情" />
-        <div className="flex gap-2.5 overflow-x-auto pb-3 mb-5 scrollbar-none scroll-fade-x">
-          {moods.map((m) => (
+      <main className="kitchen-page">
+        <section className="kitchen-greeting" aria-labelledby="kitchen-greeting-title">
+          <div className="kitchen-kicker">
+            <div className="kitchen-hello">{getGreeting()}，今天也好好吃饭</div>
             <button
-              key={m.key}
-              onClick={() => handleMoodPick(m.key)}
-              aria-pressed={selectedMood === m.key}
-              className={`flex-shrink-0 p-3 px-4 rounded-2xl border-2 text-center transition-all active:scale-95 min-w-[80px] ${selectedMood === m.key ? "border-primary bg-primary-light" : "border-border bg-card"}`}
+              className="kitchen-theme-toggle"
+              onClick={toggleTheme}
+              aria-label={`切换到${theme === "day" ? "深夜" : "白日"}厨房`}
             >
-              <span className="text-[28px] block mb-1">{m.emoji}</span>
-              <span className={`text-[11px] font-medium ${selectedMood === m.key ? "text-primary" : "text-text2"}`}>{m.label}</span>
+              {theme === "day" ? <Sun size={13} /> : <Moon size={13} />}
+              {theme === "day" ? "白日厨房" : "深夜厨房"}
             </button>
-          ))}
-        </div>
-
-        {moodDishes && moodDishes.length > 0 && (
-          <div className="mb-6">
-            <div className="text-base font-bold mb-3">心情推荐</div>
-            <div className="grid grid-cols-2 gap-3">
-              {moodDishes.slice(0, 4).map((d) => (
-                <DishCard key={d.id} dish={d} onClick={() => navigate(`/dishes/${d.id}`)} />
-              ))}
-            </div>
           </div>
+          <h1 id="kitchen-greeting-title">
+            今天，<span>
+              想吃点什么？<svg viewBox="0 0 230 12" preserveAspectRatio="none" aria-hidden="true">
+                <path d="M3 7 Q35 2 65 7 T130 6 T190 6 L226 4" />
+              </svg>
+            </span>
+          </h1>
+          <span className="kitchen-margin-note" aria-hidden="true">好好吃饭</span>
+        </section>
+
+        {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
+          <aside className="kitchen-urgent">
+            <button onClick={() => navigate(`/fridge?filter=${urgentSummary.filter}`)}>
+              <strong>{urgentSummary.title}</strong>
+              <span>
+                {urgentSummary.names} · {urgentSummary.filter === "expired" ? "先检查并处理" : "看看能做什么"} <ArrowRight size={12} />
+              </span>
+            </button>
+            <button
+              className="kitchen-icon-button"
+              aria-label="关闭提醒"
+              onClick={() => {
+                setUrgentDismissedDate(todayKey)
+                try {
+                  localStorage.setItem("urgent_dismissed_date", todayKey)
+                } catch { /* 隐私模式下不持久化关闭状态。 */ }
+              }}
+            >
+              <X size={17} />
+            </button>
+          </aside>
         )}
 
-        <SectionHeader title="🎰 转一转" />
-        <div className="relative w-[240px] h-[240px] mx-auto mb-6">
-          {/* 顶部指针 */}
-          <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-20 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[22px] border-t-primary-dark drop-shadow-[0_2px_3px_rgba(0,0,0,.2)]" />
-          {/* 外圈灯珠环（静态，不随盘面旋转） */}
-          <div className="absolute inset-0 rounded-full bg-gradient-to-br from-primary to-primary-dark shadow-[0_10px_32px_rgba(232,115,74,.32),inset_0_2px_6px_rgba(255,255,255,.35)]" />
-          {Array.from({ length: 12 }).map((_, i) => (
-            <span
-              key={i}
-              className="absolute left-1/2 top-1/2 z-10"
-              style={{ transform: `translate(-50%, -50%) rotate(${i * 30}deg) translateY(-113px)` }}
-            >
-              <span
-                className="block w-[7px] h-[7px] rounded-full bg-[#FFEFC2] shadow-[0_0_6px_rgba(255,224,130,.95)]"
-                style={{ animation: `bulb-twinkle ${spinning ? 0.4 : 1.8}s ease-in-out ${(i % 3) * 0.18}s infinite` }}
-              />
-            </span>
-          ))}
-          {/* 盘面（唯一旋转的部分） */}
-          <div ref={wheelRef} className="absolute inset-[14px] rounded-full overflow-hidden will-change-transform bg-card">
-            <canvas ref={canvasRef} className="w-full h-full" />
+        <section className="kitchen-recommendation" aria-labelledby="kitchen-rec-title">
+          <div className="kitchen-section-heading">
+            <h2 id="kitchen-rec-title">「今日推荐」</h2>
+            <button className="kitchen-text-button" onClick={changeRecommend} disabled={dishes.length < 2}>
+              <RefreshCw size={14} /> 换一道
+            </button>
           </div>
-          {/* 中心按钮（静态） */}
-          <button
-            onClick={spinWheel}
-            disabled={spinning || wheelDishes.length === 0}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-[62px] h-[62px] rounded-full bg-gradient-to-b from-white to-[#FFF1E8] border-[3px] border-primary/15 shadow-[0_4px_14px_rgba(200,90,53,.35)] flex items-center justify-center text-[15px] font-black text-primary active:scale-90 transition-transform disabled:opacity-70"
-          >
-            {spinning ? "…" : "转"}
-          </button>
-        </div>
-
-        <SectionHeader title="🎁 惊喜盲盒" />
-        <div onClick={!blindRevealed ? handleBlindBox : undefined} className="mb-6 cursor-pointer" style={{ perspective: 800 }}>
-          <div ref={blindBoxRef} className="relative will-change-transform" style={{ transformStyle: "preserve-3d", height: 220 }}>
-            <div className={`absolute inset-0 flex flex-col items-center justify-center rounded-2xl bg-card border-[1.5px] border-border2 ${cardShadow}`} style={{ backfaceVisibility: "hidden" }}>
-              <div className="absolute inset-0 bg-gradient-to-br from-transparent via-purple-light/6 to-transparent bg-[length:300%_300%] animate-[shimmer_3s_infinite]" />
-              <span className="text-[40px] mb-2 animate-float">🎁</span>
-              <div className="text-base font-bold mb-0.5">今日惊喜</div>
-              <div className="text-xs text-text3 italic">"点我揭晓~"</div>
-            </div>
-            {blindRevealed && blindBoxMut.data && (
-              <div onClick={(e) => e.stopPropagation()} className={`absolute inset-0 flex flex-col rounded-2xl bg-card border-[1.5px] border-border2 ${cardShadow} overflow-hidden`} style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-                <DishImage dish={blindBoxMut.data.dish} full className="flex-1 min-h-0 bg-gradient-to-br from-primary-light to-pink-light" emojiSize="text-[48px] animate-pop" />
-                <div className="p-4 flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-base font-bold mb-0.5">{blindBoxMut.data.dish.name}</div>
-                    <div className="text-xs text-text2">{blindBoxMut.data.dish.category} · {blindBoxMut.data.dish.cook_time}分钟 · {diffLabel(blindBoxMut.data.dish.difficulty)}</div>
-                  </div>
-                  <div className="flex flex-col gap-1.5 flex-shrink-0">
-                    <button onClick={(e) => { e.stopPropagation(); recordForDish(blindBoxMut.data!.dish, "dinner"); resetBlindBox() }} className="py-1.5 px-3.5 rounded-full text-xs font-semibold bg-primary text-white">🍲 今晚吃这个</button>
-                    <button onClick={(e) => { e.stopPropagation(); resetBlindBox() }} className="py-1.5 px-3.5 rounded-full text-xs font-semibold border-[1.5px] border-border2">换一个</button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <button onClick={() => navigate("/tomorrow")} className={`w-full bg-card rounded-2xl p-4 ${cardShadow} border border-border flex items-center gap-3.5 transition-all active:scale-98`}>
-          <div className="w-12 h-12 rounded-[10px] bg-gradient-to-br from-yellow-light to-primary-light flex items-center justify-center text-2xl flex-shrink-0">🌙</div>
-          <div className="flex-1 min-w-0 text-left">
-            <div className="text-[15px] font-bold mb-0.5">🌙 明天吃什么？</div>
-            <div className="text-xs text-text2">提前规划明天的菜单，不用再临时纠结</div>
-          </div>
-          <span className="text-text3 text-sm">›</span>
-        </button>
-      </div>
-
-      {/* 转盘结果弹层 */}
-      {wheelResult && (
-        <AnimatedBottomSheet onClose={() => setWheelResult(null)} className="rounded-t-3xl overflow-hidden">
-          <div className="relative">
-            <div className="relative h-[190px] bg-gradient-to-br from-primary-light to-pink-light">
-              <DishImage dish={wheelResult} full className="w-full h-full" emojiSize="text-[52px]" />
-              <span className="absolute top-3 left-3 bg-white/92 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-primary z-10">🎯 转盘结果</span>
+          {currentRec ? (
+            <article className="kitchen-polaroid" ref={recCardRef}>
+              <span className="kitchen-tape" aria-hidden="true" />
               <button
-                onClick={() => setWheelResult(null)}
-                aria-label="关闭"
-                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full bg-white/92 text-text2 flex items-center justify-center shadow-sm active:scale-90 transition-transform"
+                className="kitchen-photo-link"
+                aria-label={`查看${currentRec.name}的做法`}
+                onClick={() => navigate(`/dishes/${currentRec.id}`)}
               >
-                ✕
+                <DishImage dish={currentRec} full className="kitchen-food-photo" emojiSize="text-6xl" />
+                <span className="kitchen-daily-stamp" aria-hidden="true">今日<br />推荐</span>
+                <span className="kitchen-photo-caption">查看做法 <ArrowRight size={13} /></span>
+              </button>
+              <div className="kitchen-recipe-note">
+                <button className="kitchen-dish-name" onClick={() => navigate(`/dishes/${currentRec.id}`)}>
+                  <h3>{currentRec.name}</h3>
+                </button>
+                <div className="kitchen-recipe-meta">
+                  <span>{currentRec.category || "家常菜"}</span>
+                  <span><Clock3 size={12} />{currentRec.cook_time} 分钟</span>
+                  <span className="kitchen-difficulty">{diffLabel(currentRec.difficulty)}</span>
+                  {recMeal && <span className="kitchen-meal-mark">{recMeal === "lunch" ? "午餐推荐" : "晚餐推荐"}</span>}
+                </div>
+                {mealButtons(currentRec)}
+              </div>
+            </article>
+          ) : (
+            <div className="kitchen-empty" role="status">
+              <ChefHat size={28} />
+              <p>{dishesLoading ? "正在翻开今天的菜谱…" : dishesError ? "菜谱暂时没加载出来" : "今天还没有可推荐的菜"}</p>
+              <button className="kitchen-text-button" onClick={() => dishesError ? reloadDishes() : navigate("/dishes")}>
+                {dishesError ? "重新加载" : "去看看菜品"}<ArrowRight size={14} />
               </button>
             </div>
-            <div className="p-5">
-              <div className="text-xl font-extrabold mb-1.5">{wheelResult.name}</div>
-              <div className="flex gap-2 flex-wrap mb-4">
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{wheelResult.category}</span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-mint-light text-mint">{wheelResult.cook_time}分钟</span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{diffLabel(wheelResult.difficulty)}</span>
-              </div>
-              <div className="flex gap-2.5 mb-2.5">
-                <button onClick={() => recordForDish(wheelResult, "lunch")} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white active:scale-96 transition-all">🍳 中午吃这个</button>
-                <button onClick={() => recordForDish(wheelResult, "dinner")} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white active:scale-96 transition-all">🍲 晚上吃这个</button>
-              </div>
-              <div className="flex gap-2.5">
-                <button onClick={() => { setWheelResult(null); navigate(`/dishes/${wheelResult.id}`) }} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border2 text-text2 active:scale-96 transition-all">查看做法</button>
-                <button onClick={() => { setWheelResult(null); requestAnimationFrame(() => spinWheel()) }} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border2 text-text2 active:scale-96 transition-all">再转一次</button>
-              </div>
-            </div>
+          )}
+          {recQuote && <p className="kitchen-recipe-quote">“{recQuote}”</p>}
+        </section>
+
+        <section className="kitchen-moods" aria-labelledby="kitchen-mood-title">
+          <div className="kitchen-section-heading">
+            <h2 id="kitchen-mood-title">「今天的心情」</h2>
+            <span>按心情，找点好吃的</span>
           </div>
-        </AnimatedBottomSheet>
+          <div className="kitchen-mood-grid">
+            {moods.map((m) => (
+              <button
+                key={m.key}
+                className={`kitchen-mood ${selectedMood === m.key ? "is-selected" : ""}`}
+                aria-pressed={selectedMood === m.key}
+                onClick={() => handleMoodPick(m.key)}
+              >
+                <span className="kitchen-mood-emoji" aria-hidden="true">{m.emoji}</span>
+                <span>{m.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <div className="kitchen-play-strip" aria-label="更多选菜方式">
+          <button onClick={() => { setWheelResult(null); setSpinning(false); setPlayPanel("wheel") }}>
+            <Dices size={23} strokeWidth={1.3} />
+            <span><strong>转一转</strong><small>纠结交给它</small></span>
+          </button>
+          <button onClick={() => setPlayPanel("blind")}>
+            <Gift size={23} strokeWidth={1.3} />
+            <span><strong>惊喜盲盒</strong><small>随机一点鲜</small></span>
+          </button>
+          <button onClick={() => navigate("/tomorrow")}>
+            <Moon size={23} strokeWidth={1.3} />
+            <span><strong>明天吃什么</strong><small>提前安排好</small></span>
+          </button>
+        </div>
+
+        <section className="kitchen-meal-picks" aria-label="按餐次推荐">
+          <button disabled={pickMealMut.isPending} onClick={() => pickMealMut.mutate("lunch")}>
+            <Sun size={18} />
+            <span>
+              <strong>中午吃点好的</strong>
+              <small>{pickMealMut.isPending && pickMealMut.variables === "lunch" ? "正在翻菜谱…" : "找一道午餐"}</small>
+            </span>
+            <ArrowRight size={16} />
+          </button>
+          <button disabled={pickMealMut.isPending} onClick={() => pickMealMut.mutate("dinner")}>
+            <Soup size={18} />
+            <span>
+              <strong>晚上吃点暖的</strong>
+              <small>{pickMealMut.isPending && pickMealMut.variables === "dinner" ? "正在翻菜谱…" : "找一道晚餐"}</small>
+            </span>
+            <ArrowRight size={16} />
+          </button>
+        </section>
+
+        {moodDishes && moodDishes.length > 0 && (
+          <section className="kitchen-mood-recipes" aria-label="心情推荐">
+            <div className="kitchen-section-heading"><h2>「跟着心情吃」</h2></div>
+            <div className="kitchen-recipe-list">
+              {moodDishes.slice(0, 4).map((d) => (
+                <button key={d.id} onClick={() => navigate(`/dishes/${d.id}`)}>
+                  <DishImage dish={d} className="kitchen-recipe-thumb" />
+                  <span>
+                    <strong>{d.name}</strong>
+                    <small>{d.category} · {d.cook_time} 分钟</small>
+                  </span>
+                  <ArrowRight size={15} />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <footer className="kitchen-page-footer">
+          <span>一餐一饭，都是生活。</span>
+          <span>小灶手账 · {date.getFullYear()}</span>
+        </footer>
+      </main>
+
+      {playPanel && location.pathname === "/" && (
+        <KitchenSheet
+          theme={theme}
+          title={playPanel === "wheel" ? "「转一转」" : "「惊喜盲盒」"}
+          onClose={closePlayPanel}
+        >
+          {playPanel === "wheel" ? (
+            <div className="kitchen-play-content">
+              <p className="kitchen-sheet-intro">今天吃什么，让小转盘来拿主意。</p>
+              <div className={`kitchen-wheel-wrap ${wheelResult ? "has-result" : ""}`}>
+                <div className="kitchen-wheel-pointer" />
+                <div ref={wheelRef} className="kitchen-wheel">
+                  <canvas ref={canvasRef} aria-label="随机选菜转盘" />
+                </div>
+                <button
+                  className="kitchen-wheel-spin"
+                  onClick={spinWheel}
+                  disabled={spinning || wheelDishes.length === 0}
+                  aria-label="开始转盘"
+                >
+                  {spinning ? "…" : "转"}
+                </button>
+              </div>
+              {wheelResult ? (
+                <div className="kitchen-wheel-result" aria-live="polite">
+                  <button
+                    className="kitchen-result-dish"
+                    onClick={() => { closePlayPanel(); navigate(`/dishes/${wheelResult.id}`) }}
+                  >
+                    <DishImage dish={wheelResult} className="kitchen-recipe-thumb" />
+                    <span>
+                      <strong>{wheelResult.name}</strong>
+                      <small>{wheelResult.cook_time} 分钟 · 查看做法</small>
+                    </span>
+                    <ArrowRight size={16} />
+                  </button>
+                  {mealButtons(wheelResult)}
+                  <button
+                    className="kitchen-text-button kitchen-another"
+                    onClick={() => { setWheelResult(null); spinWheel() }}
+                  >
+                    再转一次 <RefreshCw size={14} />
+                  </button>
+                </div>
+              ) : (
+                <p className="kitchen-wheel-hint" role="status">
+                  {spinning ? "好菜马上出锅…" : wheelDishes.length ? "轻轻一点，把纠结放下。" : "暂时没有可参与转盘的菜品"}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="kitchen-play-content">
+              {blindRevealed && blindBoxMut.data ? (
+                <div className="kitchen-blind-result">
+                  <button
+                    className="kitchen-blind-photo"
+                    onClick={() => { closePlayPanel(); navigate(`/dishes/${blindBoxMut.data.dish.id}`) }}
+                    aria-label={`查看${blindBoxMut.data.dish.name}的做法`}
+                  >
+                    <DishImage dish={blindBoxMut.data.dish} full className="kitchen-food-photo" />
+                  </button>
+                  <h3>{blindBoxMut.data.dish.name}</h3>
+                  <p>
+                    {blindBoxMut.data.dish.category} · {blindBoxMut.data.dish.cook_time} 分钟 · {diffLabel(blindBoxMut.data.dish.difficulty)}
+                  </p>
+                  {mealButtons(blindBoxMut.data.dish)}
+                  <button className="kitchen-text-button kitchen-another" onClick={resetBlindBox}>
+                    再拆一份 <RefreshCw size={14} />
+                  </button>
+                </div>
+              ) : (
+                <button className="kitchen-blind-envelope" onClick={handleBlindBox} disabled={blindBoxMut.isPending}>
+                  <span className="kitchen-envelope-seal"><Gift size={34} strokeWidth={1.3} /></span>
+                  <strong>{blindBoxMut.isPending ? "正在准备惊喜…" : "给今天留一点惊喜"}</strong>
+                  <span>点一下，拆开今日菜单</span>
+                </button>
+              )}
+            </div>
+          )}
+        </KitchenSheet>
       )}
     </div>
   )
