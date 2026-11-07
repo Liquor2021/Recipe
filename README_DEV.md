@@ -205,15 +205,21 @@ NiniMenu/
 | GET/PUT | `/api/meal-plans/:date` | 读取或原子保存明日菜单；PUT 携带 `expected_version`、`request_id`、`dishes`，版本冲突返回 409 并保留客户端草稿供核对 |
 | GET/POST | `/api/favorites/:dishId` | 收藏/取消收藏 |
 | POST | `/api/pick/lunch\|dinner\|mood\|tomorrow\|blind-box` | 各类推荐 |
-| GET/POST | `/api/day-rating` | 每日评价 |
+| GET/POST | `/api/day-rating` | 每日评价；GET 返回含 `version` 的快照（未创建也返回空快照），POST 必须携带 `expected_version`，版本缺失或变化返回 409 |
+| GET | `/api/day-ratings` | 按 `date_from`、`date_to` 读取每日评价，各条含 `version`；读取失败返回 500 |
+| POST | `/api/day-rating/home-mood` | 独立更新首页心情，传 `meal_date` 与 `home_mood`；不改变整体评价的版本 |
 | GET | `/api/photo-wall` | 照片墙 |
 | GET/POST | `/api/shopping-list` | 购物清单 |
 | POST | `/api/shopping-list/toggle` | 勾选/取消已买，携带对应食材的 `demand_version`；版本缺失或清单变化返回 409，须重新读取并核对 |
+| POST | `/api/shopping-list/inventory` | 标记或取消“家中有”；取消时携带当前清单的 `inventory_version`，版本缺失或可用批次、数量、保质期、日期变化返回 409；核对后才移出对应未过期批次 |
+| POST | `/api/shopping-list/items` | 补料，传 `items` 及可选 `dish_id`、`dish_name`；缺失用量按菜谱补齐，菜谱读取故障返回 500 且本次不写入任何补料项 |
 | GET | `/api/week-plan` | 周计划 |
 | POST | `/api/week-plan/regenerate` | 重新生成周菜单，成功响应为已保存的完整菜单；读写失败返回 500 |
 | POST | `/api/week-plan/swap` | 周计划只换一道菜（`{date, meal_type, dish_id}`；菜单已变化返回 409） |
 | GET | `/api/achievements` | 成就列表 |
 | GET | `/api/stats` | 统计数据 |
+
+每日评价的版本覆盖日期、整体心情、备注和照片，不包含首页心情。提交只更新显式提供的字段；例如仅提交 `photos` 不会清空备注。服务端在同一事务内核对版本并保存。客户端打开编辑器和失败后核对时使用实时读取，拒绝离线缓存；409 或保存结果未确认时保留草稿，展示最新内容供选择，不自动重放旧请求。删除当天照片同样携带用户实际看到的快照版本，失败后先重读，再由用户重新确认目标。
 
 ### 管理接口（需 JWT）
 
@@ -229,6 +235,8 @@ NiniMenu/
 | GET | `/api/admin/dashboard` | 仪表盘 |
 
 ## 回归测试
+
+编辑基线统一通过 `apiFresh` 读取：请求带 `X-Nini-Require-Fresh: 1`，Service Worker 不允许离线回退；客户端同时拒绝带 `sw-cached-at` 的响应，兼容仍运行旧版 Service Worker 的设备。普通浏览使用 `api`，仍支持有效期内的离线副本。管理页使用独立的 `admin` 查询键，避免与普通浏览缓存混用。菜品启用切换在事务内仅原子翻转 `enabled`，随后读取结果；菜谱编辑也只更新表单拥有的字段，保留并发启停、收藏与软删除状态。上线时需同步更新前后端；旧页面缺少版本字段的写入会被拒绝，应刷新页面再核对操作。
 
 - 后端单元与接口处理器测试：在 `backend` 目录运行 `go test ./...`，测试使用各自创建的临时数据库。
 - HTTP 接口回归脚本：见 `backend/scripts_test/README.md`，需要启动使用独立临时数据库的服务，脚本会修改测试数据。

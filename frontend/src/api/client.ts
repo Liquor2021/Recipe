@@ -104,17 +104,31 @@ client.interceptors.response.use(
   },
 )
 
-export async function api<T>(method: string, url: string, data?: unknown): Promise<T> {
+async function requestApi<T>(method: string, url: string, data?: unknown, requireFresh = false): Promise<T> {
   const res = await client.request<ApiResponse<T>>({
     method,
     url,
     data,
     params: method === "GET" ? data : undefined,
+    headers: requireFresh ? { "X-Nini-Require-Fresh": "1" } : undefined,
   })
+  // Older installed service workers may ignore the request header. Their cached
+  // responses already carry this marker, so never accept them as an edit baseline.
+  if (requireFresh && res.headers["sw-cached-at"] != null) {
+    throw new Error("当前只有离线副本，请联网重新读取后再修改")
+  }
   if (res.data.code !== 0) {
     throw new Error(res.data.message)
   }
   return res.data.data
+}
+
+export function api<T>(method: string, url: string, data?: unknown): Promise<T> {
+  return requestApi<T>(method, url, data)
+}
+
+export function apiFresh<T>(method: "GET", url: string, data?: unknown): Promise<T> {
+  return requestApi<T>(method, url, data, true)
 }
 
 export function getUploadErrorMessage(err: unknown, fallback = "上传失败"): string {

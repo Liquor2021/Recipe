@@ -1,4 +1,4 @@
-import { api, getUploadErrorMessage } from "./client"
+import { api, apiFresh, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
 import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, ConsumptionMatch, DietReport, ConsumptionExpectation, RecordConsumptionHistory } from "@/types"
 
@@ -7,6 +7,7 @@ export const dishesApi = {
     api<PaginatedData<Dish>>("GET", "/dishes", params),
   categoryCounts: () => api<DishCategoryCounts>("GET", "/dishes/category-counts"),
   get: (id: number) => api<Dish>("GET", `/dishes/${id}`),
+  getFresh: (id: number) => apiFresh<Dish>("GET", `/dishes/${id}`),
   records: (id: number) => api<DishRecordsResponse>("GET", `/dishes/${id}/records`),
   create: (data: DishInput) => api<Dish>("POST", "/dishes", data),
   update: (id: number, data: DishInput) => api<Dish>("PUT", `/dishes/${id}`, data),
@@ -76,12 +77,17 @@ export const authApi = {
 
 export const quotesApi = {
   list: () => api<Quote[]>("GET", "/quotes"),
+  listFresh: () => apiFresh<Quote[]>("GET", "/quotes"),
   create: (data: { content: string; scene: string }) => api<Quote>("POST", "/quotes", data),
   update: (id: number, data: { content: string; scene: string }) => api<Quote>("PUT", `/quotes/${id}`, data),
   delete: (id: number) => api<null>("DELETE", `/quotes/${id}`),
 }
 
 export const achievementsApi = {
+  listFresh: async () => {
+    const data = await apiFresh<Achievement[] | null>("GET", "/achievements")
+    return Array.isArray(data) ? data : []
+  },
   list: async () => {
     const data = await api<Achievement[] | null>("GET", "/achievements")
     return Array.isArray(data) ? data : []
@@ -105,7 +111,7 @@ export const shoppingListApi = {
   get: () => api<ShoppingCategory[]>("GET", "/shopping-list"),
   toggle: (data: { item_name: string; meal_date: string; checked: boolean; demand_version: string }) =>
     api<null>("POST", "/shopping-list/toggle", data),
-  setInventory: (data: { item_name: string; in_stock: boolean }) =>
+  setInventory: (data: { item_name: string; in_stock: boolean; inventory_version?: string }) =>
     api<null>("POST", "/shopping-list/inventory", data),
   // 未带 amount 时后端按 dish_id 的菜谱补上用量
   addItems: (p: { dish_id?: number; dish_name?: string; items: { name: string; amount?: string }[] }) =>
@@ -132,11 +138,12 @@ export const holidaysApi = {
 
 export const dayRatingApi = {
   get: (date: string) => api<DayRating>("GET", `/day-rating?date=${date}`),
+  getFresh: (date: string) => apiFresh<DayRating>("GET", `/day-rating?date=${date}`),
   list: (params: { date_from: string; date_to: string }) =>
     api<DayRating[]>("GET", "/day-ratings", params),
   updateHomeMood: (data: { meal_date: string; home_mood: string }) =>
     api<DayRating>("POST", "/day-rating/home-mood", data),
-  create: (data: { meal_date: string; mood?: string; remark?: string; photos?: string }) =>
+  create: (data: { meal_date: string; expected_version: string; mood?: string; remark?: string; photos?: string }) =>
     api<DayRating>("POST", "/day-rating", data),
 }
 
@@ -145,6 +152,7 @@ export const photoWallApi = {
 }
 
 export const settingsApi = {
+  getFresh: () => apiFresh<Record<string, unknown>>("GET", "/settings"),
   get: () => api<Record<string, unknown>>("GET", "/settings"),
   update: (settings: Record<string, string>) => api<null>("PUT", "/settings", { settings }),
 }

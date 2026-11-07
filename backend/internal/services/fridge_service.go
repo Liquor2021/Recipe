@@ -343,37 +343,48 @@ func RemoveInventoryItem(itemName string) error {
 // availableBatchCounts 按真别名归一的食材名统计"家中可用"批次数：已过期的不算
 // （过期了就得重新买）。买菜清单"家中有"与库存类成就共用这一口径。
 func availableBatchCounts() (map[string]int, error) {
-	var batches []models.InventoryBatch
-	if err := database.DB.Where("in_stock = ?", true).Find(&batches).Error; err != nil {
+	snapshots, err := availableInventorySnapshots(database.DB, time.Now())
+	if err != nil {
 		return nil, err
 	}
-	today := time.Now()
-	counts := make(map[string]int, len(batches))
-	for _, b := range batches {
-		if daysLeftFor(b.ExpiryDate, today) < 0 {
-			continue
-		}
-		counts[ingredients.Normalize(b.ItemName)]++
+	counts := make(map[string]int, len(snapshots))
+	for name, snapshot := range snapshots {
+		counts[name] = len(snapshot.BatchIDs)
 	}
 	return counts, nil
 }
 
 // removeAvailableBatches 移出与 itemName 同一食材（含真别名）的全部未过期批次，返回移出数。
 // 买菜清单取消"家中有"用：已过期批次不在"家中有"口径里，留给冰箱页的临期提醒处理。
-func removeAvailableBatches(itemName string) (int64, error) {
-	var batches []models.InventoryBatch
-	if err := database.DB.Where("in_stock = ?", true).Find(&batches).Error; err != nil {
+func removeAvailableBatches(itemName, expectedVersion string) (int64, error) {
+	if len(expectedVersion) != 64 {
+		return 0, ErrShoppingInventoryChanged
+	}
+	var removed int64
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		// 先取得 SQLite 写锁，再读取并核对可见快照，避免核对后新增批次被误删。
+		if err := tx.Model(&models.InventoryBatch{}).Where("in_stock = ?", true).UpdateColumn("id", gorm.Expr("id")).Error; err != nil {
+			return err
+		}
+		snapshots, err := availableInventorySnapshots(tx, time.Now())
+		if err != nil {
+			return err
+		}
+		current := snapshots[ingredients.Normalize(itemName)]
+		if current.Version == "" || current.Version != expectedVersion {
+			return ErrShoppingInventoryChanged
+		}
+		res := tx.Where("id IN ?", current.BatchIDs).Delete(&models.InventoryBatch{})
+		if res.Error != nil {
+			return res.Error
+		}
+		removed = res.RowsAffected
+		return nil
+	})
+	if err != nil {
 		return 0, err
 	}
-	key := ingredients.Normalize(itemName)
-	today := time.Now()
-	ids := make([]uint, 0)
-	for _, b := range batches {
-		if ingredients.Normalize(b.ItemName) == key && daysLeftFor(b.ExpiryDate, today) >= 0 {
-			ids = append(ids, b.ID)
-		}
-	}
-	return ConsumeInventoryBatches(ids)
+	return removed, nil
 }
 
 // UrgentInventoryItems 临期/已过期批次（含今天过期），供首页提醒条使用

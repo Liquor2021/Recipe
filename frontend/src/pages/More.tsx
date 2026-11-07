@@ -353,8 +353,9 @@ export default function More() {
 
   const inventoryMut = useMutation({
     mutationKey: ["shopping-edit", "inventory"],
-    mutationFn: (data: { item_name: string; in_stock: boolean }) =>
+    mutationFn: (data: { item_name: string; in_stock: boolean; inventory_version?: string }) =>
       shoppingListApi.setInventory(data),
+    retry: false,
     onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["achievements"] })
@@ -363,8 +364,13 @@ export default function More() {
       qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
       qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
     },
-    onError: () => {
-      toast.error("库存状态更新失败")
+    onError: (err: unknown) => {
+      toast.error(getUploadErrorMessage(err, "库存状态更新失败"))
+      if (isAxiosError(err) && err.response?.status === 409) {
+        for (const key of ["fridge", "fridge-recipes", "fridge-urgent"]) {
+          void qc.invalidateQueries({ queryKey: [key] })
+        }
+      }
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
   })
@@ -444,7 +450,7 @@ export default function More() {
             // 取消"家中有"会把冰箱里这个食材的批次一起移出，先确认
             if (item.in_stock && item.stock_batches > 0 &&
               !confirm(`取消后会从冰箱移出 ${item.stock_batches} 批「${item.name}」，确定吗？`)) return
-            startShoppingEdit(item.name, () => inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock }))
+            startShoppingEdit(item.name, () => inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock, inventory_version: item.inventory_version }))
           }}
           disabled={pendingShopping.has(item.name)}
           aria-label={`${item.in_stock ? "取消家中有" : "标记家中有"}${item.name}`}

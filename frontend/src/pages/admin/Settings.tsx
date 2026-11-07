@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query"
 import { backupApi, settingsApi, shoppingCategoriesApi } from "@/api"
 import SecurityNotice from "@/components/SecurityNotice"
 import { asString } from "@/lib/utils"
@@ -241,7 +241,7 @@ function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMem
 export default function AdminSettings() {
   const qc = useQueryClient()
   const { data: settings, isPending, isSuccess, isError, isFetching, isFetchedAfterMount, refetch } = useQuery({
-    queryKey: ["settings"], queryFn: () => settingsApi.get(), refetchOnMount: "always", retry: false,
+    queryKey: ["settings", "admin"], queryFn: () => settingsApi.getFresh(), refetchOnMount: "always", retry: false,
   })
 
   const [repeatDays, setRepeatDays] = useState<string | null>(null)
@@ -277,7 +277,8 @@ export default function AdminSettings() {
     // 忌口模式等开关型设置失败时按钮会静默弹回，必须给用户明确反馈
     onError: () => toast.error("保存失败"),
   })
-  const canEditSettings = !!settings && isSuccess && isFetchedAfterMount && !isFetching && !updateMut.isPending
+  const settingsBusy = useMutationState({ filters: { mutationKey: ["settings-edit"], status: "pending" } }).length > 0
+  const canEditSettings = !!settings && isSuccess && isFetchedAfterMount && !isFetching && !settingsBusy
 
   function saveSettings(values: Record<string, string>) {
     if (!canEditSettings || qc.isMutating({ mutationKey: ["settings-edit"] }) > 0) return

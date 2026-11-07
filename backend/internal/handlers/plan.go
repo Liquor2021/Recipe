@@ -103,8 +103,9 @@ func ToggleShoppingCheckHandler(c *gin.Context) {
 }
 
 type ToggleHomeInventoryRequest struct {
-	ItemName string `json:"item_name" binding:"required"`
-	InStock  bool   `json:"in_stock"`
+	ItemName         string `json:"item_name" binding:"required"`
+	InStock          bool   `json:"in_stock"`
+	InventoryVersion string `json:"inventory_version"`
 }
 
 func ToggleHomeInventoryHandler(c *gin.Context) {
@@ -113,7 +114,11 @@ func ToggleHomeInventoryHandler(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	if err := services.ToggleHomeInventory(req.ItemName, req.InStock); err != nil {
+	if err := services.ToggleHomeInventory(req.ItemName, req.InStock, req.InventoryVersion); err != nil {
+		if errors.Is(err, services.ErrShoppingInventoryChanged) {
+			utils.Conflict(c, err.Error())
+			return
+		}
 		if errors.Is(err, services.ErrEmptyItemName) {
 			utils.BadRequest(c, "参数无效")
 			return

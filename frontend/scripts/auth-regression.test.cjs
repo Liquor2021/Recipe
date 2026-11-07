@@ -41,9 +41,36 @@ function setup() {
     return module.exports
   }
   const auth = load("src/store/useAuthStore.ts").useAuthStore
-  const client = load("src/api/client.ts").default
-  return { client, auth, storage, events, cacheMessages }
+  const { default: client, api, apiFresh } = load("src/api/client.ts")
+  return { client, api, apiFresh, auth, storage, events, cacheMessages }
 }
+
+test("ordinary reads accept offline snapshots but editable reads reject old SW cache", async () => {
+  const { client, api, apiFresh, events } = setup()
+  const headers = []
+  client.defaults.adapter = async (config) => {
+    headers.push(config.headers.get("X-Nini-Require-Fresh"))
+    return { status: 200, statusText: "OK", headers: { "sw-cached-at": "123" }, config, data: { code: 0, data: { name: "cached" } } }
+  }
+  assert.equal((await api("GET", "/settings")).name, "cached")
+  await assert.rejects(apiFresh("GET", "/settings"), /离线副本/)
+  assert.deepEqual(headers, [undefined, "1"])
+  assert.deepEqual(events, [])
+})
+
+test("editable reads accept a fresh response and retain the normal authentication handling", async () => {
+  const { client, apiFresh, events, auth } = setup()
+  client.defaults.adapter = async (config) => {
+    assert.equal(config.headers.get("X-Nini-Require-Fresh"), "1")
+    assert.equal(config.headers.Authorization, "Bearer old-admin")
+    return { status: 200, statusText: "OK", headers: {}, config, data: { code: 0, data: { name: "latest" } } }
+  }
+  assert.equal((await apiFresh("GET", "/settings")).name, "latest")
+  client.defaults.adapter = async (config) => { throw reject401(config, 40101) }
+  await assert.rejects(apiFresh("GET", "/settings"))
+  assert.deepEqual(events, ["admin-auth-expired"])
+  assert.equal(auth.getState().isLoggedIn, false)
+})
 
 function reject401(config, code, message = "认证失败") {
   const response = { status: 401, statusText: "Unauthorized", headers: {}, config, data: { code, message, data: null } }

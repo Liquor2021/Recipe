@@ -10,7 +10,7 @@
 | `features_e2e.mjs` | 临期提醒、食材搜索、饮食报告、家庭忌口 |
 | `features2_e2e.mjs` | 买菜入库、计划与统计、数据库备份 |
 | `verify_batches.mjs` | 批次管理和扣库存 |
-| `verify_review_fixes.mjs` | 精确扣减、补料、评分、严格忌口与菜单缓存 |
+| `verify_review_fixes.mjs` | 精确扣减、补料、取消“家中有”的库存版本保护、评分、严格忌口与菜单缓存 |
 | `features3_e2e.mjs` | 单道换菜、真实库存名、荤素统计及相关修复 |
 | `meal_status_portions_e2e.mjs` | 计划完成/取消/恢复、份量、买菜数量、库存建议及统计联动 |
 | `meal_followup_e2e.mjs` | 购物状态保留、计划改期与分页、扣减日志、补扣/撤销及并发版本保护 |
@@ -68,6 +68,8 @@ foreach ($suite in $suites) {
 - 编辑单批库存 `PUT /fridge/batch/:id` 必须携带 `expected_batch`（`batch_id / quantity / updated_at`）；旧批量入口 `/fridge/consume` 同样必须携带 `expected_batches`。缺少或过期的版本返回 409，不会覆盖最新库存。
 - 清理过期使用 `POST /fridge/clear-expired`，提交 `{batch_ids: [...]}`（最多 100 批）。服务端重新核对当前日期，返回实际 `removed` 和跳过的 `skipped`，不会删除用户选中范围之外的批次。
 - 勾选或取消已买使用 `POST /shopping-list/toggle`，除原有字段外必须携带当前 `GET /shopping-list` 对应食材的 `demand_version`。数量、来源记录或采购状态已变化，以及缺少版本的旧客户端均返回 409；重新读取清单并核对后再提交，不要直接重放旧版本。本目录涉及勾选的通用回归脚本会先取当前版本。
+- 取消“家中有”使用 `POST /shopping-list/inventory`，提交 `{item_name, in_stock: false, inventory_version}`；版本与当前清单展示的可用批次数来自同一次读取，真别名共享版本。新增或移除批次、数量或保质期变化、跨日，以及未带版本的旧客户端均返回 409，原库存保持不变。重新读取并核对后才可再次提交；已过期批次不在移出范围内。标记 `in_stock: true` 沿用原有约定，无需库存版本。
+- 补料 `POST /shopping-list/items` 会按 `dish_id` 补齐未填的菜谱用量；菜谱查询故障返回 500，本次新增项全部不写入，恢复后可重试。未指定菜品或菜品不存在时仍允许手动补料，不把正常缺失误判成数据库故障。
 - 明日菜单通过 `GET /meal-plans/:date` 取得完整 `records` 和 `version`，再向 `PUT /meal-plans/:date` 提交 `{expected_version, request_id, dishes: [{dish_id, meal_type}]}`。保存只接受明天的日期；每餐最多 5 道，清空菜单显式传空数组。基线不一致返回 409，应保留草稿供用户核对。请求结果未确认时，重试同一请求应沿用原 `request_id`、版本和菜品列表。
 - 周菜单重新生成和单道替换只有落库成功才返回新菜单；数据库读取或保存失败返回 500。真正没有可用菜品仍是成功的空菜单，不应与读取失败混淆。
 
@@ -84,6 +86,7 @@ go test ./internal/services ./internal/handlers -count=1
 | `internal/handlers/meal_plan_test.go` | 明日菜单保存基线、保留和恢复记录、购物联动回滚、响应丢失后的重复请求与并发保存 |
 | `internal/services/week_plan_failure_test.go`、`internal/handlers/week_plan_test.go` | 周菜单读写失败、保留旧缓存、恢复后重试、清空内存后从数据库读回及接口错误 |
 | `internal/services/shopping_expectation_test.go`、`internal/handlers/shopping_expectation_test.go` | 购物需求版本、旧勾选或取消勾选被拒绝、刷新版本后重试 |
+| `internal/services/inventory_expectation_test.go`、`internal/handlers/inventory_expectation_test.go` | 取消“家中有”的别名和版本核对、旧批次确认拒绝、并发删除与回滚，以及补料菜谱读取失败零写入和恢复重试 |
 | `internal/handlers/settings_read_test.go` | 设置读取错误返回失败，不返回空设置冒充成功 |
 
 前端 `scripts/*.test.mjs` 是直接测试状态处理函数的 Node.js 脚本，不通过后端 HTTP，也不检查布局；运行方式和各脚本范围见 `frontend/scripts/README.md`。其中 `tomorrow-draft.test.mjs` 检查草稿保留与版本冲突，`tomorrow-requests.test.mjs` 检查推荐请求乱序及离页隔离。后台删除后的错误提示、末页回退、设置读取失败后的按钮禁用等页面行为仍需浏览器验证。

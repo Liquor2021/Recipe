@@ -1,7 +1,7 @@
 // 审核修复 E2E：扣库存精确匹配 / 补料 / 家中有 / 严格忌口全覆盖 / 周菜单缓存失效
 // 会留下痕迹（记录测试菜会解锁成就、测试菜是软删除），请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/verify_review_fixes.mjs
-const BASE = "http://localhost:8080/api"
+const BASE = process.env.TEST_API_BASE || "http://localhost:8080/api"
 const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
@@ -103,6 +103,12 @@ async function main() {
   item = await shoppingItem("排骨")
   check("点家中有后 stock_batches=1", item && item.in_stock && item.stock_batches === 1, JSON.stringify(item))
   r = await req("POST", "/shopping-list/inventory", { item_name: "排骨", in_stock: false })
+  check("未带库存版本的移出请求返回冲突", r.status === 409, JSON.stringify(r))
+  await req("POST", "/fridge", { item_name: "排骨", quantity: "500克", expiry_date: dayFromNow(3) })
+  r = await req("POST", "/shopping-list/inventory", { item_name: "排骨", in_stock: false, inventory_version: item.inventory_version })
+  item = await shoppingItem("排骨")
+  check("旧页面不能移出后来新增的库存", r.status === 409 && item?.stock_batches === 2, JSON.stringify({ r, item }))
+  r = await req("POST", "/shopping-list/inventory", { item_name: "排骨", in_stock: false, inventory_version: item.inventory_version })
   const ribsLeft = ((await req("GET", "/fridge")).data || []).filter((b) => b.item_name === "排骨")
   check("取消家中有只移未过期批，过期批留给冰箱页", r.code === 0 && ribsLeft.length === 1 && ribsLeft[0].expiry_date === dayFromNow(-1), JSON.stringify(ribsLeft))
   r = await req("POST", "/shopping-list/inventory", { item_name: "   ", in_stock: true })

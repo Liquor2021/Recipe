@@ -150,6 +150,7 @@ export interface ShoppingItem {
   name: string
   amount: string
   demand_version: string // 勾选时核对读取到的采购需求，防止旧页面误标后来新增的量
+  inventory_version: string // 移出“家中有”前核对当时可见的批次，不能误删后来新增的库存
   checked: boolean
   in_stock: boolean
   stock_batches: number // 冰箱里未过期的批次数；取消"家中有"会一并移出
@@ -184,6 +185,7 @@ export interface Quote {
 }
 
 export interface DayRating {
+  version: string
   id: number
   meal_date: string
   home_mood: string

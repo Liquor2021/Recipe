@@ -597,6 +597,8 @@ type ShoppingItem struct {
 	InStock bool   `json:"in_stock"`
 	// 勾选时必须带回本次展示的需求版本，防止旧页面覆盖新增采购。
 	DemandVersion string `json:"demand_version"`
+	// 取消“家中有”时核对同一次读取的真实库存批次，防止误删新放入的食材。
+	InventoryVersion string `json:"inventory_version"`
 	// 待买/待入库只包含尚未处理的需求，避免旧采购掩盖后来加菜或增加份量。
 	PendingAmount string `json:"pending_amount"`
 	StockInAmount string `json:"stock_in_amount"`
@@ -820,7 +822,10 @@ func AddShoppingListItems(items []ShoppingItem, dishID uint, dishName string, me
 		exists[ingredients.Normalize(name)] = true
 	}
 
-	recipeAmounts := dishRecipeAmounts(dishID)
+	recipeAmounts, err := dishRecipeAmounts(dishID)
+	if err != nil {
+		return 0, err
+	}
 	rows := make([]models.ShoppingCheck, 0, len(items))
 	for _, item := range items {
 		name := strings.TrimSpace(item.Name)
@@ -856,15 +861,19 @@ func AddShoppingListItems(items []ShoppingItem, dishID uint, dishName string, me
 	return len(rows), nil
 }
 
-// dishRecipeAmounts 菜谱里食材与调料的用量（按真别名归一后的名字索引）；菜不存在返回空表
-func dishRecipeAmounts(dishID uint) map[string]string {
+// dishRecipeAmounts 菜谱里食材与调料的用量（按真别名归一后的名字索引）；
+// 菜不存在返回空表，读取故障必须向上传递，不能误写成无用量的补料。
+func dishRecipeAmounts(dishID uint) (map[string]string, error) {
 	amounts := make(map[string]string)
 	if dishID == 0 {
-		return amounts
+		return amounts, nil
 	}
 	var dish models.Dish
 	if err := database.DB.First(&dish, dishID).Error; err != nil {
-		return amounts
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return amounts, nil
+		}
+		return nil, err
 	}
 	for _, list := range []string{dish.Ingredients, dish.Seasonings} {
 		for _, ing := range ParseIngredientList(list) {
@@ -874,7 +883,7 @@ func dishRecipeAmounts(dishID uint) map[string]string {
 			}
 		}
 	}
-	return amounts
+	return amounts, nil
 }
 
 // BuildShoppingList 指定日期的买菜清单（同名合并用量、按分类分组）；读库失败返回 error
@@ -935,7 +944,7 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	}
 
 	// "家中有"只看未过期批次，并按真别名匹配（清单写西红柿、冰箱记番茄也算有）
-	stockCounts, err := availableBatchCounts()
+	stockSnapshots, err := availableInventorySnapshots(database.DB, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -953,8 +962,9 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	}
 	for name, entry := range merged {
 		amountStr := compactShoppingAmounts(entry.amounts)
-		stock := stockCounts[ingredients.Normalize(name)]
-		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.hasBought && len(entry.pending) == 0, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked, Stocked: entry.allStocked, DemandVersion: versions[name]}
+		stockSnapshot := stockSnapshots[ingredients.Normalize(name)]
+		stock := len(stockSnapshot.BatchIDs)
+		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.hasBought && len(entry.pending) == 0, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked, Stocked: entry.allStocked, DemandVersion: versions[name], InventoryVersion: stockSnapshot.Version}
 		if len(entry.pending) > 0 {
 			item.PendingAmount = compactShoppingAmounts(entry.pending)
 			item.PendingReview = entry.pendingReview
@@ -1246,15 +1256,15 @@ func RemoveShoppingExtraItem(itemName string) (int64, error) {
 }
 
 // ToggleHomeInventory 买菜清单"家中有"开关：打开 = 冰箱新增一批；
-// 关闭 = 移出该食材（含真别名）的全部未过期批次（前端已按 stock_batches 二次确认）
-func ToggleHomeInventory(itemName string, inStock bool) error {
+// 关闭 = 核对用户看到的批次快照，再移出该食材（含真别名）的未过期批次。
+func ToggleHomeInventory(itemName string, inStock bool, inventoryVersion string) error {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
 		return ErrEmptyItemName
 	}
 
 	if !inStock {
-		_, err := removeAvailableBatches(itemName)
+		_, err := removeAvailableBatches(itemName, inventoryVersion)
 		return err
 	}
 

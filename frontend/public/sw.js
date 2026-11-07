@@ -5,8 +5,8 @@
 // 其余 API 一律透传网络，保证数据新鲜。
 const CACHE_NAME = "ninimenu-v1"
 // API 缓存独立命名 + 版本化：策略调整时递增 vN，activate 会清掉旧版本
-// （v2：加入离线副本有效期与条目上限，v1 时期无上限累积的副本随升级一并清掉）
-const API_CACHE_NAME = "ninimenu-api-v2"
+// v3：需要最新编辑基线的读取禁止离线回退；普通浏览仍可读有效期内的副本。
+const API_CACHE_NAME = "ninimenu-api-v3"
 const CORE_ASSETS = ["/", "/index.html", "/manifest.json"]
 
 // 离线副本最多保留 7 天：再旧的家庭数据（忌口、记录等）宁可不展示
@@ -119,6 +119,7 @@ self.addEventListener("fetch", (event) => {
   // 悬空 promise 的 cache.put 可能没写完就丢；.catch 兜住配额满等 put 失败，
   // 不让它成为 SW 内未处理的 rejection（本次网络响应已正常返回，不受影响）。
   if (isApiCacheable(url.pathname)) {
+    const requireFresh = req.headers.get("X-Nini-Require-Fresh") === "1"
     event.respondWith(
       fetch(req)
         .then((res) => {
@@ -128,7 +129,10 @@ self.addEventListener("fetch", (event) => {
           }
           return res
         })
-        .catch(() => matchApiCache(req))
+        .catch(async () => {
+          if (requireFresh) return Response.error()
+          return (await matchApiCache(req)) || Response.error()
+        })
     )
     return
   }

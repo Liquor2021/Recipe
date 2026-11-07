@@ -231,7 +231,7 @@ func TestToggleHomeInventoryOffRemovesOnlyAvailableBatches(t *testing.T) {
 	database.DB.Create(&models.InventoryBatch{ItemName: "番茄", InStock: true, ExpiryDate: dateFromNow(-2)}) // 已过期：留给冰箱页处理
 	database.DB.Create(&models.InventoryBatch{ItemName: "鸡蛋", InStock: true})
 
-	if err := ToggleHomeInventory("西红柿", false); err != nil {
+	if err := ToggleHomeInventory("西红柿", false, currentInventoryVersion(t, "西红柿")); err != nil {
 		t.Fatal(err)
 	}
 	var left []models.InventoryBatch
@@ -239,7 +239,7 @@ func TestToggleHomeInventoryOffRemovesOnlyAvailableBatches(t *testing.T) {
 	if len(left) != 2 || left[0].ExpiryDate != dateFromNow(-2) || left[1].ItemName != "鸡蛋" {
 		t.Fatalf("应只移出番茄/西红柿的未过期批次, left %+v", left)
 	}
-	if err := ToggleHomeInventory("  ", true); err != ErrEmptyItemName {
+	if err := ToggleHomeInventory("  ", true, ""); err != ErrEmptyItemName {
 		t.Fatalf("空名应返回 ErrEmptyItemName, got %v", err)
 	}
 }

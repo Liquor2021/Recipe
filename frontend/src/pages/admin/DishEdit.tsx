@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, uploadApi, settingsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
 import { createDishEditorSession, dishEditorRevision } from "@/lib/dishEditorSession"
@@ -78,11 +78,12 @@ function DishEditorLoader({ dishId, isNew }: { dishId: number; isNew: boolean })
   const navigate = useNavigate()
   const validId = Number.isSafeInteger(dishId) && dishId > 0
   const query = useQuery({
-    queryKey: ["dish", dishId],
-    queryFn: () => dishesApi.get(dishId),
+    queryKey: ["dish", dishId, "admin"],
+    queryFn: () => dishesApi.getFresh(dishId),
     enabled: !isNew && validId,
     staleTime: 0,
     refetchOnMount: "always",
+    retry: false,
   })
   const [selected, setSelected] = useState<{ dish: Dish; generation: number } | null>(null)
   // 只有这次进入编辑页后的读取成功，才创建草稿；缓存不能替代首次校验。
@@ -140,10 +141,16 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
   const [uploads, setUploads] = useState({ main: 0, extra: 0 })
   const uploading = uploads.main + uploads.extra > 0
   const [uploadMessage, setUploadMessage] = useState("")
-  const { data: settings } = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => settingsApi.get(),
+  const settingsQuery = useQuery({
+    queryKey: ["settings", "admin"],
+    queryFn: () => settingsApi.getFresh(),
+    refetchOnMount: "always",
+    retry: false,
   })
+  const settings = settingsQuery.data
+  const settingsReady = settingsQuery.isFetchedAfterMount && settingsQuery.isSuccess && !settingsQuery.isFetching
+  const settingsSaving = useRef(false)
+  const settingsBusy = useMutationState({ filters: { mutationKey: ["settings-edit"], status: "pending" } }).length > 0
   const categories = parseList(settings?.categories, DEFAULT_CATEGORIES)
   const tastes = parseList(settings?.tastes, DEFAULT_TASTES)
 
@@ -177,13 +184,13 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
   const dirty = currentDraft !== originalDraft || tagInput.trim() !== ""
 
   function reloadServerDraft() {
-    if (!latestDish || session.isBusy()) return
+    if (!latestDish || readFailed || reading || session.isBusy()) return
     if (dirty && !window.confirm("重新载入会放弃当前未保存的编辑，确认载入最新菜谱吗？")) return
     onReload(latestDish)
   }
 
   function keepCurrentDraft() {
-    if (!latestDish || session.isBusy()) return
+    if (!latestDish || readFailed || reading || session.isBusy()) return
     if (!window.confirm("保留当前编辑后，下次保存会覆盖服务器上的新版菜谱。确认继续吗？")) return
     setKnownRevision(dishEditorRevision(latestDish))
   }
@@ -208,8 +215,9 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
     mutationFn: (data: DishInput) => isNew ? dishesApi.create(data) : dishesApi.update(dishId, data),
     onSuccess: async (saved) => {
       // 先取消旧读取，再写入真实保存结果，返回详情页时不再短暂显示旧菜谱。
-      await qc.cancelQueries({ queryKey: ["dish", saved.id], exact: true })
+      await qc.cancelQueries({ queryKey: ["dish", saved.id] })
       qc.setQueryData(["dish", saved.id], saved)
+      qc.setQueryData(["dish", saved.id, "admin"], saved)
       for (const key of [["admin", "dishes"], ["dishes"], ["favorites"], ["fridge-recipes"]]) {
         void qc.invalidateQueries({ queryKey: key })
       }
@@ -223,7 +231,7 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
   })
 
   function saveDish() {
-    if (!name.trim() || serverChanged || !session.beginSave()) return
+    if (!name.trim() || serverChanged || readFailed || reading || !session.beginSave()) return
     saveMut.mutate({
       name: name.trim(), category, meal_type: mealType, difficulty, taste: tasteList.join(","),
       cook_time: cookTime, ingredients: JSON.stringify(parseIngredients(ingredientsText)),
@@ -233,56 +241,41 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
     })
   }
 
-  const addCategoryMut = useMutation({
-    mutationFn: (val: string) => settingsApi.update({ categories: JSON.stringify([...categories, val]) }),
-    onSuccess: (_d, val) => {
-      qc.invalidateQueries({ queryKey: ["settings"] })
-      setCategory(val)
-      setNewCategory("")
-      setAddingCategory(false)
-      toast.success("已添加分类")
+  type SettingChange = { type: "category" | "taste"; action: "add" | "delete"; value: string }
+  const settingMut = useMutation({
+    mutationKey: ["settings-edit", "classification"],
+    mutationFn: ({ type, action, value }: SettingChange) => {
+      const values = type === "category" ? categories : tastes
+      const next = action === "add" ? [...new Set([...values, value])] : values.filter((item) => item !== value)
+      return settingsApi.update({ [type === "category" ? "categories" : "tastes"]: JSON.stringify(next) })
     },
-    onError: () => toast.error("添加失败，请先登录后台"),
-  })
-
-  const addTasteMut = useMutation({
-    mutationFn: (val: string) => settingsApi.update({ tastes: JSON.stringify([...tastes, val]) }),
-    onSuccess: (_d, val) => {
-      qc.invalidateQueries({ queryKey: ["settings"] })
-      setTasteList((prev) => prev.includes(val) ? prev : [...prev, val])
-      setNewTaste("")
-      setAddingTaste(false)
-      toast.success("已添加口味")
-    },
-    onError: () => toast.error("添加失败，请先登录后台"),
-  })
-
-  const delCategoryMut = useMutation({
-    mutationFn: (val: string) => settingsApi.update({ categories: JSON.stringify(categories.filter((c) => c !== val)) }),
-    onSuccess: (_d, val) => {
-      qc.invalidateQueries({ queryKey: ["settings"] })
-      if (category === val) setCategory("")
+    onSuccess: async (_data, { type, action, value }) => {
+      await qc.invalidateQueries({ queryKey: ["settings"] })
+      if (!session.isActive()) return
+      if (type === "category") {
+        if (action === "add") { setCategory(value); setNewCategory(""); setAddingCategory(false) }
+        else if (category === value) setCategory("")
+      } else {
+        setTasteList((prev) => action === "add" ? [...new Set([...prev, value])] : prev.filter((item) => item !== value))
+        if (action === "add") { setNewTaste(""); setAddingTaste(false) }
+      }
       setPendingDelete(null)
-      toast.success("已删除分类")
+      toast.success(`已${action === "add" ? "添加" : "删除"}${type === "category" ? "分类" : "口味"}`)
     },
-    onError: () => toast.error("删除失败，请先登录后台"),
+    onError: (err: unknown) => { if (session.isActive()) toast.error(getUploadErrorMessage(err, "修改失败，请重试")) },
+    onSettled: () => { settingsSaving.current = false },
   })
+  const settingsLocked = !settingsReady || settingsBusy
 
-  const delTasteMut = useMutation({
-    mutationFn: (val: string) => settingsApi.update({ tastes: JSON.stringify(tastes.filter((t) => t !== val)) }),
-    onSuccess: (_d, val) => {
-      qc.invalidateQueries({ queryKey: ["settings"] })
-      setTasteList((prev) => prev.filter((x) => x !== val))
-      setPendingDelete(null)
-      toast.success("已删除口味")
-    },
-    onError: () => toast.error("删除失败，请先登录后台"),
-  })
+  function changeSetting(type: SettingChange["type"], action: SettingChange["action"], value: string) {
+    if (settingsLocked || settingsSaving.current || qc.isMutating({ mutationKey: ["settings-edit"] }) > 0 || !value.trim()) return
+    settingsSaving.current = true
+    settingMut.mutate({ type, action, value: value.trim() })
+  }
 
   function confirmDelete() {
     if (!pendingDelete) return
-    if (pendingDelete.type === "category") delCategoryMut.mutate(pendingDelete.value)
-    else delTasteMut.mutate(pendingDelete.value)
+    changeSetting(pendingDelete.type, "delete", pendingDelete.value)
   }
 
   function toggleTaste(t: string) {
@@ -362,24 +355,31 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
     <div className="px-5 py-4 max-w-[640px] mx-auto pb-20">
       <div className="flex items-center justify-between mb-4">
         <div className="text-lg font-bold">{isNew ? "添加菜品" : "编辑菜品"}</div>
-        <button onClick={saveDish} disabled={!name.trim() || saveMut.isPending || uploading || serverChanged} className="py-1.5 px-5 rounded-full text-xs font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">
+        <button onClick={saveDish} disabled={!name.trim() || saveMut.isPending || uploading || serverChanged || readFailed || reading} className="py-1.5 px-5 rounded-full text-xs font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">
           {saveMut.isPending ? "保存中..." : uploading ? "图片上传中…" : "保存菜品"}
         </button>
       </div>
 
       {readFailed && <div role="alert" className="mb-4 rounded-2xl border border-border bg-card p-4 text-sm">
         <p className="font-semibold">最新菜谱读取失败，当前编辑已保留</p>
+        <p className="mt-1 text-xs text-text2">重新读取成功后才能保存。</p>
         <button disabled={reading || uploading || saveMut.isPending} onClick={onRetry} className="mt-2 min-h-10 font-semibold text-primary disabled:opacity-50">{reading ? "读取中…" : "重新读取最新菜谱"}</button>
       </div>}
       {serverChanged && <div role="alert" className="mb-4 rounded-2xl border border-border bg-primary-light p-4 text-sm">
         <p className="font-semibold">菜谱已有更新，当前编辑已保留</p>
         <p className="mt-1 text-xs text-text2">选择载入最新内容，或确认保留当前编辑后再保存。</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button disabled={uploading || saveMut.isPending} onClick={reloadServerDraft} className="min-h-10 rounded-full bg-primary px-4 text-xs font-bold text-white disabled:opacity-50">载入最新内容</button>
-          <button disabled={uploading || saveMut.isPending} onClick={keepCurrentDraft} className="min-h-10 rounded-full border border-border bg-card px-4 text-xs font-bold disabled:opacity-50">保留当前编辑</button>
+          <button disabled={uploading || saveMut.isPending || readFailed || reading} onClick={reloadServerDraft} className="min-h-10 rounded-full bg-primary px-4 text-xs font-bold text-white disabled:opacity-50">载入最新内容</button>
+          <button disabled={uploading || saveMut.isPending || readFailed || reading} onClick={keepCurrentDraft} className="min-h-10 rounded-full border border-border bg-card px-4 text-xs font-bold disabled:opacity-50">保留当前编辑</button>
         </div>
       </div>}
       {uploading && <div role="status" className="mb-4 rounded-xl border border-border bg-card px-4 py-3 text-sm text-text2">图片正在上传，请完成后再保存。{uploads.main > 0 ? "主图可重新选择，以最后一次选择为准。" : ""}</div>}
+
+      {settingsQuery.isError && <div role="alert" className="mb-4 rounded-2xl border border-border bg-card p-4 text-sm">
+        <p className="font-semibold">分类和口味暂时无法读取</p>
+        <p className="mt-1 text-xs text-text2">菜品草稿已保留，重新读取成功后才能增删分类和口味。</p>
+        <button disabled={settingsQuery.isFetching || settingMut.isPending} onClick={() => { void settingsQuery.refetch() }} className="mt-2 min-h-10 font-semibold text-primary disabled:opacity-50">{settingsQuery.isFetching ? "读取中…" : "重新读取分类和口味"}</button>
+      </div>}
 
       <fieldset disabled={saveMut.isPending} className="min-w-0">
       <Section title="基本信息">
@@ -390,27 +390,27 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
         <Field label="分类">
           <div className="flex items-center justify-between mb-1.5">
             <span />
-            <button onClick={() => setManageCategory((v) => !v)} className={`text-[12px] px-2 py-0.5 rounded-full transition-all ${manageCategory ? "bg-primary text-white" : "text-text3 hover:text-primary"}`}>{manageCategory ? "完成" : "管理"}</button>
+            <button disabled={settingsLocked} onClick={() => setManageCategory((v) => !v)} className={`text-[12px] px-2 py-0.5 rounded-full transition-all ${manageCategory ? "bg-primary text-white" : "text-text3 hover:text-primary"}`}>{manageCategory ? "完成" : "管理"}</button>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             {categories.map((c) => (
               <span key={c} className={pillClass(category === c && !manageCategory)}>
                 <button onClick={() => !manageCategory && setCategory(c)} className="pl-3.5 pr-2 py-1.5 active:scale-95">{c}</button>
                 {manageCategory && (
-                  <button onClick={() => setPendingDelete({ type: "category", value: c })} className="pr-2.5 pl-0.5 py-1.5 text-text3 hover:text-red-500">✕</button>
+                  <button disabled={settingsLocked} onClick={() => setPendingDelete({ type: "category", value: c })} className="pr-2.5 pl-0.5 py-1.5 text-text3 hover:text-red-500">✕</button>
                 )}
               </span>
             ))}
             {addingCategory ? (
               <div className="flex items-center gap-1">
-                <input autoFocus value={newCategory} onChange={(e) => setNewCategory(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && newCategory.trim()) addCategoryMut.mutate(newCategory.trim()); if (e.key === "Escape") setAddingCategory(false) }}
+                <input autoFocus disabled={settingMut.isPending} value={newCategory} onChange={(e) => setNewCategory(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && newCategory.trim()) changeSetting("category", "add", newCategory); if (e.key === "Escape") setAddingCategory(false) }}
                   placeholder="新分类" className="w-24 px-2.5 py-1.5 rounded-full text-xs border-[1.5px] border-primary bg-bg outline-none" />
-                <button onClick={() => newCategory.trim() && addCategoryMut.mutate(newCategory.trim())} className="px-2.5 py-1.5 rounded-full text-xs bg-primary text-white">✓</button>
+                <button disabled={settingsLocked} onClick={() => newCategory.trim() && changeSetting("category", "add", newCategory)} className="px-2.5 py-1.5 rounded-full text-xs bg-primary text-white">✓</button>
                 <button onClick={() => { setAddingCategory(false); setNewCategory("") }} className="px-2.5 py-1.5 rounded-full text-xs border border-border text-text2">✕</button>
               </div>
             ) : (
-              <button onClick={() => setAddingCategory(true)} className="px-3.5 py-1.5 rounded-full text-xs border-[1.5px] border-dashed border-border2 text-text2">+ 自定义</button>
+              <button disabled={settingsLocked} onClick={() => setAddingCategory(true)} className="px-3.5 py-1.5 rounded-full text-xs border-[1.5px] border-dashed border-border2 text-text2">+ 自定义</button>
             )}
           </div>
         </Field>
@@ -435,27 +435,27 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
         <Field label="口味（可多选）">
           <div className="flex items-center justify-between mb-1.5">
             <span />
-            <button onClick={() => setManageTaste((v) => !v)} className={`text-[12px] px-2 py-0.5 rounded-full transition-all ${manageTaste ? "bg-primary text-white" : "text-text3 hover:text-primary"}`}>{manageTaste ? "完成" : "管理"}</button>
+            <button disabled={settingsLocked} onClick={() => setManageTaste((v) => !v)} className={`text-[12px] px-2 py-0.5 rounded-full transition-all ${manageTaste ? "bg-primary text-white" : "text-text3 hover:text-primary"}`}>{manageTaste ? "完成" : "管理"}</button>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             {tastes.map((t) => (
               <span key={t} className={pillClass(tasteList.includes(t) && !manageTaste)}>
                 <button onClick={() => !manageTaste && toggleTaste(t)} className="pl-3.5 pr-2 py-1.5 active:scale-95">{t}</button>
                 {manageTaste && (
-                  <button onClick={() => setPendingDelete({ type: "taste", value: t })} className="pr-2.5 pl-0.5 py-1.5 text-text3 hover:text-red-500">✕</button>
+                  <button disabled={settingsLocked} onClick={() => setPendingDelete({ type: "taste", value: t })} className="pr-2.5 pl-0.5 py-1.5 text-text3 hover:text-red-500">✕</button>
                 )}
               </span>
             ))}
             {addingTaste ? (
               <div className="flex items-center gap-1">
-                <input autoFocus value={newTaste} onChange={(e) => setNewTaste(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && newTaste.trim()) addTasteMut.mutate(newTaste.trim()); if (e.key === "Escape") setAddingTaste(false) }}
+                <input autoFocus disabled={settingMut.isPending} value={newTaste} onChange={(e) => setNewTaste(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && newTaste.trim()) changeSetting("taste", "add", newTaste); if (e.key === "Escape") setAddingTaste(false) }}
                   placeholder="新口味" className="w-24 px-2.5 py-1.5 rounded-full text-xs border-[1.5px] border-primary bg-bg outline-none" />
-                <button onClick={() => newTaste.trim() && addTasteMut.mutate(newTaste.trim())} className="px-2.5 py-1.5 rounded-full text-xs bg-primary text-white">✓</button>
+                <button disabled={settingsLocked} onClick={() => newTaste.trim() && changeSetting("taste", "add", newTaste)} className="px-2.5 py-1.5 rounded-full text-xs bg-primary text-white">✓</button>
                 <button onClick={() => { setAddingTaste(false); setNewTaste("") }} className="px-2.5 py-1.5 rounded-full text-xs border border-border text-text2">✕</button>
               </div>
             ) : (
-              <button onClick={() => setAddingTaste(true)} className="px-3.5 py-1.5 rounded-full text-xs border-[1.5px] border-dashed border-border2 text-text2">+ 自定义</button>
+              <button disabled={settingsLocked} onClick={() => setAddingTaste(true)} className="px-3.5 py-1.5 rounded-full text-xs border-[1.5px] border-dashed border-border2 text-text2">+ 自定义</button>
             )}
           </div>
         </Field>
@@ -554,7 +554,7 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
 
       <div className="flex gap-2.5 mt-2">
         <button onClick={() => navigate(-1)} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold border-[1.5px] border-border2 transition-all">取消</button>
-        <button onClick={saveDish} disabled={!name.trim() || saveMut.isPending || uploading || serverChanged} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">
+        <button onClick={saveDish} disabled={!name.trim() || saveMut.isPending || uploading || serverChanged || readFailed || reading} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">
           {saveMut.isPending ? "保存中..." : uploading ? "图片上传中…" : "保存菜品"}
         </button>
       </div>
@@ -567,8 +567,8 @@ function DishEditorForm({ initialDish, latestDish, readFailed, reading, onRetry,
             <div className="text-base font-bold mb-1.5">删除{pendingDelete.type === "category" ? "分类" : "口味"}</div>
             <div className="text-sm text-text2 mb-5">确定删除「{pendingDelete.value}」吗？此操作不可撤销。</div>
             <div className="flex gap-2.5">
-              <button onClick={() => setPendingDelete(null)} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold border-[1.5px] border-border2">取消</button>
-              <button onClick={confirmDelete} disabled={delCategoryMut.isPending || delTasteMut.isPending} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold bg-red-500 text-white disabled:opacity-50">删除</button>
+              <button disabled={settingsLocked} onClick={() => setPendingDelete(null)} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold border-[1.5px] border-border2">取消</button>
+              <button onClick={confirmDelete} disabled={settingsLocked} className="flex-1 py-2.5 px-5 rounded-full text-sm font-semibold bg-red-500 text-white disabled:opacity-50">删除</button>
             </div>
           </div>
         </div>

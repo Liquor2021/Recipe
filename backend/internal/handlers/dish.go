@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math/rand"
 	"ninimenu/internal/database"
 	"ninimenu/internal/ingredients"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // dishMatchesKeyword 菜品名或主要食材命中关键词：食材走统一别名归一（搜"土豆"能命中写"马铃薯"的菜）
@@ -349,35 +351,36 @@ func CreateDish(c *gin.Context) {
 
 func UpdateDish(c *gin.Context) {
 	id := c.Param("id")
-	var dish models.Dish
-	if err := database.DB.First(&dish, id).Error; err != nil {
-		utils.NotFound(c, "菜品不存在")
-		return
-	}
-
 	var req CreateDishRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "请求数据无效")
 		return
 	}
 
-	dish.Name = req.Name
-	dish.ImageURL = req.ImageURL
-	dish.Images = req.Images
-	dish.VideoURL = req.VideoURL
-	dish.Category = req.Category
-	dish.MealType = req.MealType
-	dish.Taste = req.Taste
-	dish.Ingredients = req.Ingredients
-	dish.Seasonings = req.Seasonings
-	dish.Steps = req.Steps
-	dish.CookTime = req.CookTime
-	dish.Difficulty = req.Difficulty
-	dish.Remark = req.Remark
-	dish.Tags = req.Tags
-	dish.SortOrder = req.SortOrder
-
-	if err := database.DB.Save(&dish).Error; err != nil {
+	// 全量替换编辑表单拥有的字段（包括空值），不写回旧的启用、收藏和删除状态。
+	changes := map[string]any{
+		"name": req.Name, "image_url": req.ImageURL, "images": req.Images,
+		"video_url": req.VideoURL, "category": req.Category, "meal_type": req.MealType,
+		"taste": req.Taste, "ingredients": req.Ingredients, "seasonings": req.Seasonings,
+		"steps": req.Steps, "cook_time": req.CookTime, "difficulty": req.Difficulty,
+		"remark": req.Remark, "tags": req.Tags, "sort_order": req.SortOrder,
+	}
+	var dish models.Dish
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Dish{}).Where("id = ?", id).Updates(changes)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.First(&dish, "id = ?", id).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		utils.NotFound(c, "菜品不存在")
+		return
+	}
+	if err != nil {
 		utils.InternalError(c, "更新菜品失败")
 		return
 	}
@@ -399,12 +402,23 @@ func DeleteDish(c *gin.Context) {
 func ToggleDish(c *gin.Context) {
 	id := c.Param("id")
 	var dish models.Dish
-	if err := database.DB.First(&dish, id).Error; err != nil {
+	// 仅在数据库内翻转 enabled，旧对象不能覆盖同时保存的菜谱内容。
+	// 两次成功的并发请求代表两次翻转；读回结果与写入共用事务。
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Dish{}).Where("id = ?", id).Update("enabled", gorm.Expr("NOT enabled"))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.First(&dish, "id = ?", id).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		utils.NotFound(c, "菜品不存在")
 		return
 	}
-	dish.Enabled = !dish.Enabled
-	if err := database.DB.Save(&dish).Error; err != nil {
+	if err != nil {
 		utils.InternalError(c, "操作失败")
 		return
 	}

@@ -655,9 +655,9 @@ func GetDayRating(c *gin.Context) {
 		utils.BadRequest(c, "请提供日期")
 		return
 	}
-	var rating models.DayRating
-	if err := database.DB.Where("meal_date = ?", date).First(&rating).Error; err != nil {
-		utils.Success(c, nil)
+	rating, err := readDayRatingSnapshot(database.DB, date)
+	if err != nil {
+		utils.InternalError(c, "读取评价失败，请重试")
 		return
 	}
 	utils.Success(c, rating)
@@ -672,18 +672,25 @@ func GetDayRatings(c *gin.Context) {
 	}
 
 	var ratings []models.DayRating
-	database.DB.Where("meal_date >= ? AND meal_date <= ?", dateFrom, dateTo).
+	if err := database.DB.Where("meal_date >= ? AND meal_date <= ?", dateFrom, dateTo).
 		Order("meal_date ASC").
-		Find(&ratings)
-
-	utils.Success(c, ratings)
+		Find(&ratings).Error; err != nil {
+		utils.InternalError(c, "读取评价列表失败，请重试")
+		return
+	}
+	snapshots := make([]DayRatingSnapshot, 0, len(ratings))
+	for _, rating := range ratings {
+		snapshots = append(snapshots, dayRatingSnapshot(rating))
+	}
+	utils.Success(c, snapshots)
 }
 
 type CreateDayRatingRequest struct {
-	MealDate string  `json:"meal_date" binding:"required"`
-	Mood     *string `json:"mood"`
-	Remark   *string `json:"remark"`
-	Photos   *string `json:"photos"`
+	ExpectedVersion string  `json:"expected_version"`
+	MealDate        string  `json:"meal_date" binding:"required"`
+	Mood            *string `json:"mood"`
+	Remark          *string `json:"remark"`
+	Photos          *string `json:"photos"`
 }
 
 type UpdateHomeMoodRequest struct {
@@ -705,7 +712,7 @@ func CreateOrUpdateHomeMood(c *gin.Context) {
 	}
 
 	services.QueueAutoAchievementSync()
-	utils.Success(c, rating)
+	utils.Success(c, dayRatingSnapshot(rating))
 }
 
 func CreateOrUpdateDayRating(c *gin.Context) {
@@ -731,13 +738,17 @@ func CreateOrUpdateDayRating(c *gin.Context) {
 		}
 		fields = append(fields, "photos")
 	}
-	if err := saveDayRatingFields(&rating, fields); err != nil {
+	if err := saveExpectedDayRatingFields(&rating, fields, req.ExpectedVersion); err != nil {
+		if errors.Is(err, errDayRatingChanged) {
+			utils.Conflict(c, err.Error())
+			return
+		}
 		utils.InternalError(c, "保存评价失败")
 		return
 	}
 
 	services.QueueAutoAchievementSync()
-	utils.Success(c, rating)
+	utils.Success(c, dayRatingSnapshot(rating))
 }
 
 // PhotoWallDay 照片墙的一天：当日照片 + 当日整体评价 + 当日各菜品评价

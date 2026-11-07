@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { quotesApi } from "@/api"
+import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query"
+import { quotesApi, getUploadErrorMessage } from "@/api"
 import type { Quote } from "@/types"
 import toast from "react-hot-toast"
 
@@ -24,39 +24,54 @@ export default function AdminQuotes() {
   const [form, setForm] = useState({ content: "", scene: "general" })
   const [filterScene, setFilterScene] = useState("")
 
-  const { data: rawQuotes, isLoading } = useQuery({
-    queryKey: ["quotes"],
-    queryFn: () => quotesApi.list(),
+  const busy = useMutationState({ filters: { mutationKey: ["admin-quotes-edit"], status: "pending" } }).length > 0
+  const { data: rawQuotes, isPending, isSuccess, isError, isFetching, isFetchedAfterMount, refetch } = useQuery({
+    queryKey: ["quotes", "admin"],
+    queryFn: () => quotesApi.listFresh(),
+    refetchOnMount: "always", retry: false,
   })
   const allQuotes = Array.isArray(rawQuotes) ? rawQuotes : []
   const quotes = filterScene ? allQuotes.filter((q: Quote) => q.scene === filterScene) : allQuotes
+  const canEdit = rawQuotes !== undefined && isSuccess && isFetchedAfterMount && !isFetching && !busy
+
+  function canStartOperation() {
+    return canEdit && qc.isMutating({ mutationKey: ["admin-quotes-edit"] }) === 0
+  }
 
   const createMut = useMutation({
+    mutationKey: ["admin-quotes-edit", "create"],
     mutationFn: (data: { content: string; scene: string }) => quotesApi.create(data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["quotes"] })
+    onMutate: () => qc.cancelQueries({ queryKey: ["quotes", "admin"] }),
+    onSuccess: async () => {
       toast.success("语录已创建")
       resetForm()
+      await qc.invalidateQueries({ queryKey: ["quotes"] })
     },
-    onError: () => toast.error("创建失败"),
+    onError: (error) => toast.error(getUploadErrorMessage(error, "创建失败，当前输入已保留，请重试")),
   })
 
   const updateMut = useMutation({
+    mutationKey: ["admin-quotes-edit", "update"],
     mutationFn: ({ id, data }: { id: number; data: { content: string; scene: string } }) => quotesApi.update(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["quotes"] })
+    onMutate: () => qc.cancelQueries({ queryKey: ["quotes", "admin"] }),
+    onSuccess: async () => {
       toast.success("语录已更新")
       resetForm()
+      await qc.invalidateQueries({ queryKey: ["quotes"] })
     },
-    onError: () => toast.error("更新失败"),
+    onError: (error) => toast.error(getUploadErrorMessage(error, "更新失败，当前输入已保留，请重试")),
   })
 
   const deleteMut = useMutation({
+    mutationKey: ["admin-quotes-edit", "delete"],
     mutationFn: (id: number) => quotesApi.delete(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["quotes"] })
+    onMutate: () => qc.cancelQueries({ queryKey: ["quotes", "admin"] }),
+    onSuccess: async (_data, id) => {
+      if (editId === id) resetForm()
       toast.success("语录已删除")
+      await qc.invalidateQueries({ queryKey: ["quotes"] })
     },
+    onError: (error) => toast.error(getUploadErrorMessage(error, "删除失败，请重试")),
   })
 
   function resetForm() {
@@ -66,12 +81,14 @@ export default function AdminQuotes() {
   }
 
   function startEdit(q: Quote) {
+    if (!canStartOperation()) return
     setForm({ content: q.content, scene: q.scene || "general" })
     setEditId(q.id)
     setShowForm(true)
   }
 
   function handleSubmit() {
+    if (!canStartOperation()) return
     if (!form.content.trim()) {
       toast.error("请填写语录内容")
       return
@@ -83,15 +100,23 @@ export default function AdminQuotes() {
     }
   }
 
-  if (isLoading) return <div className="p-8 text-center text-text2">加载中...</div>
+  if (isPending) return <div role="status" className="p-8 text-center text-text2">正在读取语录…</div>
 
   return (
     <div className="px-5 py-4 max-w-[640px] mx-auto pb-20">
+      {isError && (
+        <div role="alert" className="mb-4 rounded-2xl border border-border bg-card p-4">
+          <p className="text-sm font-semibold">{rawQuotes ? "语录暂时无法更新" : "语录读取失败"}</p>
+          <p className="mt-1 text-xs text-text2">{rawQuotes ? "已保留上次列表和当前输入，重新读取成功后再修改。" : "请重新读取，成功后才能添加或修改语录。"}</p>
+          <button onClick={() => { void refetch() }} disabled={isFetching || busy} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-semibold disabled:opacity-50">{isFetching ? "正在重试…" : "重新读取语录"}</button>
+        </div>
+      )}
+      <fieldset disabled={!canEdit} aria-busy={busy} className="min-w-0">
       <div className="flex items-center justify-between mb-3.5">
         <div className="text-lg font-bold">语录管理</div>
         <button
-          onClick={() => { resetForm(); setShowForm(!showForm) }}
-          className="inline-flex items-center justify-center gap-1.5 py-1.5 px-4 rounded-full text-xs font-semibold bg-primary text-white transition-all active:scale-96"
+          onClick={() => { if (canStartOperation()) { resetForm(); setShowForm(!showForm) } }}
+          className="inline-flex items-center justify-center gap-1.5 py-1.5 px-4 rounded-full text-xs font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50"
         >
           {showForm ? "取消" : "+ 添加语录"}
         </button>
@@ -123,8 +148,8 @@ export default function AdminQuotes() {
               ))}
             </div>
           </div>
-          <button onClick={handleSubmit} className="w-full py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96">
-            {editId ? "更新语录" : "创建语录"}
+          <button onClick={handleSubmit} className="w-full py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">
+            {createMut.isPending || updateMut.isPending ? "保存中…" : editId ? "更新语录" : "创建语录"}
           </button>
         </div>
       )}
@@ -154,15 +179,16 @@ export default function AdminQuotes() {
               </div>
             </div>
             <div className="flex gap-1.5 flex-shrink-0">
-              <button onClick={() => startEdit(q)} className="w-8 h-8 rounded-[10px] flex items-center justify-center text-sm bg-bg transition-all active:bg-primary-light">✎</button>
-              <button onClick={() => { if (confirm("确定删除这条语录？")) deleteMut.mutate(q.id) }} className="w-8 h-8 rounded-[10px] flex items-center justify-center text-sm bg-bg transition-all active:bg-red-50 active:text-red-500">🗑</button>
+              <button onClick={() => startEdit(q)} aria-label={`编辑语录：${q.content}`} className="w-8 h-8 rounded-[10px] flex items-center justify-center text-sm bg-bg transition-all active:bg-primary-light disabled:opacity-50">✎</button>
+              <button onClick={() => { if (canStartOperation() && confirm("确定删除这条语录？")) deleteMut.mutate(q.id) }} aria-label={`删除语录：${q.content}`} className="w-8 h-8 rounded-[10px] flex items-center justify-center text-sm bg-bg transition-all active:bg-red-50 active:text-red-500 disabled:opacity-50">🗑</button>
             </div>
           </div>
         ))}
-        {quotes.length === 0 && (
+        {quotes.length === 0 && isSuccess && (
           <div className="py-12 text-center text-sm text-text3">{filterScene ? "该场景下暂无语录" : "还没有语录，去添加第一条吧"}</div>
         )}
       </div>
+      </fieldset>
     </div>
   )
 }
