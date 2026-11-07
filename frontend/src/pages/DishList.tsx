@@ -1,9 +1,9 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react"
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, favoritesApi, settingsApi, recordsApi } from "@/api"
 import { asArray } from "@/lib/utils"
-import { gsap, scrollToElement } from "@/lib/gsap"
+import { readDishListSession, saveDishListSession, useDishListSession } from "@/lib/dishListSession"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
 import SafeImage from "@/components/SafeImage"
@@ -31,15 +31,37 @@ function dateKey(d = new Date()) {
 const PAGE_SIZE = 30
 
 export default function DishList() {
+  const generation = useDishListSession((s) => s.generation)
+  const [today, setToday] = useState(dateKey)
+
+  useEffect(() => {
+    const checkDate = () => setToday(dateKey())
+    const midnight = new Date()
+    midnight.setHours(24, 0, 0, 50)
+    const timer = window.setTimeout(checkDate, midnight.getTime() - Date.now())
+    document.addEventListener("visibilitychange", checkDate)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener("visibilitychange", checkDate)
+    }
+  }, [today])
+
+  return <DishListPage key={`${today}:${generation}`} today={today} generation={generation} />
+}
+
+function DishListPage({ today, generation }: { today: string; generation: number }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
-  const [search, setSearch] = useState("")
-  const [activeCategory, setActiveCategory] = useState("全部")
-  const [activeTaste, setActiveTaste] = useState("全部")
+  const [session] = useState(() => readDishListSession(today))
+  const [search, setSearch] = useState(session.search)
+  const [activeCategory, setActiveCategory] = useState(session.activeCategory)
+  const [activeTaste, setActiveTaste] = useState(session.activeTaste)
   const [showTodayModal, setShowTodayModal] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
-  const today = dateKey()
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const tasteRef = useRef<HTMLDivElement>(null)
+  const restoreScrollRef = useRef<number | null>(session.scrollTop)
 
   const { data: settings } = useQuery({
     queryKey: ["settings"],
@@ -70,7 +92,6 @@ export default function DishList() {
       pageSize: String(PAGE_SIZE),
       sort: "sort_order",
       order: "asc",
-      page: "1",
     }
     if (activeCategory !== "全部") params.category = activeCategory
     if (activeTaste !== "全部") params.taste = activeTaste
@@ -78,55 +99,94 @@ export default function DishList() {
     return params
   }, [activeCategory, activeTaste, search])
 
-  const { data: dishesData, isLoading } = useQuery({
-    queryKey: ["dishes", queryParams],
-    queryFn: () => dishesApi.list(queryParams),
+  const {
+    data: dishesData, isPending, isFetching, isFetchingNextPage,
+    isError, isFetchNextPageError, hasNextPage, fetchNextPage, refetch,
+  } = useInfiniteQuery({
+    queryKey: ["dishes", "infinite", generation, today, queryParams],
+    queryFn: async ({ pageParam }) => {
+      const page = await dishesApi.list({ ...queryParams, page: String(pageParam) })
+      // An unmatched search is returned as items: null by the Go API.
+      return { ...page, items: page.items ?? [] }
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, pages, lastPageParam) => {
+      const loaded = pages.reduce((count, page) => count + page.items.length, 0)
+      return lastPage.items.length > 0 && loaded < lastPage.total ? lastPageParam + 1 : undefined
+    },
+    gcTime: 30 * 60 * 1000,
   })
 
-  const firstPageDishes = useMemo(() => dishesData?.items || [], [dishesData])
-  const totalFromServer = dishesData?.total ?? 0
+  const allDishes = useMemo(() => {
+    // The sort order can change while paging; do not render the same dish twice.
+    const dishes = new Map<number, Dish>()
+    for (const page of dishesData?.pages ?? []) {
+      for (const dish of page.items) if (!dishes.has(dish.id)) dishes.set(dish.id, dish)
+    }
+    return Array.from(dishes.values())
+  }, [dishesData])
 
-  const [pages, setPages] = useState<Dish[][]>([])
-  const [nextPageNum, setNextPageNum] = useState(2)
-  const [currentParamsKey, setCurrentParamsKey] = useState("")
-  const paramsKey = `${activeCategory}|${activeTaste}|${search}`
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetching) void fetchNextPage({ cancelRefetch: false })
+  }, [fetchNextPage, hasNextPage, isFetching])
 
-  if (currentParamsKey !== paramsKey) {
-    setCurrentParamsKey(paramsKey)
-    setPages([])
-    setNextPageNum(2)
-  }
+  const paramsKey = JSON.stringify(queryParams)
+  const previousParamsRef = useRef(paramsKey)
+  useLayoutEffect(() => {
+    const container = listRef.current
+    if (!container) return
+    if (previousParamsRef.current !== paramsKey) {
+      previousParamsRef.current = paramsKey
+      restoreScrollRef.current = null
+      container.scrollTop = 0
+      saveDishListSession(today, { scrollTop: 0 })
+    }
+    const target = restoreScrollRef.current
+    if (target === null || !dishesData) return
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    container.scrollTop = Math.min(target, maxScroll)
+    if (maxScroll >= target || !hasNextPage) restoreScrollRef.current = null
+  }, [dishesData, hasNextPage, paramsKey, today])
 
-  const allDishes = useMemo(() => [...firstPageDishes, ...pages.flat()], [firstPageDishes, pages])
-  const hasMore = allDishes.length < totalFromServer
+  useEffect(() => {
+    saveDishListSession(today, { search, activeCategory, activeTaste })
+  }, [today, search, activeCategory, activeTaste])
 
-  const loadMore = useCallback(async () => {
-    if (!hasMore) return
-    const page = nextPageNum
-    const params = { ...queryParams, page: String(page), pageSize: String(PAGE_SIZE) }
-    try {
-      const data = await dishesApi.list(params)
-      if (data?.items?.length) {
-        setPages(prev => [...prev, data.items])
-        setNextPageNum(page + 1)
-      }
-    } catch { /* pagination error, skip */ }
-  }, [hasMore, nextPageNum, queryParams])
+  useLayoutEffect(() => {
+    if (sidebarRef.current) sidebarRef.current.scrollTop = session.categoryScrollTop
+    if (tasteRef.current) tasteRef.current.scrollLeft = session.tasteScrollLeft
+  }, [session])
+
+  useLayoutEffect(() => {
+    const sidebar = sidebarRef.current
+    const selected = sidebar?.querySelector<HTMLButtonElement>('[aria-current="true"]')
+    if (!sidebar || !selected) return
+    const bounds = sidebar.getBoundingClientRect()
+    const itemBounds = selected.getBoundingClientRect()
+    if (itemBounds.top < bounds.top) sidebar.scrollTop += itemBounds.top - bounds.top
+    else if (itemBounds.bottom > bounds.bottom) sidebar.scrollTop += itemBounds.bottom - bounds.bottom
+  }, [activeCategory, sidebarCats])
+
+  useEffect(() => {
+    // If the cache expired during a long detail visit, refill only as far as the
+    // saved position. Failed requests wait for the explicit retry button.
+    if (restoreScrollRef.current !== null && dishesData && !isError) loadMore()
+  }, [dishesData, isError, loadMore])
 
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    if (!hasMore) return
+    if (!hasNextPage || isError) return
     const el = loadMoreRef.current
     if (!el) return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) loadMore()
       },
-      { rootMargin: "200px" },
+      { root: listRef.current, rootMargin: "200px" },
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [hasMore, loadMore])
+  }, [hasNextPage, isError, loadMore])
 
   const { data: favDishes } = useQuery({
     queryKey: ["favorites"],
@@ -258,16 +318,11 @@ export default function DishList() {
   }, [allDishes])
 
   function scrollToCategory(cat: string) {
+    restoreScrollRef.current = null
     setActiveCategory(cat)
     setSearch("")
-    if (cat === "全部") {
-      gsap.to(listRef.current, { scrollTo: { y: 0 }, duration: 0.36, ease: "power2.out" })
-      return
-    }
-    setTimeout(() => {
-      const el = categoryRefs.current.get(cat)
-      scrollToElement(el || null, { block: "start", duration: 0.36 })
-    }, 100)
+    if (listRef.current) listRef.current.scrollTop = 0
+    saveDishListSession(today, { scrollTop: 0 })
   }
 
   const totalPicked = todayLunchIds.size + todayDinnerIds.size
@@ -317,13 +372,20 @@ export default function DishList() {
 
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div className="absolute inset-0 flex">
-          <div className="w-[76px] flex-shrink-0 bg-card border-r border-border overflow-y-hidden scrollbar-none">
+          <div
+            ref={sidebarRef}
+            role="navigation"
+            aria-label="菜品分类"
+            onScroll={(event) => saveDishListSession(today, { categoryScrollTop: event.currentTarget.scrollTop })}
+            className="w-[76px] flex-shrink-0 bg-card border-r border-border overflow-y-auto overscroll-y-contain scrollbar-none"
+          >
             {sidebarCats.map((cat) => {
               const count = cat === "全部" ? enabledTotal : (categoryCountMap.get(cat) ?? 0)
               return (
                 <button
                   key={cat}
                   onClick={() => scrollToCategory(cat)}
+                  aria-current={activeCategory === cat ? "true" : undefined}
                   className={`w-full py-3 px-1.5 text-[12px] font-medium text-center transition-all relative whitespace-pre-line leading-tight ${
                     (activeCategory === cat || (cat !== "全部" && highlightCat === cat && activeCategory === "全部"))
                       ? "bg-bg text-primary font-bold before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:h-5 before:bg-primary before:rounded-r-full"
@@ -351,7 +413,11 @@ export default function DishList() {
             </div>
 
             <div className="px-3 pb-2">
-              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none scroll-fade-x">
+              <div
+                ref={tasteRef}
+                onScroll={(event) => saveDishListSession(today, { tasteScrollLeft: event.currentTarget.scrollLeft })}
+                className="flex items-center gap-1.5 overflow-x-auto scrollbar-none scroll-fade-x"
+              >
                 {tastes.map((t) => (
                   <button
                     key={t}
@@ -368,8 +434,22 @@ export default function DishList() {
               </div>
             </div>
 
-            <div ref={listRef} className="flex-1 overflow-y-auto px-3 scrollbar-none overscroll-y-contain">
-              {isLoading ? (
+            <div
+              ref={listRef}
+              role="region"
+              aria-label="菜品列表"
+              onScroll={(event) => {
+                if (restoreScrollRef.current === null) saveDishListSession(today, { scrollTop: event.currentTarget.scrollTop })
+              }}
+              className="flex-1 overflow-y-auto px-3 scrollbar-none overscroll-y-contain"
+            >
+              {isError && dishesData && !isFetchNextPageError && (
+                <div role="alert" className="py-3 text-center text-[12px] text-text2">
+                  <span>更新菜品失败，正在显示上次加载的内容</span>
+                  <button onClick={() => void refetch()} disabled={isFetching} className="ml-2 px-2 py-1 text-primary disabled:opacity-50">重试</button>
+                </div>
+              )}
+              {isPending ? (
                 <div className="space-y-3">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="flex gap-3 p-2 rounded-xl">
@@ -380,6 +460,12 @@ export default function DishList() {
                       </div>
                     </div>
                   ))}
+                </div>
+              ) : isError && !dishesData ? (
+                <div role="alert" className="text-center py-16">
+                  <div className="text-base font-semibold mb-1.5">菜品加载失败</div>
+                  <div className="text-[13px] text-text2">暂时没能加载菜品，请重试</div>
+                  <button onClick={() => void refetch()} disabled={isFetching} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-[13px] font-semibold disabled:opacity-50">重新加载</button>
                 </div>
               ) : allDishes.length === 0 ? (
                 <div className="text-center py-16">
@@ -424,12 +510,17 @@ export default function DishList() {
                 ))
               )}
 
-              {hasMore && (
+              {hasNextPage && (
                 <div ref={loadMoreRef} className="py-4 text-center text-[12px] text-text3">
-                  {isLoading ? "加载中..." : "下滑加载更多"}
+                  {isFetchNextPageError ? (
+                    <div role="alert">
+                      <span>后续菜品加载失败</span>
+                      <button onClick={loadMore} disabled={isFetching} className="ml-2 px-2 py-1 text-primary disabled:opacity-50">点击重试</button>
+                    </div>
+                  ) : isFetchingNextPage ? "加载中..." : "下滑加载更多"}
                 </div>
               )}
-              {!hasMore && allDishes.length > 0 && (
+              {!hasNextPage && allDishes.length > 0 && (
                 <div className="py-3 text-center text-[11px] text-text3">共 {allDishes.length} 道菜</div>
               )}
             </div>

@@ -222,7 +222,7 @@ export default function Report() {
   const appName = useAppInfoStore((s) => s.appName)
   const [range, setRange] = useState<"week" | "month">("week")
   const [shareOpen, setShareOpen] = useState(false)
-  const { data: report } = useQuery({
+  const { data: report, isPending, isError, isFetching, refetch } = useQuery({
     queryKey: ["report", range],
     queryFn: () => reportApi.get(range),
   })
@@ -262,6 +262,20 @@ export default function Report() {
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
+        {isPending && (
+          <div role="status" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 mb-3 text-center`}>
+            <div className="text-sm text-text3">正在读取{range === "week" ? "本周" : "本月"}饮食报告…</div>
+          </div>
+        )}
+        {isError && (
+          <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 mb-3 text-center`}>
+            <div className="text-[15px] font-bold mb-1">{report ? "报告暂时无法更新" : "饮食报告加载失败"}</div>
+            <div className="text-xs text-text2">{report ? "下方保留上次读取的报告，可以重试更新。" : "请检查网络后重试，做饭记录不会丢失。"}</div>
+            <button type="button" disabled={isFetching} onClick={() => { void refetch() }} className="text-sm font-bold text-primary mt-3 disabled:opacity-50">
+              {isFetching ? "正在重试…" : "重新加载报告"}
+            </button>
+          </div>
+        )}
         {report && (
           <>
             {/* 做饭活跃度 */}

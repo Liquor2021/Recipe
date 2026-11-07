@@ -1,6 +1,6 @@
-import { useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useRef, useState } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
+import { useQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
 import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import { asString } from "@/lib/utils"
@@ -29,6 +29,11 @@ const dayOrder: Record<string, number> = { "周一": 1, "周二": 2, "周三": 3
 // 买菜清单里的"配料"大多是家里常备的调料：默认收起，不计入待买
 const STAPLES_CATEGORY = "配料"
 const STAPLES_OPEN_KEY = "shopping_staples_open"
+
+function shoppingMutationName(variables: unknown): string | undefined {
+  if (typeof variables === "string") return variables
+  if (variables && typeof variables === "object" && "item_name" in variables && typeof variables.item_name === "string") return variables.item_name
+}
 
 // 复制到剪贴板：局域网 http 访问时没有 navigator.clipboard，退回 execCommand
 async function copyText(text: string): Promise<boolean> {
@@ -193,13 +198,25 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
 
 export default function More() {
   const navigate = useNavigate()
+  const location = useLocation()
   const qc = useQueryClient()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  // 请求状态由 QueryClient 保留：去冰箱再返回时，同一食材仍不能重复提交。
+  const pendingNames = useMutationState({
+    filters: { mutationKey: ["shopping-edit"], status: "pending" },
+    select: (mutation) => shoppingMutationName(mutation.state.variables),
+  })
+  const pendingShopping = new Set(pendingNames)
+  const shoppingEdits = pendingNames.length
 
   const { data: rawAchievements } = useQuery({ queryKey: ["achievements"], queryFn: () => achievementsApi.list() })
   const achievements = Array.isArray(rawAchievements) ? rawAchievements : []
   const { data: weekPlan } = useQuery({ queryKey: ["week-plan"], queryFn: () => weekPlanApi.get() })
-  const { data: rawShoppingList } = useQuery({ queryKey: ["shopping-list"], queryFn: () => shoppingListApi.get(), staleTime: 0 })
+  const { data: rawShoppingList, isPending: shoppingLoading, isError: shoppingError, isFetching: shoppingFetching, refetch: reloadShopping } = useQuery({
+    queryKey: ["shopping-list"], queryFn: () => shoppingListApi.get(), staleTime: 0,
+    // 写入时保留乐观状态；最后一个请求结束后，重新启用查询并读取实际结果。
+    enabled: shoppingEdits === 0,
+  })
   const shoppingList = rawShoppingList ?? []
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => settingsApi.get() })
 
@@ -207,6 +224,36 @@ export default function More() {
   // 记日期而不是那天的快照：换菜后弹层直接显示最新菜单
   const [sheetDate, setSheetDate] = useState<string | null>(null)
   const [showStockIn, setShowStockIn] = useState(false)
+  const [onlyNeedBuy, setOnlyNeedBuy] = useState(false)
+  const shoppingRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (location.pathname !== "/more" || location.hash !== "#shopping") return
+    // MainLayout 保留各 tab；只滚动当前页，避免 scrollIntoView 推动横向 tab 容器。
+    const frame = requestAnimationFrame(() => {
+      const section = shoppingRef.current
+      const scroller = section?.closest<HTMLElement>("[data-tab-scroll]")
+      if (section && scroller) {
+        scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [location.pathname, location.hash, location.key])
+
+  function startShoppingEdit(name: string, action: () => void) {
+    // 直接读取同步状态，也挡住 React 尚未重绘时的连续点击。
+    if (qc.getMutationCache().findAll({ mutationKey: ["shopping-edit"], status: "pending" })
+      .some((mutation) => shoppingMutationName(mutation.state.variables) === name)) return
+    action()
+  }
+
+  function patchShoppingItem(name: string, patch: Partial<ShoppingItem>) {
+    qc.setQueryData<ShoppingCategory[]>(["shopping-list"], (list) => list?.map((category) => ({
+      ...category,
+      items: category.items.map((item) => item.name === name ? { ...item, ...patch } : item),
+    })))
+  }
+
   // 常备调料（生抽、白糖……）默认收起；展开状态记在本机
   const [showStaples, setShowStaples] = useState(() => {
     try { return localStorage.getItem(STAPLES_OPEN_KEY) === "1" } catch { return false }
@@ -271,68 +318,59 @@ export default function More() {
   })
 
   const checkMut = useMutation({
+    mutationKey: ["shopping-edit", "check"],
     mutationFn: (data: { item_name: string; meal_date: string; checked: boolean }) =>
       shoppingListApi.toggle(data),
     onMutate: async (data) => {
       await qc.cancelQueries({ queryKey: ["shopping-list"] })
-      const prev = qc.getQueryData<ShoppingCategory[]>(["shopping-list"])
-      if (prev) {
-        qc.setQueryData<ShoppingCategory[]>(["shopping-list"], prev.map((cat) => ({
-          ...cat,
-          items: cat.items.map((item) =>
-            item.name === data.item_name ? { ...item, checked: data.checked } : item
-          ),
-        })))
-      }
+      const prev = qc.getQueryData<ShoppingCategory[]>(["shopping-list"])?.flatMap((cat) => cat.items).find((item) => item.name === data.item_name)?.checked
+      patchShoppingItem(data.item_name, { checked: data.checked })
       return { prev }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
     },
-    onError: (_err, _data, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["shopping-list"], ctx.prev)
+    onError: (_err, data, ctx) => {
+      if (ctx?.prev !== undefined) patchShoppingItem(data.item_name, { checked: ctx.prev })
+      toast.error("勾选未保存，请重试")
     },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
   })
 
   const inventoryMut = useMutation({
+    mutationKey: ["shopping-edit", "inventory"],
     mutationFn: (data: { item_name: string; in_stock: boolean }) =>
       shoppingListApi.setInventory(data),
     onMutate: async (data) => {
       await qc.cancelQueries({ queryKey: ["shopping-list"] })
-      const prev = qc.getQueryData<ShoppingCategory[]>(["shopping-list"])
-      if (prev) {
-        qc.setQueryData<ShoppingCategory[]>(["shopping-list"], prev.map((cat) => ({
-          ...cat,
-          items: cat.items.map((item) =>
-            item.name === data.item_name ? { ...item, in_stock: data.in_stock } : item
-          ),
-        })))
-      }
+      const prev = qc.getQueryData<ShoppingCategory[]>(["shopping-list"])?.flatMap((cat) => cat.items).find((item) => item.name === data.item_name)?.in_stock
+      patchShoppingItem(data.item_name, { in_stock: data.in_stock })
       return { prev }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       // "家中有"会增删冰箱批次
       qc.invalidateQueries({ queryKey: ["fridge"] })
       qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
       qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
     },
-    onError: (_err, _data, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["shopping-list"], ctx.prev)
+    onError: (_err, data, ctx) => {
+      if (ctx?.prev !== undefined) patchShoppingItem(data.item_name, { in_stock: ctx.prev })
       toast.error("库存状态更新失败")
     },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
   })
 
   // 误点补料的撤销入口：只删补料条目
   const removeItemMut = useMutation({
+    mutationKey: ["shopping-edit", "remove"],
     mutationFn: (itemName: string) => shoppingListApi.removeItem(itemName),
+    onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
       toast.success("已从清单移除")
     },
     onError: () => toast.error("移除失败，稍后再试"),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
   })
 
   const settingsMut = useMutation({
@@ -365,14 +403,20 @@ export default function More() {
   const totalItems = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.length, 0)
   const needBuyItems = mainItems.filter((item) => !item.checked && !item.in_stock).length
   const stapleNeedCount = stapleItems.filter((item) => !item.checked && !item.in_stock).length
+  const visibleCategories = onlyNeedBuy
+    ? mainCategories.map((cat) => ({ ...cat, items: cat.items.filter((item) => !item.checked && !item.in_stock) })).filter((cat) => cat.items.length > 0)
+    : mainCategories
+  const visibleStaples = onlyNeedBuy ? stapleItems.filter((item) => !item.checked && !item.in_stock) : stapleItems
 
   // 买菜清单的一行（普通函数而不是组件：避免每次渲染都重新挂载行）。
   // 行里的小按钮用透明的 ::after 把点击区撑大、外观不变；删除 × 向左不扩，免得点"库存"误删
   const renderShoppingRow = (item: ShoppingItem) => (
     <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock ? "opacity-70" : ""}`}>
       <button
-        onClick={() => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked })}
-        disabled={item.in_stock}
+        onClick={() => startShoppingEdit(item.name, () => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked }))}
+        disabled={item.in_stock || pendingShopping.has(item.name)}
+        aria-label={`${item.checked ? "取消已买" : "标记已买"}${item.name}`}
+        aria-pressed={item.checked}
         className={`relative after:absolute after:-inset-x-2.5 after:-inset-y-1.5 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
       >{item.in_stock ? "家" : "✓"}</button>
       <span className={`transition-all ${item.checked || item.in_stock ? "line-through text-text3" : ""}`}>{item.name}</span>
@@ -383,17 +427,18 @@ export default function More() {
             // 取消"家中有"会把冰箱里这个食材的批次一起移出，先确认
             if (item.in_stock && item.stock_batches > 0 &&
               !confirm(`取消后会从冰箱移出 ${item.stock_batches} 批「${item.name}」，确定吗？`)) return
-            inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock })
+            startShoppingEdit(item.name, () => inventoryMut.mutate({ item_name: item.name, in_stock: !item.in_stock }))
           }}
-          disabled={inventoryMut.isPending}
+          disabled={pendingShopping.has(item.name)}
+          aria-label={`${item.in_stock ? "取消家中有" : "标记家中有"}${item.name}`}
           className={`relative after:absolute after:-inset-x-1 after:-inset-y-2 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
         >
           {item.in_stock ? "家中有" : "库存"}
         </button>
         {item.removable && (
           <button
-            onClick={() => removeItemMut.mutate(item.name)}
-            disabled={removeItemMut.isPending}
+            onClick={() => startShoppingEdit(item.name, () => removeItemMut.mutate(item.name))}
+            disabled={pendingShopping.has(item.name)}
             aria-label={`从清单移除${item.name}`}
             className="relative after:absolute after:-inset-y-2 after:-right-2.5 after:left-0 w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
           >
@@ -477,32 +522,100 @@ export default function More() {
 
   return (
     <div className="animate-fadeUp">
-      <PageHeader title="更多" subtitle="一周菜单、买菜清单和设置" icon={Menu} />
+      <PageHeader title="更多" subtitle="买菜清单、一周菜单和设置" icon={Menu} />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto">
-        <div className="flex items-center justify-between mb-3.5">
-          <div className="text-lg font-bold">🏆 成就墙</div>
-          <span className="text-xs text-text3 font-medium">{unlockedCount}/{achievements.length} 已解锁</span>
+        <section ref={shoppingRef} id="shopping" aria-label="买菜清单">
+        <div className="flex items-center justify-between gap-3 mb-3.5">
+          <div>
+            <h2 className="text-lg font-bold">🛒 买菜清单</h2>
+            <div className="text-xs text-text2 mt-0.5">今天 + 明天要用的食材</div>
+          </div>
+          {totalItems > 0 && (
+              <button
+                onClick={copyShoppingList}
+                className="shrink-0 px-3 py-2.5 rounded-full text-xs font-semibold bg-card border border-border text-text2 transition-all active:scale-95"
+              >
+                复制待买
+              </button>
+          )}
         </div>
-        <div className="grid grid-cols-3 gap-3 mb-2">
-          {previewAchievements.map((a: Achievement) => (
-            <div
-              key={a.id}
-              onClick={() => navigate("/achievements")}
-              className={`bg-card rounded-2xl p-4 pt-5 text-center shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border transition-all relative overflow-hidden cursor-pointer active:scale-95 ${a.is_unlocked ? "border-primary/20" : "border-border opacity-35 grayscale-[.9]"}`}
-            >
-              {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
-              <span className="text-[32px] block mb-1.5">{a.icon}</span>
-              <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
-              <div className="text-[11px] text-text2 line-clamp-2">{a.description}</div>
+        {totalItems > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="text-xs text-text2">
+              <span className="font-semibold text-text">待买 {needBuyItems}</span> · 已买 {totalChecked} · 家中 {totalInStock}
             </div>
-          ))}
+            <button
+              onClick={() => setOnlyNeedBuy((value) => !value)}
+              aria-pressed={onlyNeedBuy}
+              className={`min-h-9 px-3 rounded-full text-xs font-semibold border transition-all active:scale-95 ${onlyNeedBuy ? "bg-primary-light text-primary border-primary/20" : "bg-card text-text2 border-border"}`}
+            >
+              {onlyNeedBuy ? "✓ 只看待买" : "只看待买"}
+            </button>
+          </div>
+        )}
+        {shoppingError && (
+          <div role="alert" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm text-text2">
+            <span>{rawShoppingList ? "清单未能更新，正在显示上次内容" : "买菜清单加载失败"}</span>
+            <button onClick={() => void reloadShopping()} disabled={shoppingFetching || shoppingEdits > 0} className="shrink-0 min-h-10 px-2 font-semibold text-primary disabled:opacity-50">{shoppingFetching ? "重试中…" : "重试"}</button>
+          </div>
+        )}
+        <div className="bg-card rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border mb-7">
+          {shoppingLoading ? (
+            <div role="status" className="py-5 px-4 text-center text-sm text-text3">正在整理买菜清单…</div>
+          ) : !rawShoppingList ? null : shoppingList.length === 0 ? (
+            <div className="py-5 px-4 text-center text-sm text-text3">暂无买菜清单，点菜后自动生成今日+明日食材</div>
+          ) : (
+            <>
+              {onlyNeedBuy && needBuyItems === 0 ? (
+                <div className="py-5 px-4 text-center text-sm text-text2">主料已买齐，可以准备做饭了{stapleNeedCount > 0 ? "；常备调料也记得检查一下" : ""}</div>
+              ) : mainCategories.length === 0 && (
+                <div className="py-4 px-4 text-center text-[13px] text-text3">要买的只有家里常备的调料</div>
+              )}
+              {visibleCategories.map((cat: ShoppingCategory, ci: number) => (
+                <div key={cat.category} className={`px-4 py-3 ${ci > 0 ? "border-t border-border" : ""}`}>
+                  <div className="text-[13px] font-bold text-text2 mb-2 tracking-wide">{cat.category}</div>
+                  {cat.items.map((item) => renderShoppingRow(item))}
+                </div>
+              ))}
+              {visibleStaples.length > 0 && (
+                <div className={`px-4 py-3 ${visibleCategories.length > 0 || onlyNeedBuy ? "border-t border-border" : ""}`}>
+                  <button onClick={toggleStaples} aria-expanded={showStaples} className="w-full min-h-9 flex items-center justify-between text-left">
+                    <span className="text-[13px] font-bold text-text2 tracking-wide">
+                      常备调料 <span className="font-medium text-text3">· {visibleStaples.length} 样</span>
+                    </span>
+                    <span className="text-xs text-text3">
+                      {showStaples ? "收起 ▴" : `家里一般都有${stapleNeedCount > 0 ? "，缺了再看" : ""} ▾`}
+                    </span>
+                  </button>
+                  {showStaples && <div className="mt-2">{visibleStaples.map((item) => renderShoppingRow(item))}</div>}
+                </div>
+              )}
+            </>
+          )}
         </div>
+        {stockInCandidates.length > 0 && (
+          <button
+            onClick={() => setShowStockIn(true)}
+            disabled={shoppingEdits > 0 || shoppingFetching}
+            className="w-full -mt-4 mb-7 py-2.5 rounded-xl text-sm font-bold text-[#2E8577] bg-mint-light transition-all active:scale-98 disabled:opacity-50"
+          >
+            🧊 把已买的 {stockInCandidates.length} 样放进冰箱
+          </button>
+        )}
+        {showStockIn && <StockInSheet candidates={stockInCandidates} onClose={() => setShowStockIn(false)} />}
+        </section>
+
         <button
-          onClick={() => navigate("/achievements")}
-          className="w-full py-2 text-sm font-medium text-primary bg-primary-light/50 rounded-xl mb-7 transition-all active:scale-98"
+          onClick={() => navigate("/fridge")}
+          className={`w-full bg-card rounded-2xl p-4 ${cardShadow} border border-border flex items-center gap-3.5 transition-all active:scale-98 mb-7`}
         >
-          查看更多成就 ›
+          <div className="w-12 h-12 rounded-[10px] bg-gradient-to-br from-mint-light to-yellow-light flex items-center justify-center text-2xl flex-shrink-0">🧊</div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="text-[15px] font-bold mb-0.5">🧊 冰箱库存</div>
+            <div className="text-xs text-text2">记下家里有什么，按食材找能做的菜</div>
+          </div>
+          <span className="text-text3 text-sm">›</span>
         </button>
 
         <div className="flex items-center justify-between mb-3.5">
@@ -545,71 +658,28 @@ export default function More() {
         {days.length <= 2 && <div className="mb-7" />}
 
         <div className="flex items-center justify-between mb-3.5">
-          <div className="text-lg font-bold">🛒 买菜清单</div>
-          {totalItems > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-mint font-medium">
-                待买 {needBuyItems} · 已买 {totalChecked} · 家中 {totalInStock}
-              </span>
-              <button
-                onClick={copyShoppingList}
-                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-bg border border-border text-text2 transition-all active:scale-95"
-              >
-                复制
-              </button>
+          <div className="text-lg font-bold">🏆 成就墙</div>
+          <span className="text-xs text-text3 font-medium">{unlockedCount}/{achievements.length} 已解锁</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mb-2">
+          {previewAchievements.map((a: Achievement) => (
+            <div
+              key={a.id}
+              onClick={() => navigate("/achievements")}
+              className={`bg-card rounded-2xl p-4 pt-5 text-center shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border transition-all relative overflow-hidden cursor-pointer active:scale-95 ${a.is_unlocked ? "border-primary/20" : "border-border opacity-35 grayscale-[.9]"}`}
+            >
+              {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
+              <span className="text-[32px] block mb-1.5">{a.icon}</span>
+              <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
+              <div className="text-[11px] text-text2 line-clamp-2">{a.description}</div>
             </div>
-          )}
+          ))}
         </div>
-        <div className="bg-card rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border mb-7">
-          {shoppingList.length === 0 ? (
-            <div className="py-5 px-4 text-center text-sm text-text3">暂无买菜清单，点菜后自动生成今日+明日食材</div>
-          ) : (
-            <>
-              {mainCategories.length === 0 && (
-                <div className="py-4 px-4 text-center text-[13px] text-text3">要买的只有家里常备的调料</div>
-              )}
-              {mainCategories.map((cat: ShoppingCategory, ci: number) => (
-                <div key={cat.category} className={`px-4 py-3 ${ci > 0 ? "border-t border-border" : ""}`}>
-                  <div className="text-[13px] font-bold text-text2 mb-2 tracking-wide">{cat.category}</div>
-                  {cat.items.map((item) => renderShoppingRow(item))}
-                </div>
-              ))}
-              {stapleItems.length > 0 && (
-                <div className={`px-4 py-3 ${mainCategories.length > 0 ? "border-t border-border" : ""}`}>
-                  <button onClick={toggleStaples} className="w-full flex items-center justify-between text-left">
-                    <span className="text-[13px] font-bold text-text2 tracking-wide">
-                      常备调料 <span className="font-medium text-text3">· {stapleItems.length} 样</span>
-                    </span>
-                    <span className="text-xs text-text3">
-                      {showStaples ? "收起 ▴" : `家里一般都有${stapleNeedCount > 0 ? "，缺了再看" : ""} ▾`}
-                    </span>
-                  </button>
-                  {showStaples && <div className="mt-2">{stapleItems.map((item) => renderShoppingRow(item))}</div>}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-        {stockInCandidates.length > 0 && (
-          <button
-            onClick={() => setShowStockIn(true)}
-            className="w-full -mt-4 mb-7 py-2.5 rounded-xl text-sm font-bold text-[#2E8577] bg-mint-light transition-all active:scale-98"
-          >
-            🧊 把已买的 {stockInCandidates.length} 样放进冰箱
-          </button>
-        )}
-        {showStockIn && <StockInSheet candidates={stockInCandidates} onClose={() => setShowStockIn(false)} />}
-
         <button
-          onClick={() => navigate("/fridge")}
-          className={`w-full bg-card rounded-2xl p-4 ${cardShadow} border border-border flex items-center gap-3.5 transition-all active:scale-98 mb-7`}
+          onClick={() => navigate("/achievements")}
+          className="w-full py-2 text-sm font-medium text-primary bg-primary-light/50 rounded-xl mb-7 transition-all active:scale-98"
         >
-          <div className="w-12 h-12 rounded-[10px] bg-gradient-to-br from-mint-light to-yellow-light flex items-center justify-center text-2xl flex-shrink-0">🧊</div>
-          <div className="flex-1 min-w-0 text-left">
-            <div className="text-[15px] font-bold mb-0.5">🧊 冰箱库存</div>
-            <div className="text-xs text-text2">记下家里有什么，按食材找能做的菜</div>
-          </div>
-          <span className="text-text3 text-sm">›</span>
+          查看更多成就 ›
         </button>
 
         {isLoggedIn && (

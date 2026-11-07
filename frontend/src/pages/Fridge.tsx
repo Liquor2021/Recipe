@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { fridgeApi, shoppingListApi } from "@/api"
@@ -111,40 +111,54 @@ export default function Fridge() {
   const qc = useQueryClient()
   const [input, setInput] = useState("")
   const [quantityInput, setQuantityInput] = useState("")
+  const draftRevision = useRef(0)
+  const addInFlight = useRef(false)
+  const batchWriteInFlight = useRef(false)
   // 编辑某一批次：数量 + 保质期
   const [editing, setEditing] = useState<InventoryBatch | null>(null)
   const [editQuantity, setEditQuantity] = useState("")
   const [editDate, setEditDate] = useState("")
 
-  const { data: items = [] } = useQuery({ queryKey: ["fridge"], queryFn: () => fridgeApi.list() })
-  const { data: matches, isLoading: matchesLoading } = useQuery({
+  const { data: items = [], isPending: itemsLoading, isError: itemsError, isFetching: itemsFetching, refetch: reloadItems } = useQuery({ queryKey: ["fridge"], queryFn: () => fridgeApi.list() })
+  const { data: matches, isPending: matchesLoading, isError: matchesError, isFetching: matchesFetching, refetch: reloadMatches } = useQuery({
     queryKey: ["fridge-recipes"],
     queryFn: () => fridgeApi.recipes(20),
     enabled: items.length > 0,
   })
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["fridge"] })
-    qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
+  const invalidate = () => Promise.all([
+    qc.invalidateQueries({ queryKey: ["fridge"] }),
+    qc.invalidateQueries({ queryKey: ["fridge-recipes"] }),
     // 首页临期提醒条用的缓存也要失效，否则返回首页会显示旧提醒
-    qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
-  }
+    qc.invalidateQueries({ queryKey: ["fridge-urgent"] }),
+  ])
 
   const addMut = useMutation({
     mutationFn: (p: { name: string; quantity?: string; expiry?: string }) => fridgeApi.add(p.name, p.quantity, p.expiry),
-    onSuccess: () => { invalidate(); toast.success("🧊 已放入冰箱") },
+    onSuccess: async () => { await invalidate(); toast.success("🧊 已放入冰箱") },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : "添加失败"),
+    onSettled: () => { addInFlight.current = false },
   })
   // 批次编辑（数量/保质期）与"新放入"分开提示
   const batchMut = useMutation({
     mutationFn: (p: { id: number; quantity: string; expiry: string }) => fridgeApi.updateBatch(p.id, p.quantity, p.expiry),
-    onSuccess: () => { invalidate(); setEditing(null); toast.success("📅 批次已更新") },
+    onSuccess: async (_, saved) => {
+      await invalidate()
+      setEditing((current) => current?.id === saved.id ? null : current)
+      toast.success("📅 批次已更新")
+    },
     onError: () => toast.error("保存失败"),
+    onSettled: () => { batchWriteInFlight.current = false },
   })
   const removeBatchMut = useMutation({
     mutationFn: (id: number) => fridgeApi.removeBatch(id),
-    onSuccess: () => { invalidate(); setEditing(null); toast.success("已移出冰箱") },
+    onSuccess: async (_, id) => {
+      await invalidate()
+      setEditing((current) => current?.id === id ? null : current)
+      toast.success("已移出冰箱")
+    },
     onError: () => toast.error("移出失败，稍后再试"),
+    onSettled: () => { batchWriteInFlight.current = false },
   })
   // 一键清理已过期批次（批量接口单次最多 100 批，分段提交）
   const clearExpiredMut = useMutation({
@@ -155,9 +169,11 @@ export default function Fridge() {
       }
       return removed
     },
-    onSuccess: (removed) => { invalidate(); toast.success(`已清理 ${removed} 批过期食材`) },
-    onError: () => toast.error("清理失败，稍后再试"),
+    onSuccess: async (removed) => { await invalidate(); toast.success(`已清理 ${removed} 批过期食材`) },
+    onError: () => { void invalidate(); toast.error("清理未完成，请检查库存后重试") },
+    onSettled: () => { batchWriteInFlight.current = false },
   })
+  const batchBusy = batchMut.isPending || removeBatchMut.isPending || clearExpiredMut.isPending
 
   // 缺料一键补入买菜清单（今天去买，做今天的菜）
   const addMissingMut = useMutation({
@@ -198,24 +214,45 @@ export default function Fridge() {
     })
     .map((i) => i.id)
 
-  function handleAdd(raw: string) {
+  function handleAdd(raw: string, fromForm = false) {
     const name = raw.trim()
-    if (!name) return
+    if (!name || addInFlight.current) return
+    const submittedRevision = draftRevision.current
+    addInFlight.current = true
     // 同食材再添加 = 追加一个新批次（如今天又买了一袋）
-    addMut.mutate({ name, quantity: quantityInput.trim() })
-    setInput("")
-    setQuantityInput("")
+    addMut.mutate({ name, quantity: quantityInput.trim() }, {
+      onSuccess: () => {
+        // 保存过程中可以继续准备下一项；旧请求成功不能清掉新草稿。
+        if (draftRevision.current !== submittedRevision) return
+        if (fromForm) setInput("")
+        setQuantityInput("")
+      },
+    })
   }
 
   function openBatchEditor(batch: InventoryBatch) {
+    if (batchWriteInFlight.current) return
     setEditing(batch)
     setEditQuantity(batch.quantity || "")
     setEditDate(batch.expiry_date || "")
   }
 
   function saveBatch() {
-    if (!editing) return
+    if (!editing || batchWriteInFlight.current) return
+    batchWriteInFlight.current = true
     batchMut.mutate({ id: editing.id, quantity: editQuantity, expiry: editDate })
+  }
+
+  function removeBatch(id: number) {
+    if (batchWriteInFlight.current) return
+    batchWriteInFlight.current = true
+    removeBatchMut.mutate(id)
+  }
+
+  function clearExpired() {
+    if (batchWriteInFlight.current || !confirm(`确定把 ${expiredIds.length} 批过期食材移出冰箱吗？`)) return
+    batchWriteInFlight.current = true
+    clearExpiredMut.mutate(expiredIds)
   }
 
   return (
@@ -229,10 +266,10 @@ export default function Fridge() {
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
         {/* 添加食材：同食材再添加 = 追加新批次 */}
-        <form onSubmit={(e) => { e.preventDefault(); handleAdd(input) }} className="flex gap-2 mb-2.5">
+        <form onSubmit={(e) => { e.preventDefault(); handleAdd(input, true) }} className="flex gap-2 mb-2.5">
           <input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { draftRevision.current++; setInput(e.target.value) }}
             placeholder="冰箱里有什么？如：鸡蛋、番茄…"
             className="flex-1 h-11 rounded-2xl border-[1.5px] border-border bg-card px-4 text-sm font-medium outline-none transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.12)]"
           />
@@ -241,12 +278,12 @@ export default function Fridge() {
             disabled={!input.trim() || addMut.isPending}
             className="h-11 px-5 rounded-2xl bg-primary text-white text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
           >
-            放入
+            {addMut.isPending ? "放入中…" : "放入"}
           </button>
         </form>
         <input
           value={quantityInput}
-          onChange={(e) => setQuantityInput(e.target.value)}
+          onChange={(e) => { draftRevision.current++; setQuantityInput(e.target.value) }}
           placeholder="数量（可选），如：3个、半袋"
           className="w-full h-9 mb-3 rounded-xl border border-border bg-bg px-3.5 text-xs text-text2 outline-none transition-all focus:border-primary"
         />
@@ -257,6 +294,8 @@ export default function Fridge() {
             {quickLeft.map((name) => (
               <button
                 key={name}
+                type="button"
+                disabled={addMut.isPending}
                 onClick={() => handleAdd(name)}
                 className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-card border border-border text-text2 transition-all active:scale-95 hover:border-primary/30 hover:text-primary"
               >
@@ -271,8 +310,8 @@ export default function Fridge() {
             <span className="text-xs font-semibold">有 {expiredIds.length} 批食材已过期</span>
             <button
               type="button"
-              disabled={clearExpiredMut.isPending}
-              onClick={() => { if (confirm(`确定把 ${expiredIds.length} 批过期食材移出冰箱吗？`)) clearExpiredMut.mutate(expiredIds) }}
+              disabled={batchBusy}
+              onClick={clearExpired}
               className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold bg-red text-white transition-all active:scale-95 disabled:opacity-50"
             >
               一键清理
@@ -281,7 +320,20 @@ export default function Fridge() {
         )}
 
         {/* 已有食材（按食材分组，组内批次） */}
-        {groups.length > 0 ? (
+        {itemsError && (
+          <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-6`}>
+            <div className="text-sm font-bold mb-1">{items.length > 0 ? "库存暂时无法更新" : "库存加载失败"}</div>
+            <div className="text-xs text-text2">{items.length > 0 ? "下方保留上次读取的库存，可以重试更新。" : "请检查网络后重试，已有库存不会丢失。"}</div>
+            <button type="button" disabled={itemsFetching} onClick={() => { void reloadItems() }} className="text-sm font-bold text-primary mt-3 disabled:opacity-50">
+              {itemsFetching ? "正在重试…" : "重新加载"}
+            </button>
+          </div>
+        )}
+        {itemsLoading ? (
+          <div role="status" className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-6`}>
+            <div className="text-sm text-text3">正在读取冰箱库存…</div>
+          </div>
+        ) : groups.length > 0 ? (
           <div className="flex flex-col gap-2.5 mb-6">
             {groups.map(([name, batches]) => {
               const hasUrgent = batches.some((b) => {
@@ -318,8 +370,9 @@ export default function Fridge() {
                           )}
                           <button
                             type="button"
+                            disabled={batchBusy}
                             aria-label={`移出${name}该批`}
-                            onClick={(e) => { e.stopPropagation(); removeBatchMut.mutate(b.id) }}
+                            onClick={(e) => { e.stopPropagation(); removeBatch(b.id) }}
                             // 透明 ::after 撑大点击区；删除不用确认，向左只扩一点，点行内其他地方仍是编辑
                             className="relative after:absolute after:-inset-y-2 after:-right-3 after:-left-1 ml-auto w-5 h-5 rounded-full flex items-center justify-center opacity-50 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90 text-base leading-none"
                           >
@@ -333,7 +386,7 @@ export default function Fridge() {
               )
             })}
           </div>
-        ) : (
+        ) : !itemsError ? (
           <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-6`}>
             <div className="text-[40px] mb-2">🧊</div>
             <div className="text-[15px] font-bold mb-1">冰箱还是空的</div>
@@ -342,7 +395,7 @@ export default function Fridge() {
               买菜清单里点「家中有」也会自动记进来。
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* 清冰箱推荐 */}
         {items.length > 0 && (
@@ -351,6 +404,15 @@ export default function Fridge() {
               <div className="text-lg font-bold">🍳 清冰箱推荐</div>
               <span className="text-[11px] text-text3">临期批次会优先用掉</span>
             </div>
+            {matchesError && (
+              <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-3`}>
+                <div className="text-sm font-bold mb-1">清冰箱推荐加载失败</div>
+                <div className="text-xs text-text2">请检查网络后重试。</div>
+                <button type="button" disabled={matchesFetching} onClick={() => { void reloadMatches() }} className="text-sm font-bold text-primary mt-3 disabled:opacity-50">
+                  {matchesFetching ? "正在重试…" : "重新加载推荐"}
+                </button>
+              </div>
+            )}
             {matchesLoading ? (
               <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center`}>
                 <div className="text-sm text-text3">正在看你的冰箱…</div>
@@ -367,13 +429,13 @@ export default function Fridge() {
                   />
                 ))}
               </div>
-            ) : (
+            ) : !matchesError ? (
               <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center`}>
                 <div className="text-[32px] mb-2">🤔</div>
                 <div className="text-sm font-bold mb-1">这些食材还凑不成一道菜</div>
                 <div className="text-xs text-text2">再加一两种，或者去菜品页逛逛找找灵感</div>
               </div>
-            )}
+            ) : null}
           </div>
         )}
       </div>
@@ -385,6 +447,7 @@ export default function Fridge() {
           <div className="text-xs text-text3 mb-4">编辑这一批的数量和保质期</div>
           <input
             value={editQuantity}
+            disabled={batchBusy}
             onChange={(e) => setEditQuantity(e.target.value)}
             placeholder="数量（可选），如：3个、半袋"
             className="w-full h-10 mb-3 rounded-xl border-[1.5px] border-border bg-bg px-3.5 text-sm outline-none transition-all focus:border-primary"
@@ -397,6 +460,7 @@ export default function Fridge() {
                 <button
                   key={p.days}
                   type="button"
+                  disabled={batchBusy}
                   onClick={() => setEditDate(val)}
                   className={`py-2.5 rounded-xl text-[13px] font-bold border-[1.5px] transition-all active:scale-95 ${active ? "border-primary bg-primary-light text-primary" : "border-border text-text2"}`}
                 >
@@ -409,6 +473,7 @@ export default function Fridge() {
             或选具体日期
             <input
               type="date"
+              disabled={batchBusy}
               value={editDate}
               onChange={(e) => setEditDate(e.target.value)}
               className="flex-1 h-9 rounded-xl border border-border bg-bg px-2.5 text-sm text-text font-medium outline-none focus:border-primary"
@@ -417,18 +482,19 @@ export default function Fridge() {
           <div className="flex gap-2.5">
             <button
               type="button"
-              onClick={() => removeBatchMut.mutate(editing.id)}
-              disabled={removeBatchMut.isPending}
+              onClick={() => removeBatch(editing.id)}
+              disabled={batchBusy}
               className="py-2.5 px-4 rounded-full text-sm font-semibold bg-red-light text-red active:scale-96 transition-all"
             >
-              移出该批
+              {removeBatchMut.isPending ? "移出中…" : "移出该批"}
             </button>
             <button
               type="button"
               onClick={saveBatch}
+              disabled={batchBusy}
               className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white active:scale-96 transition-all"
             >
-              保存
+              {batchMut.isPending ? "保存中…" : "保存"}
             </button>
           </div>
         </AnimatedBottomSheet>

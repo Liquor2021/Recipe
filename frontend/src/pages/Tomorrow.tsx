@@ -5,6 +5,8 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { dishesApi, pickApi, recordsApi } from "@/api"
 import type { Dish, MealRecord } from "@/types"
 import { launchConfetti } from "@/lib/confetti"
+import { readTomorrowDraft, tomorrowPlanBaseline, writeTomorrowDraft } from "@/lib/tomorrowDraft"
+import type { TomorrowDraftState, TomorrowProfile } from "@/lib/tomorrowDraft"
 import DishImage from "@/components/DishImage"
 import PageHeader from "@/components/PageHeader"
 import toast from "react-hot-toast"
@@ -32,7 +34,7 @@ import {
 } from "lucide-react"
 
 type MealType = "lunch" | "dinner"
-type PlanProfile = "balanced" | "quick" | "light" | "spicy" | "favorite"
+type PlanProfile = TomorrowProfile
 
 const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
 const mealOrder: MealType[] = ["lunch", "dinner"]
@@ -126,12 +128,12 @@ function mealRecords(records: MealRecord[], meal: MealType) {
 
 function keyFromRecords(records: MealRecord[]) {
   return mealOrder
-    .map((meal) => `${meal}:${mealRecords(records, meal).map((r) => r.dish_id).join(",")}`)
+    .map((meal) => `${meal}:${mealRecords(records, meal).map((r) => r.dish_id).sort((a, b) => a - b).join(",")}`)
     .join("|")
 }
 
 function keyFromDishes(lunch: Dish[], dinner: Dish[]) {
-  return `lunch:${lunch.map((d) => d.id).join(",")}|dinner:${dinner.map((d) => d.id).join(",")}`
+  return `lunch:${lunch.map((d) => d.id).sort((a, b) => a - b).join(",")}|dinner:${dinner.map((d) => d.id).sort((a, b) => a - b).join(",")}`
 }
 
 function recordToDish(record: MealRecord): Dish {
@@ -649,10 +651,23 @@ function LoadingState() {
 }
 
 interface SavePlanPayload {
+  date: string
+  draft: TomorrowDraftState
   oldRecords: MealRecord[]
   records: Partial<MealRecord>[]
   wasSaved: boolean
 }
+
+class PlanChangedError extends Error {
+  records: MealRecord[]
+
+  constructor(records: MealRecord[]) {
+    super("明日菜单已更新，已载入最新菜单，请重新调整")
+    this.records = records
+  }
+}
+
+class PartialPlanSaveError extends Error {}
 
 export default function Tomorrow() {
   const navigate = useNavigate()
@@ -682,13 +697,27 @@ export default function Tomorrow() {
     initStartedForRef.current = tomorrowStr
 
     const records = (tomorrowRecords?.items || []).filter(r => r.status !== "cancelled")
+    const stored = readTomorrowDraft(tomorrowStr, tomorrowPlanBaseline(records))
     setOriginalRecords(records)
 
-    if (records.length > 0) {
+    if (stored.kind === "restored") {
+      // Initialize once from external storage, only after checking the fresh server baseline.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLunch(stored.draft.lunch)
+      setDinner(stored.draft.dinner)
+      setTargets(stored.draft.targets)
+      setProfile(stored.draft.profile)
+      setInitializedFor(tomorrowStr)
+      return
+    }
+    if (stored.kind === "conflict") {
+      toast("明日菜单已更新，已载入最新菜单", { duration: 5000 })
+    }
+
+    if (records.length > 0 || stored.kind === "conflict") {
       const nextLunch = mealRecords(records, "lunch").map(recordToDish)
       const nextDinner = mealRecords(records, "dinner").map(recordToDish)
-      // 每个日期只用服务端记录初始化一次可编辑的草稿（initStartedForRef 守卫），之后由用户编辑
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // Each date initializes once; subsequent query refreshes must not overwrite edits.
       setLunch(nextLunch)
       setDinner(nextDinner)
       setTargets({
@@ -745,23 +774,35 @@ export default function Tomorrow() {
   const loading = recordsLoading || initializedFor !== tomorrowStr
 
   const savePlanMut = useMutation({
-    mutationFn: async ({ oldRecords, records }: SavePlanPayload) => {
-      const key = (record: Partial<MealRecord>) => `${record.meal_type}:${record.dish_id}`
-      const existingKeys = new Set(oldRecords.map(key))
-      const desiredKeys = new Set(records.map(key))
-      const additions = records.filter(record => !existingKeys.has(key(record)))
-      // 保留没换的菜及其份量、买菜状态；新增成功后再取消移走的菜。
-      if (additions.length > 0) {
-        const result = await recordsApi.batchCreate(additions)
-        if (result.failed > 0) throw new Error(`${result.failed} 道菜保存失败，请重试`)
+    mutationFn: async ({ date, oldRecords, records }: SavePlanPayload) => {
+      // Recheck before writing too: a plan can change while this editor stays open.
+      const latest = await recordsApi.list({ date_from: date, date_to: date, pageSize: "100" })
+      if (tomorrowPlanBaseline(latest.items) !== tomorrowPlanBaseline(oldRecords)) {
+        throw new PlanChangedError(latest.items.filter(record => record.status !== "cancelled"))
       }
-      for (const record of oldRecords.filter(record => !desiredKeys.has(key(record)))) {
-        await recordsApi.update(record.id, { status: "cancelled" })
+      try {
+        const key = (record: Partial<MealRecord>) => `${record.meal_type}:${record.dish_id}`
+        const existingKeys = new Set(oldRecords.map(key))
+        const desiredKeys = new Set(records.map(key))
+        const additions = records.filter(record => !existingKeys.has(key(record)))
+        // 保留没换的菜及其份量、买菜状态；新增成功后再取消移走的菜。
+        if (additions.length > 0) {
+          const result = await recordsApi.batchCreate(additions)
+          if (result.failed > 0) throw new Error(`${result.failed} 道菜保存失败，请重试`)
+        }
+        for (const record of oldRecords.filter(record => !desiredKeys.has(key(record)))) {
+          await recordsApi.update(record.id, { status: "cancelled" })
+        }
+        return await recordsApi.list({ date_from: date, date_to: date, pageSize: "100" })
+      } catch {
+        throw new PartialPlanSaveError("部分改动可能已保存，请重试")
       }
-      return recordsApi.list({ date_from: tomorrowStr, date_to: tomorrowStr, pageSize: "100" })
     },
     onSuccess: (res, variables) => {
-      setOriginalRecords(res.items.filter(r => r.status !== "cancelled"))
+      const records = res.items.filter(r => r.status !== "cancelled")
+      setOriginalRecords(records)
+      // Keep even an empty snapshot, so clearing a menu does not regenerate it on return.
+      writeTomorrowDraft(variables.date, tomorrowPlanBaseline(records), variables.draft)
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       qc.invalidateQueries({ queryKey: ["shopping-list"] })
@@ -771,11 +812,35 @@ export default function Tomorrow() {
       launchConfetti(confettiRef.current)
       toast.success(variables.wasSaved ? "明天菜单已更新" : "明天菜单已保存")
     },
-    onError: async () => {
+    onError: async (error, variables) => {
+      if (error instanceof PlanChangedError) {
+        const nextLunch = mealRecords(error.records, "lunch").map(recordToDish)
+        const nextDinner = mealRecords(error.records, "dinner").map(recordToDish)
+        const nextTargets = {
+          lunch: Math.min(maxPerMeal, Math.max(nextLunch.length, defaultTargets.lunch)),
+          dinner: Math.min(maxPerMeal, Math.max(nextDinner.length, defaultTargets.dinner)),
+        }
+        setOriginalRecords(error.records)
+        setLunch(nextLunch)
+        setDinner(nextDinner)
+        setTargets(nextTargets)
+        writeTomorrowDraft(variables.date, tomorrowPlanBaseline(error.records), {
+          lunch: nextLunch, dinner: nextDinner, targets: nextTargets, profile: variables.draft.profile,
+        })
+        qc.invalidateQueries({ queryKey: ["records"] })
+        toast.error(error.message, { duration: 5000 })
+        return
+      }
+      if (!(error instanceof PartialPlanSaveError)) {
+        toast.error("无法读取最新菜单，请检查网络后重试")
+        return
+      }
       // 部分请求失败时重新读取实际保存结果，草稿保留以便重试。
       try {
-        const res = await recordsApi.list({ date_from: tomorrowStr, date_to: tomorrowStr, pageSize: "100" })
-        setOriginalRecords(res.items.filter(r => r.status !== "cancelled"))
+        const res = await recordsApi.list({ date_from: variables.date, date_to: variables.date, pageSize: "100" })
+        const records = res.items.filter(r => r.status !== "cancelled")
+        setOriginalRecords(records)
+        writeTomorrowDraft(variables.date, tomorrowPlanBaseline(records), variables.draft)
       } catch { /* 网络恢复后仍可重试保存 */ }
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["shopping-list"] })
@@ -783,6 +848,11 @@ export default function Tomorrow() {
     },
   })
   const disabled = loading || picking || savePlanMut.isPending
+
+  useEffect(() => {
+    if (initializedFor !== tomorrowStr || savePlanMut.isPending || tomorrowStr !== getTomorrow().str) return
+    writeTomorrowDraft(tomorrowStr, tomorrowPlanBaseline(originalRecords), { lunch, dinner, targets, profile })
+  }, [initializedFor, tomorrowStr, savePlanMut.isPending, originalRecords, lunch, dinner, targets, profile])
 
   function getMeal(meal: MealType) {
     return meal === "lunch" ? lunch : dinner
@@ -928,6 +998,11 @@ export default function Tomorrow() {
   }
 
   function savePlan() {
+    if (tomorrowStr !== getTomorrow().str) {
+      setInitializedFor(null)
+      toast("日期已变化，正在重新读取明日菜单")
+      return
+    }
     if (recordsToSave.length === 0 && !hasSavedPlan) {
       toast.error("至少选一道菜")
       return
@@ -936,7 +1011,10 @@ export default function Tomorrow() {
       toast("菜单没有变化")
       return
     }
-    savePlanMut.mutate({ oldRecords: originalRecords, records: recordsToSave, wasSaved: hasSavedPlan })
+    savePlanMut.mutate({
+      date: tomorrowStr, draft: { lunch, dinner, targets, profile },
+      oldRecords: originalRecords, records: recordsToSave, wasSaved: hasSavedPlan,
+    })
   }
 
   return (
@@ -968,7 +1046,7 @@ export default function Tomorrow() {
               lunch={lunchView}
               dinner={dinnerView}
               onGenerateAll={() => generateAll()}
-              onOpenShopping={() => navigate("/more")}
+              onOpenShopping={() => navigate("/more#shopping")}
               disabled={disabled}
             />
 

@@ -76,6 +76,7 @@ export default function MainLayout() {
   }, [activeIdx, mountTabs])
 
   const touchRef = useRef<{
+    identifier: number
     startX: number
     startY: number
     startEdge: "left" | "right"
@@ -103,9 +104,28 @@ export default function MainLayout() {
   }, { dependencies: [activeIdx], scope: stripRef })
 
   useEffect(() => {
+    function cancelSwipe() {
+      touchRef.current = null
+      const hadOffset = offsetXRef.current !== 0
+      offsetXRef.current = 0
+      if (!hadOffset || !stripRef.current) return
+      animatingRef.current = true
+      gsap.to(stripRef.current, {
+        x: 0,
+        duration: motionDuration(0.18),
+        ease: "power2.out",
+        onComplete: () => { animatingRef.current = false },
+      })
+    }
+
     function onTouchStart(e: TouchEvent) {
+      cancelSwipe()
       const s = stateRef.current
-      if (animatingRef.current) return
+      if (animatingRef.current || e.touches.length !== 1 || e.defaultPrevented) return
+      const target = e.target
+      // Portal 弹层不在页面条带里；输入、按钮等控件保留自己的触摸操作。
+      if (!(target instanceof Element) || !stripRef.current?.contains(target)) return
+      if (target.closest("input, textarea, select, button, a, label, [role='button'], [contenteditable]:not([contenteditable='false']), [role='dialog'], [aria-modal='true'], [data-no-swipe]")) return
       const t = e.touches[0]
       const x = t.clientX
       const vw = window.innerWidth
@@ -118,6 +138,7 @@ export default function MainLayout() {
       // 开始边缘滑动：先把要露出来的相邻页挂上
       s.mountTabs([startEdge === "left" ? s.activeIdx - 1 : s.activeIdx + 1])
       touchRef.current = {
+        identifier: t.identifier,
         startX: x,
         startY: t.clientY,
         startEdge,
@@ -128,14 +149,11 @@ export default function MainLayout() {
 
     function onTouchMove(e: TouchEvent) {
       const ref = touchRef.current
-      if (!ref) {
-        const t = e.touches[0]
-        const x = t.clientX
-        const vw = window.innerWidth
-        if (x < EDGE_ZONE || x > vw - EDGE_ZONE) e.preventDefault()
+      if (!ref) return
+      if (e.touches.length !== 1 || e.touches[0].identifier !== ref.identifier || e.defaultPrevented) {
+        cancelSwipe()
         return
       }
-      e.preventDefault()
 
       const dx = e.touches[0].clientX - ref.startX
       const dy = e.touches[0].clientY - ref.startY
@@ -147,41 +165,33 @@ export default function MainLayout() {
       }
 
       if (!ref.isHorizontal) {
-        touchRef.current = null
-        offsetXRef.current = 0
-        gsap.to(stripRef.current, { x: 0, duration: motionDuration(0.18), ease: "power2.out" })
+        cancelSwipe()
         return
       }
 
-      let clampedDx = dx
-      if (ref.startEdge === "left") {
-        if (dx < 0) {
-          touchRef.current = null
-          offsetXRef.current = 0
-          gsap.to(stripRef.current, { x: 0, duration: motionDuration(0.18), ease: "power2.out" })
-          return
-        }
-      } else {
-        if (dx > 0) {
-          touchRef.current = null
-          offsetXRef.current = 0
-          gsap.to(stripRef.current, { x: 0, duration: motionDuration(0.18), ease: "power2.out" })
-          return
-        }
+      if ((ref.startEdge === "left" && dx < 0) || (ref.startEdge === "right" && dx > 0) || !e.cancelable) {
+        cancelSwipe()
+        return
       }
 
+      // 方向确定且确实可切换相邻 tab 后，才接管横向手势。
+      e.preventDefault()
       const vw = window.innerWidth
       const maxDx = vw * 0.35
-      clampedDx = Math.max(-maxDx, Math.min(maxDx, clampedDx))
+      const clampedDx = Math.max(-maxDx, Math.min(maxDx, dx))
 
       const rubber = clampedDx * (1 - Math.abs(clampedDx) / (vw * 1.2))
       offsetXRef.current = rubber
       gsap.set(stripRef.current, { x: rubber, force3D: true })
     }
 
-    function onTouchEnd() {
+    function onTouchEnd(e: TouchEvent) {
       const ref = touchRef.current
       if (!ref) return
+      if (e.touches.length > 0 || !ref.isHorizontal) {
+        cancelSwipe()
+        return
+      }
       const s = stateRef.current
       const dx = offsetXRef.current
       if (ref.startEdge === "left" && dx > SWIPE_MIN && s.activeIdx > 0) {
@@ -213,10 +223,12 @@ export default function MainLayout() {
     document.addEventListener("touchstart", onTouchStart, { passive: true })
     document.addEventListener("touchmove", onTouchMove, { passive: false })
     document.addEventListener("touchend", onTouchEnd, { passive: true })
+    document.addEventListener("touchcancel", cancelSwipe, { passive: true })
     return () => {
       document.removeEventListener("touchstart", onTouchStart)
       document.removeEventListener("touchmove", onTouchMove)
       document.removeEventListener("touchend", onTouchEnd)
+      document.removeEventListener("touchcancel", cancelSwipe)
     }
   }, [navigate])
 
@@ -231,7 +243,7 @@ export default function MainLayout() {
           }}
         >
           {tabs.map((tab, i) => (
-            <div key={tab.path} className="h-full overflow-y-auto overscroll-y-contain pb-[calc(60px+env(safe-area-inset-bottom))]" style={{ width: `${STEP_PCT}%`, flexShrink: 0 }}>
+            <div key={tab.path} data-tab-scroll={tab.path} className="h-full overflow-y-auto overscroll-y-contain pb-[calc(60px+env(safe-area-inset-bottom))]" style={{ width: `${STEP_PCT}%`, flexShrink: 0 }}>
               {mountedTabs.has(i) ? (
                 <Suspense fallback={<TabLoading />}>
                   <tab.Component />
