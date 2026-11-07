@@ -55,10 +55,13 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 			return fmt.Errorf("写入买菜清单失败: %w", err)
 		}
 	}
-	return nil
+	return services.AdoptShoppingExtras(db, dishID, mealDate)
 }
 
 func removeShoppingItems(db *gorm.DB, dishID uint, mealType string, mealDate string) error {
+	if err := services.AdoptShoppingExtras(db, dishID, mealDate); err != nil {
+		return err
+	}
 	return db.Unscoped().Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
 		Delete(&models.ShoppingCheck{}).Error
 }
@@ -263,6 +266,9 @@ func syncRecordShopping(tx *gorm.DB, before, after models.MealRecord) error {
 	if before.Status == after.Status && before.PortionScale == after.PortionScale && before.MealDate == after.MealDate && before.MealType == after.MealType {
 		return nil
 	}
+	if err := services.AdoptShoppingExtras(tx, before.DishID, before.MealDate); err != nil {
+		return err
+	}
 	var items []models.ShoppingCheck
 	if err := tx.Unscoped().Where("dish_id = ? AND meal_type = ? AND meal_date = ?", before.DishID, before.MealType, before.MealDate).Find(&items).Error; err != nil {
 		return err
@@ -282,6 +288,13 @@ func syncRecordShopping(tx *gorm.DB, before, after models.MealRecord) error {
 	for _, item := range items {
 		updates := map[string]any{"meal_date": after.MealDate, "meal_type": after.MealType, "deleted_at": deletedAt}
 		if before.PortionScale != after.PortionScale {
+			// 旧记录没有数量快照时，必须在改需求量之前保留当时已买/已入库的数量。
+			if item.Checked && item.PurchasedAmount == nil {
+				updates["purchased_amount"] = item.ItemAmount
+			}
+			if item.Stocked && item.StockedAmount == nil {
+				updates["stocked_amount"] = item.ItemAmount
+			}
 			base := item.BaseAmount
 			if base == "" {
 				base = services.ScaleIngredientAmount(item.ItemAmount, 1/oldScale)
@@ -293,7 +306,7 @@ func syncRecordShopping(tx *gorm.DB, before, after models.MealRecord) error {
 			return err
 		}
 	}
-	return nil
+	return services.AdoptShoppingExtras(tx, after.DishID, after.MealDate)
 }
 
 func createOrCompleteRecord(req CreateRecordRequest) (models.MealRecord, error) {
@@ -665,9 +678,9 @@ func GetDayRatings(c *gin.Context) {
 
 type CreateDayRatingRequest struct {
 	MealDate string `json:"meal_date" binding:"required"`
-	Mood     string `json:"mood"`
-	Remark   string `json:"remark"`
-	Photos   string `json:"photos"`
+	Mood     *string `json:"mood"`
+	Remark   *string `json:"remark"`
+	Photos   *string `json:"photos"`
 }
 
 type UpdateHomeMoodRequest struct {
@@ -682,27 +695,10 @@ func CreateOrUpdateHomeMood(c *gin.Context) {
 		return
 	}
 
-	var rating models.DayRating
-	result := database.DB.Where("meal_date = ?", req.MealDate).First(&rating)
-	if result.Error != nil {
-		rating = models.DayRating{
-			MealDate: req.MealDate,
-			HomeMood: req.HomeMood,
-			Photos:   "[]",
-		}
-		if err := database.DB.Create(&rating).Error; err != nil {
-			utils.InternalError(c, "保存心情失败")
-			return
-		}
-	} else {
-		rating.HomeMood = req.HomeMood
-		if rating.Photos == "" {
-			rating.Photos = "[]"
-		}
-		if err := database.DB.Save(&rating).Error; err != nil {
-			utils.InternalError(c, "保存心情失败")
-			return
-		}
+	rating := models.DayRating{MealDate: req.MealDate, HomeMood: req.HomeMood, Photos: "[]"}
+	if err := saveDayRatingFields(&rating, []string{"home_mood"}); err != nil {
+		utils.InternalError(c, "保存心情失败")
+		return
 	}
 
 	services.QueueAutoAchievementSync()
@@ -716,34 +712,25 @@ func CreateOrUpdateDayRating(c *gin.Context) {
 		return
 	}
 
-	photos := req.Photos
-	if photos == "" {
-		photos = "[]"
+	rating := models.DayRating{MealDate: req.MealDate, Photos: "[]"}
+	fields := make([]string, 0, 3)
+	if req.Mood != nil {
+		rating.Mood = *req.Mood
+		fields = append(fields, "mood")
 	}
-
-	var rating models.DayRating
-	result := database.DB.Where("meal_date = ?", req.MealDate).First(&rating)
-	if result.Error != nil {
-		rating = models.DayRating{
-			MealDate: req.MealDate,
-			Mood:     req.Mood,
-			Remark:   req.Remark,
-			Photos:   photos,
+	if req.Remark != nil {
+		rating.Remark = *req.Remark
+		fields = append(fields, "remark")
+	}
+	if req.Photos != nil {
+		if *req.Photos != "" {
+			rating.Photos = *req.Photos
 		}
-		if err := database.DB.Create(&rating).Error; err != nil {
-			utils.InternalError(c, "保存评价失败")
-			return
-		}
-	} else {
-		if req.Mood != "" {
-			rating.Mood = req.Mood
-		}
-		rating.Remark = req.Remark
-		rating.Photos = photos
-		if err := database.DB.Save(&rating).Error; err != nil {
-			utils.InternalError(c, "保存评价失败")
-			return
-		}
+		fields = append(fields, "photos")
+	}
+	if err := saveDayRatingFields(&rating, fields); err != nil {
+		utils.InternalError(c, "保存评价失败")
+		return
 	}
 
 	services.QueueAutoAchievementSync()

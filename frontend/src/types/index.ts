@@ -154,6 +154,10 @@ export interface ShoppingItem {
   stock_batches: number // 冰箱里未过期的批次数；取消"家中有"会一并移出
   removable: boolean // 只来自补料，可以直接删掉
   stocked: boolean // 已买且已经放进冰箱
+  pending_amount?: string // 需求总量扣除已买部分；空字符串表示没有待买量
+  stock_in_amount?: string // 已买但尚未入库的数量
+  needs_buy?: boolean // 已有旧采购/库存不能掩盖后来增加的需求
+  pending_review?: boolean // 文字量或单位不同，需核对实际缺量
 }
 
 export interface ShoppingCategoryOverride {

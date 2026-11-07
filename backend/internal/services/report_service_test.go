@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"ninimenu/internal/database"
 	"ninimenu/internal/dishes"
 	"ninimenu/internal/models"
 	"slices"
@@ -108,8 +109,8 @@ func TestBuildDietReport(t *testing.T) {
 	if report.CookDays != 2 {
 		t.Fatalf("CookDays = %d, want 2", report.CookDays)
 	}
-	if report.TotalMeals != 4 || report.LunchCount != 2 || report.DinnerCount != 2 {
-		t.Fatalf("meals = %d/%d/%d, want 4/2/2", report.TotalMeals, report.LunchCount, report.DinnerCount)
+	if report.TotalMeals != 3 || report.LunchCount != 2 || report.DinnerCount != 1 {
+		t.Fatalf("meals = %d/%d/%d, want 3/2/1 (同日晚饭两道菜算一顿)", report.TotalMeals, report.LunchCount, report.DinnerCount)
 	}
 	if report.PrevCookDays != 4 {
 		t.Fatalf("PrevCookDays = %d, want 4", report.PrevCookDays)
@@ -137,6 +138,56 @@ func TestBuildDietReport(t *testing.T) {
 	}
 	if report.MoodShares[0].Name != "yum" || report.MoodShares[0].Count != 2 {
 		t.Fatalf("MoodShares[0] = %+v, want yum x2", report.MoodShares[0])
+	}
+}
+
+func TestGetDietReportCountsMealSlotsAndKeepsDishHistory(t *testing.T) {
+	setupTestDB(t, &models.Dish{}, &models.MealRecord{}, &models.DayRating{}, &models.ShoppingItemCategory{})
+	db := database.DB
+	dish := models.Dish{ID: 1, Name: "番茄炒蛋", Taste: "酸甜", Category: "家常菜", Ingredients: `[{"name":"番茄","amount":"2个"}]`}
+	if err := db.Create(&dish).Error; err != nil {
+		t.Fatal(err)
+	}
+	today := TodayDate()
+	for _, record := range []models.MealRecord{
+		{DishID: 1, DishName: dish.Name, MealDate: today, MealType: "lunch", Status: models.MealCompleted, Rating: 5},
+		// 已删除菜谱仍保留吃过的事实，同餐多道菜也不会多算一顿。
+		{DishID: 2, DishName: "已删除的午餐菜", MealDate: today, MealType: "lunch", Status: models.MealCompleted, Rating: 3},
+		{DishID: 3, DishName: "已删除的晚餐菜", MealDate: today, MealType: "dinner", Status: models.MealCompleted},
+		{DishID: 4, DishName: "未完成计划", MealDate: today, MealType: "lunch", Status: models.MealPlanned},
+		{DishID: 5, DishName: "已取消计划", MealDate: today, MealType: "dinner", Status: models.MealCancelled},
+		{DishID: 1, DishName: dish.Name, MealDate: time.Now().AddDate(0, 0, 1).Format("2006-01-02"), MealType: "lunch", Status: models.MealCompleted},
+	} {
+		if err := db.Create(&record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, period := range []string{"week", "month"} {
+		report := GetDietReport(period)
+		if report.TotalMeals != 2 || report.LunchCount != 1 || report.DinnerCount != 1 || report.CookDays != 1 {
+			t.Fatalf("%s: 应统计今日已吃的午餐和晚餐各一顿: %+v", period, report)
+		}
+		if report.DistinctDishes != 3 || len(report.TopDishes) != 3 || report.AvgRating != 4 {
+			t.Fatalf("%s: 餐次去重不能改变菜品次数和评价统计: %+v", period, report)
+		}
+		if report.TopDishes[1].DishName != "已删除的午餐菜" || report.TopDishes[2].DishName != "已删除的晚餐菜" {
+			t.Fatalf("%s: 已删菜谱应继续使用记录里的菜名: %+v", period, report.TopDishes)
+		}
+		// 无菜谱的记录无法判断荤素，继续沿用原来的“可识别菜谱”口径。
+		if report.Balance.Meals != 1 || report.Balance.MealsWithVeg != 1 {
+			t.Fatalf("%s: 荤素分析不应猜测已删菜谱的食材: %+v", period, report.Balance)
+		}
+	}
+}
+
+func TestBuildDietReportEmptyMeals(t *testing.T) {
+	today := time.Date(2026, 11, 7, 0, 0, 0, 0, time.Local)
+	report := buildDietReport("week", today, today, nil, nil, nil, 0, nil)
+	if report.TotalMeals != 0 || report.LunchCount != 0 || report.DinnerCount != 0 || report.CookDays != 0 {
+		t.Fatalf("空周期应显示零餐次: %+v", report)
+	}
+	if report.TopDishes == nil || report.TasteShares == nil || report.CategoryShares == nil {
+		t.Fatalf("空报告仍应返回数组，供页面和分享图直接使用: %+v", report)
 	}
 }
 

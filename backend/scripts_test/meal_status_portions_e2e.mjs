@@ -43,6 +43,8 @@ try {
   const payload = { dish_id: dish.id, dish_name: dish.name, meal_type: "lunch", meal_date: day() }
   const beforeStats = await get("/stats")
   const beforeReport = await get("/report?range=week")
+  const beforeLunch = await get(`/records?status=completed&meal_type=lunch&date_from=${day()}&date_to=${day()}&pageSize=1`)
+  const expectedMealsAfterCompletion = beforeReport.total_meals + (beforeLunch.total > 0 ? 0 : 1)
   const beforeDashboard = await get("/admin/dashboard", AH)
 
   const plan = await remember({ ...payload, portion_scale: 2 })
@@ -62,10 +64,13 @@ try {
   let r = await req("PUT", "/records/" + id, { portion_scale: 2.5 })
   check("可修改计划份量", r.code === 0 && r.data.portion_scale === 2.5, r)
   items = await shopping()
-  check("改份量更新用量并保留已买状态", items.find(i => i.name === numericItem)?.amount === "500克" && items.find(i => i.name === numericItem)?.checked, items)
+  check("增加份量保留旧采购400克且新增100克待买", items.find(i => i.name === numericItem)?.amount === "500克" && !items.find(i => i.name === numericItem)?.checked && items.find(i => i.name === numericItem)?.pending_amount === "100克" && items.find(i => i.name === numericItem)?.stock_in_amount === "400克", items)
   await req("POST", "/shopping-list/stock-in", { items: [{ item_name: numericItem, quantity: "1000克" }] })
   const batch = (await get("/fridge")).find(b => b.item_name === numericItem)
   if (batch) batches.push(batch.id)
+  check("旧页面入库总量不能超过尚未入库的400克采购", batch?.quantity === "400克", batch)
+  // 后续验证扣减建议：单独补录家中实际库存到1000克，不用入库接口伪造采购量。
+  if (batch) await req("PUT", `/fridge/batch/${batch.id}`, { quantity: "1000克", expiry_date: batch.expiry_date })
   await req("PUT", "/records/" + id, { portion_scale: 2 })
   items = await shopping()
   check("再次改份量仍保留入库标记", items.find(i => i.name === numericItem)?.stocked && items.find(i => i.name === numericItem)?.amount === "400克", items)
@@ -83,7 +88,7 @@ try {
   r = await remember({ ...payload, status: "completed" })
   check("做完原计划沿用同一记录和份量", r.code === 0 && r.data.id === id && r.data.status === "completed" && r.data.portion_scale === 2, r)
   check("完成后统计恰好增加一次", (await get("/stats")).total_records === beforeStats.total_records + 1)
-  check("完成后饮食报告增加一次", (await get("/report?range=week")).total_meals === beforeReport.total_meals + 1)
+  check("完成后按日期和餐次统计，同餐多菜不重复计顿", (await get("/report?range=week")).total_meals === expectedMealsAfterCompletion)
   r = await remember({ ...payload, status: "completed" })
   check("重复完成不会创建第二条记录", r.httpStatus === 400 && (await get("/stats")).total_records === beforeStats.total_records + 1, r)
   r = await req("PUT", "/records/" + id, { status: "completed" })

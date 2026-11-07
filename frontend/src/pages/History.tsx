@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { recordsApi, statsApi, dayRatingApi, dishesApi, uploadApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
@@ -40,6 +40,20 @@ const homeMoodLabelMap: Record<string, string> = { happy: "开心", tired: "疲�
 const todayStr = () => `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-${String(new Date().getDate()).padStart(2,"0")}`
 
 const statusLabels = { planned: "计划", completed: "已吃", cancelled: "已取消" }
+
+// 每次打开评价都是独立会话；关闭或切换后，旧上传/保存不能改动新的草稿。
+type RatingSession = { target: string; photos: string[]; uploading: boolean; saving: boolean }
+
+// 记录查询既有普通分页，也有日历数组和无限分页；只替换已在缓存中的该条记录。
+function mergeSavedRecord(value: unknown, saved: MealRecord): unknown {
+  if (Array.isArray(value)) return value.map((record: MealRecord) => record.id === saved.id ? { ...record, ...saved } : record)
+  if (!value || typeof value !== "object") return value
+  const data = value as { items?: MealRecord[]; records?: MealRecord[]; pages?: unknown[] }
+  if (Array.isArray(data.items)) return { ...data, items: mergeSavedRecord(data.items, saved) }
+  if (Array.isArray(data.records)) return { ...data, records: mergeSavedRecord(data.records, saved) }
+  if (Array.isArray(data.pages)) return { ...data, pages: data.pages.map((page) => mergeSavedRecord(page, saved)) }
+  return value
+}
 
 function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRating, onReschedule, onInventory, onUndo }: {
   record: MealRecord
@@ -192,6 +206,7 @@ function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
 
 export default function History() {
   const navigate = useNavigate()
+  const location = useLocation()
   const qc = useQueryClient()
   const isAdminLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const [calYear, setCalYear] = useState(new Date().getFullYear())
@@ -207,14 +222,33 @@ export default function History() {
   const [ratingStars, setRatingStars] = useState(0)
   const [ratingRemark, setRatingRemark] = useState("")
   const [ratingPhoto, setRatingPhoto] = useState("")
+  const ratingSession = useRef<RatingSession | null>(null)
+  const [ratingUploading, setRatingUploading] = useState(false)
+  const [ratingSaving, setRatingSaving] = useState(false)
   const [showMealRating, setShowMealRating] = useState(false)
+  const [mealRatingDate, setMealRatingDate] = useState("")
   const [mealRatingMood, setMealRatingMood] = useState<string>("")
   const [mealRatingRemark, setMealRatingRemark] = useState("")
   const [mealPhotos, setMealPhotos] = useState<string[]>([])
+  const mealSession = useRef<RatingSession | null>(null)
+  const [mealUploadRemaining, setMealUploadRemaining] = useState(0)
+  const [mealSaving, setMealSaving] = useState(false)
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
   const [viewerIdx, setViewerIdx] = useState(0)
   const [showViewer, setShowViewer] = useState(false)
   const [consumption, setConsumption] = useState<{ dish: Dish; portionScale: number; recordId: number } | null>(null)
+
+  // 主标签页会保留挂载；离开记录页时也要结束草稿，而不仅在组件卸载时清理。
+  useEffect(() => () => {
+    ratingSession.current = null
+    mealSession.current = null
+    setRatingRecord(null)
+    setShowMealRating(false)
+    setRatingUploading(false)
+    setMealUploadRemaining(0)
+    setRatingSaving(false)
+    setMealSaving(false)
+  }, [location.pathname])
 
   function refreshMealQueries() {
     return Promise.all([
@@ -222,6 +256,36 @@ export default function History() {
       ["dish-records"], ["shopping-list"], ["photo-wall"], ["admin", "records"], ["admin", "dashboard"],
       ["fridge"], ["fridge-recipes"], ["fridge-urgent"], ["fridge-consumption"], ["record-consumption"],
     ].map((queryKey) => qc.invalidateQueries({ queryKey })))
+  }
+
+  // 写入状态存于 QueryClient，关闭弹窗甚至卸载页面都不会提前释放同一目标的锁。
+  function ratingWritePending(kind: "record" | "day", target: string): boolean {
+    return qc.getMutationCache().findAll({ mutationKey: ["history-rating", kind], status: "pending" }).some((mutation) => {
+      const variables = mutation.state.variables as { session?: RatingSession; meal_date?: string } | undefined
+      return (variables?.session?.target ?? variables?.meal_date) === target
+    })
+  }
+
+  async function syncSavedRecord(saved: MealRecord) {
+    await Promise.all(["records", "record", "dish-records"].map((key) => qc.cancelQueries({ queryKey: [key] })))
+    qc.setQueryData<MealRecord>(["record", saved.id], (old) => ({ ...old, ...saved }))
+    for (const key of ["records", "dish-records"]) {
+      qc.setQueriesData({ queryKey: [key] }, (old: unknown) => mergeSavedRecord(old, saved))
+    }
+  }
+
+  async function syncSavedDayRating(saved: DayRating, photosOnly = false) {
+    await Promise.all([
+      qc.cancelQueries({ queryKey: ["day-rating", saved.meal_date], exact: true }),
+      qc.cancelQueries({ queryKey: ["day-ratings"] }),
+    ])
+    // 保留其他功能刚更新的字段（如首页心情），只同步本次请求拥有的字段。
+    const merge = (old?: DayRating): DayRating => ({
+      ...saved, ...old, photos: saved.photos,
+      ...(!photosOnly ? { mood: saved.mood, remark: saved.remark } : {}),
+    })
+    qc.setQueryData<DayRating>(["day-rating", saved.meal_date], merge)
+    qc.setQueriesData<DayRating[]>({ queryKey: ["day-ratings"] }, (old) => old?.map((rating) => rating.meal_date === saved.meal_date ? merge(rating) : rating))
   }
 
   const statusMut = useMutation({
@@ -323,41 +387,57 @@ export default function History() {
   }
 
   const updateMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<MealRecord> }) => recordsApi.update(id, data),
-    onSuccess: () => {
+    mutationKey: ["history-rating", "record"],
+    scope: { id: "history-record-rating" },
+    mutationFn: ({ id, data }: { id: number; data: Partial<MealRecord>; session: RatingSession }) => recordsApi.update(id, data),
+    onSuccess: async (saved, { session }) => {
+      await syncSavedRecord(saved)
       void refreshMealQueries()
+      if (ratingSession.current !== session) return
       toast.success("评价已保存")
-      setRatingRecord(null)
+      closeRating()
     },
-    onError: () => {
-      toast.error("评价失败")
+    onError: (_err, { session }) => {
+      if (ratingSession.current === session) toast.error("评价失败，请重试")
+    },
+    onSettled: (_data, _err, { session }) => {
+      session.saving = false
+      if (ratingSession.current === session) setRatingSaving(false)
     },
   })
 
   const dayRatingMut = useMutation({
-    mutationFn: (data: { meal_date: string; mood: string; remark?: string; photos?: string }) =>
+    mutationKey: ["history-rating", "day"],
+    scope: { id: "history-day-rating" },
+    mutationFn: ({ data }: { data: { meal_date: string; mood: string; remark: string; photos: string }; session: RatingSession }) =>
       dayRatingApi.create(data),
-    onSuccess: () => {
+    onSuccess: async (saved, { session }) => {
+      await syncSavedDayRating(saved)
       qc.invalidateQueries({ queryKey: ["day-rating"] })
       qc.invalidateQueries({ queryKey: ["day-ratings"] })
       qc.invalidateQueries({ queryKey: ["photo-wall"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      if (mealSession.current !== session) return
       toast.success("今日评价已保存")
-      setShowMealRating(false)
-      setMealPhotos([])
+      closeMealRating()
     },
-    onError: () => {
-      toast.error("评价保存失败")
+    onError: (_err, { session }) => {
+      if (mealSession.current === session) toast.error("评价保存失败，请重试")
+    },
+    onSettled: (_data, _err, { session }) => {
+      session.saving = false
+      if (mealSession.current === session) setMealSaving(false)
     },
   })
 
   const updateDayPhotosMut = useMutation({
+    mutationKey: ["history-rating", "day"],
     mutationFn: (data: { meal_date: string; photos: string }) =>
       dayRatingApi.create(data),
     onMutate: async (data) => {
       const key = ["day-rating", data.meal_date]
       await qc.cancelQueries({ queryKey: key })
-      const prev = qc.getQueryData(key)
+      const prev = qc.getQueryData<DayRating>(key)
       qc.setQueryData(key, (old: unknown) => {
         if (!old || typeof old !== "object" || old === null) return old
         const r = old as DayRating
@@ -365,17 +445,22 @@ export default function History() {
       })
       return { prev, key }
     },
-    onSuccess: (_, data) => {
+    onSuccess: async (saved, data) => {
+      await syncSavedDayRating(saved, true)
       qc.invalidateQueries({ queryKey: ["day-rating", data.meal_date] })
       qc.invalidateQueries({ queryKey: ["day-ratings"] })
       qc.invalidateQueries({ queryKey: ["photo-wall"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       toast.success("照片已删除")
     },
-    onError: (_err, _data, context) => {
-      if (context?.prev) qc.setQueryData(context.key, context.prev)
+    onError: (_err, data, context) => {
+      if (context?.prev) qc.setQueryData<DayRating>(context.key, (current) =>
+        current?.photos === data.photos ? { ...current, photos: context.prev!.photos } : current,
+      )
       toast.error("照片删除失败")
     },
+    // 失败也重新核对服务端（包括已保存但响应丢失），核对完才释放同日写锁。
+    onSettled: (_saved, _err, data) => qc.invalidateQueries({ queryKey: ["day-rating", data.meal_date], exact: true }),
   })
 
   const { data: stats } = useQuery({ queryKey: ["stats"], queryFn: () => statsApi.get() })
@@ -407,7 +492,7 @@ export default function History() {
   const monthStartKey = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`
   const monthEndKey = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(new Date(calYear, calMonth + 1, 0).getDate()).padStart(2, "0")}`
 
-  const { data: dayRatingData } = useQuery({
+  const { data: dayRatingData, isPending: dayRatingLoading, isError: dayRatingError, refetch: reloadDayRating } = useQuery({
     queryKey: ["day-rating", selectedDateKey],
     queryFn: () => dayRatingApi.get(selectedDateKey),
     enabled: !!selectedDateKey,
@@ -450,6 +535,15 @@ export default function History() {
 
   function openRating(r: MealRecord) {
     if (r.status !== "completed") return
+    if (ratingWritePending("record", String(r.id))) {
+      toast("这条评价正在保存，请稍后再打开")
+      return
+    }
+    // 即使缓存通知尚未触发列表重绘，也以刚保存的实际响应初始化。
+    r = qc.getQueryData<MealRecord>(["record", r.id]) || r
+    ratingSession.current = { target: String(r.id), photos: r.photo ? [r.photo] : [], uploading: false, saving: false }
+    setRatingUploading(false)
+    setRatingSaving(false)
     setRatingRecord(r)
     setRatingMood(r.mood || "")
     setRatingStars(r.rating || 0)
@@ -457,15 +551,28 @@ export default function History() {
     setRatingPhoto(r.photo || "")
   }
 
+  function closeRating() {
+    ratingSession.current = null
+    setRatingRecord(null)
+    setRatingUploading(false)
+    setRatingSaving(false)
+  }
+
   function submitRating() {
-    if (!ratingRecord) return
+    const session = ratingSession.current
+    if (!ratingRecord || !ratingMood || !session || session.target !== String(ratingRecord.id) || session.uploading || session.saving || ratingWritePending("record", session.target)) return
+    session.saving = true
+    setRatingSaving(true)
     updateMut.mutate({
       id: ratingRecord.id,
-      data: { mood: ratingMood, rating: ratingStars, remark: ratingRemark, photo: ratingPhoto },
+      session,
+      data: { mood: ratingMood, rating: ratingStars, remark: ratingRemark, photo: session.photos[0] || "" },
     })
   }
 
-  async function handleRatingPhotoUpload() {
+  function handleRatingPhotoUpload() {
+    const session = ratingSession.current
+    if (!session || session.uploading || session.saving) return
     if (!isAdminLoggedIn) {
       toast.error("上传照片需要先进入管理模式")
       navigate("/admin/login")
@@ -476,23 +583,39 @@ export default function History() {
     input.accept = "image/jpg,image/jpeg,image/png,image/webp"
     input.onchange = async () => {
       const file = input.files?.[0]
-      if (!file) return
+      if (!file || ratingSession.current !== session || session.uploading || session.saving) return
+      session.uploading = true
+      setRatingUploading(true)
       try {
         const res = await uploadApi.image(file)
+        if (ratingSession.current !== session) return
         const url = res.data.data.url
-        if (url) setRatingPhoto(url)
+        if (url) {
+          session.photos = [url]
+          setRatingPhoto(url)
+        }
         else toast.error("上传返回异常")
       } catch (err) {
-        toast.error(getUploadErrorMessage(err))
+        if (ratingSession.current === session) toast.error(getUploadErrorMessage(err))
+      } finally {
+        session.uploading = false
+        if (ratingSession.current === session) setRatingUploading(false)
       }
     }
     input.click()
   }
 
+  function removeRatingPhoto() {
+    const session = ratingSession.current
+    if (!session || session.uploading || session.saving) return
+    session.photos = []
+    setRatingPhoto("")
+  }
+
   function parsePhotos(photosStr: string): string[] {
     try {
       const arr = JSON.parse(photosStr)
-      return Array.isArray(arr) ? arr : []
+      return Array.isArray(arr) ? arr.filter((photo): photo is string => typeof photo === "string" && photo !== "") : []
     } catch {
       return []
     }
@@ -500,23 +623,58 @@ export default function History() {
 
   function openMealRating() {
     if (!canRateSelectedDay) return
-    setMealRatingMood(dayRating?.mood || "")
-    setMealRatingRemark(dayRating?.remark || "")
-    setMealPhotos(dayRating?.photos ? parsePhotos(dayRating.photos) : [])
+    if (ratingWritePending("day", selectedDateKey)) {
+      toast("这天的评价或照片正在保存，请稍后再打开")
+      return
+    }
+    if (dayRatingLoading) {
+      toast("正在读取最新评价，请稍后再试")
+      return
+    }
+    if (dayRatingError) {
+      toast.error("评价读取失败，正在重新读取，请稍后再试")
+      void reloadDayRating()
+      return
+    }
+    const current = qc.getQueryData<DayRating>(["day-rating", selectedDateKey]) || dayRating
+    const photos = current?.photos ? parsePhotos(current.photos) : []
+    mealSession.current = { target: selectedDateKey, photos, uploading: false, saving: false }
+    setMealRatingDate(selectedDateKey)
+    setMealUploadRemaining(0)
+    setMealSaving(false)
+    setMealRatingMood(current?.mood || "")
+    setMealRatingRemark(current?.remark || "")
+    setMealPhotos(photos)
     setShowMealRating(true)
   }
 
+  function closeMealRating() {
+    mealSession.current = null
+    setShowMealRating(false)
+    setMealPhotos([])
+    setMealUploadRemaining(0)
+    setMealSaving(false)
+  }
+
   function submitMealRating() {
-    if (!mealRatingMood || !selectedDateKey || !canRateSelectedDay) return
+    const session = mealSession.current
+    if (!mealRatingMood || !session || session.uploading || session.saving || ratingWritePending("day", session.target)) return
+    session.saving = true
+    setMealSaving(true)
     dayRatingMut.mutate({
-      meal_date: selectedDateKey,
-      mood: mealRatingMood,
-      remark: mealRatingRemark,
-      photos: JSON.stringify(mealPhotos),
+      session,
+      data: {
+        meal_date: session.target,
+        mood: mealRatingMood,
+        remark: mealRatingRemark,
+        photos: JSON.stringify(session.photos),
+      },
     })
   }
 
-  async function handlePhotoUpload() {
+  function handlePhotoUpload() {
+    const session = mealSession.current
+    if (!session || session.uploading || session.saving) return
     if (!isAdminLoggedIn) {
       toast.error("上传照片需要先进入管理模式")
       navigate("/admin/login")
@@ -529,8 +687,8 @@ export default function History() {
     input.accept = "image/jpg,image/jpeg,image/png,image/webp"
     input.onchange = async () => {
       const files = Array.from(input.files || [])
-      if (files.length === 0) return
-      const remaining = 9 - mealPhotos.length
+      if (files.length === 0 || mealSession.current !== session || session.uploading || session.saving) return
+      const remaining = 9 - session.photos.length
       if (remaining <= 0) {
         toast.error("最多上传9张照片")
         return
@@ -539,38 +697,60 @@ export default function History() {
       if (files.length > remaining) {
         toast.error(`已选${files.length}张，仅上传前${remaining}张`)
       }
+      // 同一草稿一次只处理一批文件；同步占用上传状态，避免连点绕过 9 张限制。
+      session.uploading = true
+      setMealUploadRemaining(toUpload.length)
       let failed = 0
       let lastErrMsg = ""
-      for (const file of toUpload) {
-        try {
-          const res = await uploadApi.image(file)
-          const url = res.data.data.url
-          if (url) {
-            setMealPhotos((prev) => [...prev, url])
-          } else {
+      try {
+        for (const [index, file] of toUpload.entries()) {
+          if (mealSession.current !== session) return
+          try {
+            const res = await uploadApi.image(file)
+            if (mealSession.current !== session) return
+            const url = res.data.data.url
+            if (url) {
+              session.photos = [...session.photos, url]
+              setMealPhotos(session.photos)
+            } else {
+              failed++
+            }
+          } catch (err) {
+            if (mealSession.current !== session) return
             failed++
+            lastErrMsg = getUploadErrorMessage(err)
           }
-        } catch (err) {
-          failed++
-          lastErrMsg = getUploadErrorMessage(err)
+          setMealUploadRemaining(toUpload.length - index - 1)
         }
+        if (failed > 0) toast.error(lastErrMsg || `${failed}张上传失败`)
+      } finally {
+        session.uploading = false
+        if (mealSession.current === session) setMealUploadRemaining(0)
       }
-      if (failed > 0) toast.error(lastErrMsg || `${failed}张上传失败`)
     }
     input.click()
   }
 
   function removeMealPhoto(idx: number) {
-    setMealPhotos((prev) => prev.filter((_, i) => i !== idx))
+    const session = mealSession.current
+    if (!session || session.saving) return
+    session.photos = session.photos.filter((_, i) => i !== idx)
+    setMealPhotos(session.photos)
   }
 
   function removeDayPhoto(idx: number) {
+    if (ratingWritePending("day", selectedDateKey)) {
+      toast("这天的评价或照片正在保存，请稍后再试")
+      return
+    }
     if (!isAdminLoggedIn) {
       toast.error("删除照片需要先进入管理模式")
       navigate("/admin/login")
       return
     }
-    const dayPhotos = dayRating?.photos ? parsePhotos(dayRating.photos) : []
+    const current = qc.getQueryData<DayRating>(["day-rating", selectedDateKey]) || dayRating
+    const dayPhotos = current?.photos ? parsePhotos(current.photos) : []
+    if (idx < 0 || idx >= dayPhotos.length) return
     const updated = dayPhotos.filter((_, i) => i !== idx)
     updateDayPhotosMut.mutate({
       meal_date: selectedDateKey,
@@ -781,7 +961,9 @@ export default function History() {
                           {isAdminLoggedIn && (
                             <button
                              onClick={(e) => { e.stopPropagation(); removeDayPhoto(i) }}
-                             className="absolute top-0 right-0 w-[22px] h-[22px] rounded-bl-md bg-black/50 text-white text-xs flex items-center justify-center active:bg-red"
+                             aria-label={`删除第 ${i + 1} 张照片`}
+                             disabled={updateDayPhotosMut.isPending && updateDayPhotosMut.variables.meal_date === selectedDateKey}
+                             className="absolute top-0 right-0 w-[22px] h-[22px] rounded-bl-md bg-black/50 text-white text-xs flex items-center justify-center active:bg-red disabled:opacity-50"
                            >✕</button>
                          )}
                        </div>
@@ -832,12 +1014,12 @@ export default function History() {
       {undoRecord && <UndoCompletionDialog key={undoRecord.id} record={undoRecord} pending={undoMut.isPending} error={undoMut.isError ? getUploadErrorMessage(undoMut.error, "撤销失败，请稍后重试") : undefined} onClose={() => setUndoRecord(null)} onConfirm={(entryId) => undoMut.mutate({ record: undoRecord, entryId })} />}
 
       {ratingRecord && createPortal(
-        <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => setRatingRecord(null)}>
-          <div className="bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={closeRating}>
+          <div role="dialog" aria-modal="true" aria-label={`${ratingRecord.dish_name}评价`} className="bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up" onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeRating() }}>
             <div className="w-9 h-1 rounded-full bg-border2 mx-auto mt-2" />
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <div className="text-base font-bold">{ratingRecord.dish_name} — 这道菜怎么样？</div>
-              <button onClick={() => setRatingRecord(null)} className="w-7 h-7 rounded-full flex items-center justify-center text-text3 hover:bg-bg text-sm">✕</button>
+              <button onClick={closeRating} aria-label="关闭菜品评价" className="w-7 h-7 rounded-full flex items-center justify-center text-text3 hover:bg-bg text-sm">✕</button>
             </div>
             <div className="p-5">
               <div className="flex justify-center gap-4 mb-5">
@@ -845,6 +1027,7 @@ export default function History() {
                   <button
                     key={m.key}
                     onClick={() => setRatingMood(m.key)}
+                    disabled={ratingSaving}
                     className={`flex flex-col items-center gap-1.5 p-3 px-5 rounded-2xl border-2 transition-all active:scale-90 ${ratingMood === m.key ? "border-primary bg-primary-light" : "border-transparent bg-bg"}`}
                   >
                     <span className="text-3xl">{m.emoji}</span>
@@ -860,6 +1043,7 @@ export default function History() {
                       key={s}
                       type="button"
                       aria-label={`${s} 星`}
+                      disabled={ratingSaving}
                       onClick={() => setRatingStars((cur) => (cur === s ? 0 : s))}
                       className="w-9 h-9 flex items-center justify-center rounded-full transition-all active:scale-90"
                     >
@@ -873,6 +1057,7 @@ export default function History() {
                 <div className="text-xs text-text2 font-semibold mb-2">备注（可选）</div>
                 <textarea
                   value={ratingRemark}
+                  disabled={ratingSaving}
                   onChange={(e) => setRatingRemark(e.target.value)}
                   placeholder="这道菜怎么样..."
                   rows={2}
@@ -885,25 +1070,30 @@ export default function History() {
                   <div className="relative w-20 h-20 rounded-[10px] overflow-hidden border border-border">
                     <img src={ratingPhoto} alt="" className="w-full h-full object-cover" />
                     <button
-                      onClick={() => setRatingPhoto("")}
+                      onClick={removeRatingPhoto}
+                      aria-label="移除成品照"
+                      disabled={ratingSaving}
                       className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-black/50 text-white text-xs flex items-center justify-center"
                     >✕</button>
                   </div>
                 ) : (
-                  <div
+                  <button
+                    type="button"
+                    aria-label="上传成品照"
                     onClick={handleRatingPhotoUpload}
-                    className={`w-20 h-20 rounded-[10px] border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary ${isAdminLoggedIn ? "text-text3" : "text-text4 bg-bg/60"}`}
+                    disabled={ratingUploading || ratingSaving}
+                    className={`w-20 h-20 rounded-[10px] border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary disabled:opacity-50 ${isAdminLoggedIn ? "text-text3" : "text-text4 bg-bg/60"}`}
                   >
                     <span className="text-xl leading-none">+</span>
-                    <span className="text-[11px]">添加</span>
-                  </div>
+                    <span className="text-[11px]" role="status">{ratingUploading ? "上传中…" : "添加"}</span>
+                  </button>
                 )}
               </div>
               <button
                 onClick={submitRating}
-                disabled={!ratingMood || updateMut.isPending}
+                disabled={!ratingMood || ratingUploading || ratingSaving}
                 className="w-full py-3 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-40 disabled:active:scale-100"
-              >保存评价</button>
+              >{ratingUploading ? "照片上传中…" : ratingSaving ? "正在保存…" : "保存评价"}</button>
             </div>
           </div>
         </div>,
@@ -911,20 +1101,21 @@ export default function History() {
       )}
 
       {showMealRating && createPortal(
-        <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => setShowMealRating(false)}>
-          <div className="bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={closeMealRating}>
+          <div role="dialog" aria-modal="true" aria-label="整体用餐评价" className="bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up" onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeMealRating() }}>
             <div className="w-9 h-1 rounded-full bg-border2 mx-auto mt-2" />
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <div className="text-base font-bold">🍲 这顿饭怎么样？</div>
-              <button onClick={() => setShowMealRating(false)} className="w-7 h-7 rounded-full flex items-center justify-center text-text3 hover:bg-bg text-sm">✕</button>
+              <button onClick={closeMealRating} aria-label="关闭整体评价" className="w-7 h-7 rounded-full flex items-center justify-center text-text3 hover:bg-bg text-sm">✕</button>
             </div>
             <div className="p-5">
-              <div className="text-center mb-3 text-[13px] text-text2">评价 {selectedDateKey} 的整体用餐感受</div>
+              <div className="text-center mb-3 text-[13px] text-text2">评价 {mealRatingDate} 的整体用餐感受</div>
               <div className="flex justify-center gap-4 mb-5">
                 {mealMoodOptions.map((m) => (
                   <button
                     key={m.key}
                     onClick={() => setMealRatingMood(m.key)}
+                    disabled={mealSaving}
                     className={`flex flex-col items-center gap-1.5 p-3 px-5 rounded-2xl border-2 transition-all active:scale-90 ${mealRatingMood === m.key ? "border-primary bg-primary-light" : "border-transparent bg-bg"}`}
                   >
                     <span className="text-3xl">{m.emoji}</span>
@@ -936,6 +1127,7 @@ export default function History() {
                 <div className="text-xs text-text2 font-semibold mb-2">备注（可选）</div>
                 <textarea
                   value={mealRatingRemark}
+                  disabled={mealSaving}
                   onChange={(e) => setMealRatingRemark(e.target.value)}
                   placeholder="今天这顿饭的整体感受..."
                   rows={2}
@@ -945,19 +1137,24 @@ export default function History() {
               <div className="mb-5">
                 <div className="text-xs text-text2 font-semibold mb-2">📷 上传照片（可选，最多9张）</div>
                 <div className="flex gap-2 items-start">
-                  <div
+                  <button
+                    type="button"
+                    aria-label="上传用餐照片"
                     onClick={handlePhotoUpload}
-                    className={`w-16 h-16 rounded-[10px] border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary flex-shrink-0 ${isAdminLoggedIn ? "text-text3" : "text-text4 bg-bg/60"}`}
+                    disabled={mealUploadRemaining > 0 || mealSaving || mealPhotos.length >= 9}
+                    className={`w-16 h-16 rounded-[10px] border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary flex-shrink-0 disabled:opacity-50 ${isAdminLoggedIn ? "text-text3" : "text-text4 bg-bg/60"}`}
                   >
                     <span className="text-xl leading-none">+</span>
-                    <span className="text-[11px]">添加</span>
-                  </div>
+                    <span className="text-[11px]" role="status">{mealUploadRemaining > 0 ? "上传中…" : "添加"}</span>
+                  </button>
                   <div className="flex gap-2 flex-wrap">
                     {mealPhotos.map((p, i) => (
                        <div key={i} className="w-16 h-16 rounded-[10px] overflow-hidden relative bg-bg flex items-center justify-center border border-border">
                           <img src={thumbUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           <button
                             onClick={(e) => { e.stopPropagation(); removeMealPhoto(i) }}
+                            aria-label={`移除第 ${i + 1} 张用餐照片`}
+                            disabled={mealSaving}
                             className="absolute top-0.5 right-0.5 w-6 h-6 rounded-full bg-black/50 text-white text-xs flex items-center justify-center active:bg-red"
                          >✕</button>
                        </div>
@@ -967,9 +1164,9 @@ export default function History() {
               </div>
               <button
                 onClick={submitMealRating}
-                disabled={!mealRatingMood || dayRatingMut.isPending}
+                disabled={!mealRatingMood || mealUploadRemaining > 0 || mealSaving}
                 className="w-full py-3 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-40 disabled:active:scale-100"
-              >保存评价</button>
+              >{mealUploadRemaining > 0 ? `照片上传中，还剩 ${mealUploadRemaining} 张…` : mealSaving ? "正在保存…" : "保存评价"}</button>
             </div>
           </div>
         </div>,

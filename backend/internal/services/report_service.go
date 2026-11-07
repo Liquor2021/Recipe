@@ -29,7 +29,7 @@ type DietReport struct {
 	EndDate        string          `json:"end_date"`
 	CookDays       int             `json:"cook_days"`
 	PrevCookDays   int             `json:"prev_cook_days"` // 上一周期相同已过天数内的做饭天数，见 previousPeriod
-	TotalMeals     int             `json:"total_meals"`
+	TotalMeals     int             `json:"total_meals"`    // 同一天同一餐只计一顿，与菜品份数分开
 	LunchCount     int             `json:"lunch_count"`
 	DinnerCount    int             `json:"dinner_count"`
 	DistinctDishes int             `json:"distinct_dishes"`
@@ -249,6 +249,8 @@ func buildDietReport(rng string, start, end time.Time, records []models.MealReco
 	startStr, endStr := start.Format("2006-01-02"), end.Format("2006-01-02")
 
 	cookDaySet := make(map[string]bool)
+	type mealKey struct{ date, meal string }
+	mealSet := make(map[mealKey]bool)
 	type perDish struct {
 		count    int
 		ratedSum int
@@ -261,11 +263,15 @@ func buildDietReport(rng string, start, end time.Time, records []models.MealReco
 
 	for _, r := range records {
 		cookDaySet[r.MealDate] = true
-		switch r.MealType {
-		case "lunch":
-			lunchCount++
-		case "dinner":
-			dinnerCount++
+		key := mealKey{r.MealDate, r.MealType}
+		if !mealSet[key] {
+			mealSet[key] = true
+			switch r.MealType {
+			case "lunch":
+				lunchCount++
+			case "dinner":
+				dinnerCount++
+			}
 		}
 		st, ok := stats[r.DishID]
 		if !ok {
@@ -331,7 +337,7 @@ func buildDietReport(rng string, start, end time.Time, records []models.MealReco
 		EndDate:        endStr,
 		CookDays:       len(cookDaySet),
 		PrevCookDays:   prevCookDays,
-		TotalMeals:     len(records),
+		TotalMeals:     len(mealSet),
 		LunchCount:     lunchCount,
 		DinnerCount:    dinnerCount,
 		DistinctDishes: len(stats),

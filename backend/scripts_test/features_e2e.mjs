@@ -68,8 +68,18 @@ async function main() {
   const rep = r.data || {}
   check("报告结构完整", typeof rep.cook_days === "number" && typeof rep.repeat_rate === "number" && Array.isArray(rep.taste_shares) && Array.isArray(rep.top_dishes), JSON.stringify(Object.keys(rep)))
   check("周报日期是本周", rep.start_date && rep.end_date && rep.start_date <= dayStr(0) && rep.end_date >= dayStr(0), `${rep.start_date}~${rep.end_date}`)
-  const periodRecords = await api("GET", `/records?date_from=${rep.start_date}&date_to=${rep.end_date}&status=completed&pageSize=1`)
-  check("总餐数与记录一致（空库也成立）", periodRecords.code === 0 && rep.total_meals === periodRecords.data?.total, `report=${rep.total_meals}, records=${periodRecords.data?.total}`)
+  const periodMeals = new Set()
+  let periodRecordsOK = true
+  for (let page = 1; ; page++) {
+    const periodRecords = await api("GET", `/records?date_from=${rep.start_date}&date_to=${rep.end_date}&status=completed&pageSize=100&page=${page}`)
+    if (periodRecords.code !== 0 || !Array.isArray(periodRecords.data?.items)) {
+      periodRecordsOK = false
+      break
+    }
+    for (const record of periodRecords.data.items) periodMeals.add(`${record.meal_date}:${record.meal_type}`)
+    if (periodRecords.data.items.length < 100 || page * 100 >= periodRecords.data.total) break
+  }
+  check("总餐数按日期和餐次去重（空库也成立）", periodRecordsOK && rep.total_meals === periodMeals.size, `report=${rep.total_meals}, meals=${periodMeals.size}`)
   r = await api("GET", "/report?range=month")
   check("月报可生成", r.data && r.data.range === "month", JSON.stringify(r.data?.range))
 

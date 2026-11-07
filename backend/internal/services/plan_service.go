@@ -529,6 +529,11 @@ type ShoppingItem struct {
 	Amount  string `json:"amount"`
 	Checked bool   `json:"checked"`
 	InStock bool   `json:"in_stock"`
+	// 待买/待入库只包含尚未处理的需求，避免旧采购掩盖后来加菜或增加份量。
+	PendingAmount string `json:"pending_amount"`
+	StockInAmount string `json:"stock_in_amount"`
+	NeedsBuy      bool   `json:"needs_buy"`
+	PendingReview bool   `json:"pending_review"`
 	// StockBatches 冰箱里该食材的未过期批次数（取消"家中有"会把它们一起移出，前端据此确认）
 	StockBatches int `json:"stock_batches"`
 	// Removable 只来自补料（没有菜品联动条目）：可以直接从清单删掉
@@ -708,6 +713,8 @@ func sortShoppingItems(items []ShoppingItem) {
 
 func shoppingItemPriority(item ShoppingItem) int {
 	switch {
+	case item.NeedsBuy:
+		return 0
 	case item.InStock:
 		return 2
 	case item.Checked:
@@ -770,7 +777,12 @@ func AddShoppingListItems(items []ShoppingItem, dishID uint, dishName string, me
 	if len(rows) == 0 {
 		return 0, nil
 	}
-	if err := database.DB.Create(&rows).Error; err != nil {
+	if err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&rows).Error; err != nil {
+			return err
+		}
+		return AdoptShoppingExtras(tx, dishID, mealDate)
+	}); err != nil {
 		return 0, err
 	}
 	return len(rows), nil
@@ -804,53 +816,49 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	}
 
 	var checks []models.ShoppingCheck
-	if err := database.DB.Where("meal_date IN ?", dates).Find(&checks).Error; err != nil {
+	if err := database.DB.Where("meal_date IN ?", dates).Order("id ASC").Find(&checks).Error; err != nil {
 		return nil, err
 	}
 	if len(checks) == 0 {
 		return []ShoppingCategory{}, nil
 	}
 
-	// 补料条目（extra）是"这道菜还缺什么"的提前登记：之后真的记录了这道菜，
-	// 菜品联动会按菜谱再写一条同名条目，两条说的是同一份需求，用量只算一次（勾选状态照常合并）
-	type linkKey struct {
-		date   string
-		dishID uint
-		item   string
-	}
-	linked := make(map[linkKey]bool)
-	for _, ch := range checks {
-		if ch.MealType != "extra" {
-			linked[linkKey{ch.MealDate, ch.DishID, ch.ItemName}] = true
-		}
-	}
-
 	type nameAccum struct {
-		amounts   []string
-		checked   bool
-		stocked   bool
-		hasLinked bool // 有菜品联动条目（删记录才会消失）
+		amounts       []string
+		pending       []string
+		toStock       []string
+		hasBought     bool
+		pendingReview bool
+		allStocked    bool
+		hasLinked     bool // 有菜品联动条目（删记录才会消失）
 	}
 	merged := make(map[string]*nameAccum)
-	for _, ch := range checks {
+	for _, demand := range shoppingDemands(checks) {
+		ch := demand.row
 		// 菜谱里写成调料的清水/热水不用买（旧数据里已经写进清单的也一并不显示）
 		if ingredients.IsTapWater(ch.ItemName) {
 			continue
 		}
 		entry, exists := merged[ch.ItemName]
 		if !exists {
-			entry = &nameAccum{}
+			entry = &nameAccum{allStocked: true}
 			merged[ch.ItemName] = entry
 		}
-		superseded := ch.MealType == "extra" && linked[linkKey{ch.MealDate, ch.DishID, ch.ItemName}]
-		if ch.ItemAmount != "" && !superseded {
+		if ch.ItemAmount != "" {
 			entry.amounts = append(entry.amounts, ch.ItemAmount)
 		}
-		if ch.Checked {
-			entry.checked = true
+		if amount, pending := outstandingShoppingAmount(ch.ItemAmount, demand.purchased); pending {
+			entry.pending = append(entry.pending, amount)
+			entry.pendingReview = entry.pendingReview || shoppingAmountNeedsReview(ch.ItemAmount, demand.purchased)
 		}
-		if ch.Stocked {
-			entry.stocked = true
+		if demand.purchased != nil {
+			entry.hasBought = true
+			if amount, pending := outstandingShoppingAmount(*demand.purchased, demand.stocked); pending {
+				entry.toStock = append(entry.toStock, amount)
+			}
+		}
+		if _, pending := outstandingShoppingAmount(ch.ItemAmount, demand.stocked); pending {
+			entry.allStocked = false
 		}
 		if ch.MealType != "extra" {
 			entry.hasLinked = true
@@ -874,7 +882,16 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 	for name, entry := range merged {
 		amountStr := compactShoppingAmounts(entry.amounts)
 		stock := stockCounts[ingredients.Normalize(name)]
-		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.checked, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked, Stocked: entry.stocked}
+		item := ShoppingItem{Name: name, Amount: amountStr, Checked: entry.hasBought && len(entry.pending) == 0, InStock: stock > 0, StockBatches: stock, Removable: !entry.hasLinked, Stocked: entry.allStocked}
+		if len(entry.pending) > 0 {
+			item.PendingAmount = compactShoppingAmounts(entry.pending)
+			item.PendingReview = entry.pendingReview
+			// 已有采购对应旧需求，不能把其入库批次当成新增需求也已备齐。
+			item.NeedsBuy = stock == 0 || entry.hasBought
+		}
+		if len(entry.toStock) > 0 {
+			item.StockInAmount = compactShoppingAmounts(entry.toStock)
+		}
 		category := classifyShoppingItem(name, categoryByName)
 		if _, ok := grouped[category]; !ok {
 			category = "其他"
@@ -1030,9 +1047,30 @@ func ShoppingListDates() []string {
 // ToggleShoppingCheck 勾选/取消某食材"已买"：只改买菜清单展示范围（今天+明天）内的条目，
 // 不能把历史日期和更远日期里同名的条目一起改掉（会污染"已买"统计与之后的清单）
 func ToggleShoppingCheck(itemName string, checked bool) error {
-	return database.DB.Model(&models.ShoppingCheck{}).
-		Where("item_name = ? AND meal_date IN ?", itemName, ShoppingListDates()).
-		Update("checked", checked).Error
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		var rows []models.ShoppingCheck
+		if err := tx.Where("item_name = ? AND meal_date IN ?", itemName, ShoppingListDates()).Order("id ASC").Find(&rows).Error; err != nil {
+			return err
+		}
+		demands, err := adoptShoppingDemands(tx, rows)
+		if err != nil {
+			return err
+		}
+		for _, demand := range demands {
+			purchased := demand.stocked
+			if checked {
+				purchased = purchasedShoppingAmount(demand.row.ItemAmount, demand.purchased)
+			}
+			// 取消勾选只撤销尚未入库的采购标记，已入库部分不能再次放进冰箱。
+			if err := tx.Model(&models.ShoppingCheck{}).Where("id IN ?", demand.sourceIDs).Updates(map[string]any{
+				"checked": purchased != nil, "purchased_amount": purchased,
+				"stocked": demand.stocked != nil, "stocked_amount": demand.stocked,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // StockInItem 买菜清单里一样已买的食材，放进冰箱时的数量（取自清单用量，可为空）
@@ -1062,23 +1100,47 @@ func StockInShoppingItems(items []StockInItem) (int, error) {
 	added := 0
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		for _, it := range unique {
-			var eligible []models.ShoppingCheck
-			if err := tx.Where("item_name = ? AND meal_date IN ? AND checked = ? AND stocked = ?", it.ItemName, ShoppingListDates(), true, false).Find(&eligible).Error; err != nil {
+			var rows []models.ShoppingCheck
+			if err := tx.Where("item_name = ? AND meal_date IN ?", it.ItemName, ShoppingListDates()).Order("id ASC").Find(&rows).Error; err != nil {
 				return err
+			}
+			var eligible []shoppingDemand
+			var amounts []string
+			demands, err := adoptShoppingDemands(tx, rows)
+			if err != nil {
+				return err
+			}
+			for _, demand := range demands {
+				if demand.purchased == nil {
+					continue
+				}
+				if amount, pending := outstandingShoppingAmount(*demand.purchased, demand.stocked); pending {
+					eligible = append(eligible, demand)
+					amounts = append(amounts, amount)
+				}
 			}
 			if len(eligible) == 0 {
 				continue
 			}
-			batch := newInventoryBatch(it.ItemName, it.Quantity, "")
+			// 数量以当前尚未入库的采购快照为准，旧页面传来的总需求量不能重复入库。
+			quantity := compactShoppingAmounts(amounts)
+			if quantity == "适量" {
+				quantity = strings.TrimSpace(it.Quantity)
+				if quantity == "适量" {
+					quantity = ""
+				}
+			}
+			batch := newInventoryBatch(it.ItemName, quantity, "")
 			if err := tx.Create(&batch).Error; err != nil {
 				return err
 			}
-			ids := make([]uint, len(eligible))
-			for i, item := range eligible {
-				ids[i] = item.ID
-			}
-			if err := tx.Model(&models.ShoppingCheck{}).Where("id IN ?", ids).Update("stocked", true).Error; err != nil {
-				return err
+			for _, demand := range eligible {
+				if err := tx.Model(&models.ShoppingCheck{}).Where("id IN ?", demand.sourceIDs).Updates(map[string]any{
+					"checked": true, "purchased_amount": demand.purchased,
+					"stocked": true, "stocked_amount": demand.purchased,
+				}).Error; err != nil {
+					return err
+				}
 			}
 			added++
 		}

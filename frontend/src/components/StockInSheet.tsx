@@ -48,7 +48,7 @@ export default function StockInSheet({ candidates, onClose }: { candidates: Stoc
       {({ close }) => (
         <>
           <div className="text-lg font-extrabold mb-0.5">🧊 已买的放进冰箱</div>
-          <div className="text-xs text-text3 mb-4">数量按清单用量，保质期按常见食材自动设置，之后可在冰箱页改</div>
+          <div className="text-xs text-text3 mb-4">只放入已买但尚未入库的数量，保质期自动设置，之后可在冰箱页改</div>
           <div className="flex flex-wrap gap-2 mb-5 max-h-[45vh] overflow-y-auto">
             {candidates.map((c) => {
               const active = selected.includes(c.name)

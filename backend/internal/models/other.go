@@ -94,9 +94,13 @@ type ShoppingCheck struct {
 	BaseAmount string `json:"-"`
 	Checked    bool   `json:"checked" gorm:"default:false;index;index:idx_shopping_checks_date_checked,priority:2"`
 	// Stocked 已买的已经放进冰箱：不再出现在"放进冰箱"的候选里（之后批次被用完也不会再提示放一次）
-	Stocked   bool      `json:"stocked" gorm:"default:false"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Stocked bool `json:"stocked" gorm:"default:false"`
+	// 可空快照兼容旧库：nil 时沿用 Checked/Stocked 对应的原用量。
+	// 调整份量前先固化快照，新增需求不会把旧采购自动放大。
+	PurchasedAmount *string   `json:"-"`
+	StockedAmount   *string   `json:"-"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 	// 取消计划仅隐藏需求，恢复时沿用原购物状态和用量快照。
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }

@@ -28,6 +28,14 @@ const dayOrder: Record<string, number> = { "周一": 1, "周二": 2, "周三": 3
 
 // 买菜清单里的"配料"大多是家里常备的调料：默认收起，不计入待买
 const STAPLES_CATEGORY = "配料"
+
+function needsShopping(item: ShoppingItem) {
+  return item.needs_buy ?? (!item.checked && !item.in_stock)
+}
+
+function pendingShoppingAmount(item: ShoppingItem) {
+  return item.pending_amount || item.amount
+}
 const STAPLES_OPEN_KEY = "shopping_staples_open"
 
 function shoppingMutationName(variables: unknown): string | undefined {
@@ -214,7 +222,7 @@ export default function More() {
   const { data: weekPlan } = useQuery({ queryKey: ["week-plan"], queryFn: () => weekPlanApi.get() })
   const { data: rawShoppingList, isPending: shoppingLoading, isError: shoppingError, isFetching: shoppingFetching, refetch: reloadShopping } = useQuery({
     queryKey: ["shopping-list"], queryFn: () => shoppingListApi.get(), staleTime: 0,
-    // 写入时保留乐观状态；最后一个请求结束后，重新启用查询并读取实际结果。
+    // 写入时保留已确认的采购数量；最后一个请求结束后读取新的待买/待入库差额。
     enabled: shoppingEdits === 0,
   })
   const shoppingList = rawShoppingList ?? []
@@ -245,13 +253,6 @@ export default function More() {
     if (qc.getMutationCache().findAll({ mutationKey: ["shopping-edit"], status: "pending" })
       .some((mutation) => shoppingMutationName(mutation.state.variables) === name)) return
     action()
-  }
-
-  function patchShoppingItem(name: string, patch: Partial<ShoppingItem>) {
-    qc.setQueryData<ShoppingCategory[]>(["shopping-list"], (list) => list?.map((category) => ({
-      ...category,
-      items: category.items.map((item) => item.name === name ? { ...item, ...patch } : item),
-    })))
   }
 
   // 常备调料（生抽、白糖……）默认收起；展开状态记在本机
@@ -321,17 +322,11 @@ export default function More() {
     mutationKey: ["shopping-edit", "check"],
     mutationFn: (data: { item_name: string; meal_date: string; checked: boolean }) =>
       shoppingListApi.toggle(data),
-    onMutate: async (data) => {
-      await qc.cancelQueries({ queryKey: ["shopping-list"] })
-      const prev = qc.getQueryData<ShoppingCategory[]>(["shopping-list"])?.flatMap((cat) => cat.items).find((item) => item.name === data.item_name)?.checked
-      patchShoppingItem(data.item_name, { checked: data.checked })
-      return { prev }
-    },
+    onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["achievements"] })
     },
-    onError: (_err, data, ctx) => {
-      if (ctx?.prev !== undefined) patchShoppingItem(data.item_name, { checked: ctx.prev })
+    onError: () => {
       toast.error("勾选未保存，请重试")
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
@@ -341,12 +336,7 @@ export default function More() {
     mutationKey: ["shopping-edit", "inventory"],
     mutationFn: (data: { item_name: string; in_stock: boolean }) =>
       shoppingListApi.setInventory(data),
-    onMutate: async (data) => {
-      await qc.cancelQueries({ queryKey: ["shopping-list"] })
-      const prev = qc.getQueryData<ShoppingCategory[]>(["shopping-list"])?.flatMap((cat) => cat.items).find((item) => item.name === data.item_name)?.in_stock
-      patchShoppingItem(data.item_name, { in_stock: data.in_stock })
-      return { prev }
-    },
+    onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["achievements"] })
       // "家中有"会增删冰箱批次
@@ -354,8 +344,7 @@ export default function More() {
       qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
       qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
     },
-    onError: (_err, data, ctx) => {
-      if (ctx?.prev !== undefined) patchShoppingItem(data.item_name, { in_stock: ctx.prev })
+    onError: () => {
       toast.error("库存状态更新失败")
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
@@ -399,29 +388,37 @@ export default function More() {
   const stapleItems = shoppingList.find((cat: ShoppingCategory) => cat.category === STAPLES_CATEGORY)?.items || []
   const mainItems = mainCategories.flatMap((cat: ShoppingCategory) => cat.items)
   const totalChecked = mainItems.filter((item) => item.checked).length
-  const totalInStock = mainItems.filter((item) => item.in_stock).length
+  const totalInStock = mainItems.filter((item) => item.in_stock && !needsShopping(item)).length
   const totalItems = shoppingList.reduce((acc: number, cat: ShoppingCategory) => acc + cat.items.length, 0)
-  const needBuyItems = mainItems.filter((item) => !item.checked && !item.in_stock).length
-  const stapleNeedCount = stapleItems.filter((item) => !item.checked && !item.in_stock).length
+  const needBuyItems = mainItems.filter(needsShopping).length
+  const stapleNeedCount = stapleItems.filter(needsShopping).length
   const visibleCategories = onlyNeedBuy
-    ? mainCategories.map((cat) => ({ ...cat, items: cat.items.filter((item) => !item.checked && !item.in_stock) })).filter((cat) => cat.items.length > 0)
+    ? mainCategories.map((cat) => ({ ...cat, items: cat.items.filter(needsShopping) })).filter((cat) => cat.items.length > 0)
     : mainCategories
-  const visibleStaples = onlyNeedBuy ? stapleItems.filter((item) => !item.checked && !item.in_stock) : stapleItems
+  const visibleStaples = onlyNeedBuy ? stapleItems.filter(needsShopping) : stapleItems
 
   // 买菜清单的一行（普通函数而不是组件：避免每次渲染都重新挂载行）。
   // 行里的小按钮用透明的 ::after 把点击区撑大、外观不变；删除 × 向左不扩，免得点"库存"误删
   const renderShoppingRow = (item: ShoppingItem) => (
-    <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock ? "opacity-70" : ""}`}>
+    <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock && !needsShopping(item) ? "opacity-70" : ""}`}>
       <button
         onClick={() => startShoppingEdit(item.name, () => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked }))}
-        disabled={item.in_stock || pendingShopping.has(item.name)}
+        disabled={(item.in_stock && !needsShopping(item)) || pendingShopping.has(item.name)}
         aria-label={`${item.checked ? "取消已买" : "标记已买"}${item.name}`}
         aria-pressed={item.checked}
-        className={`relative after:absolute after:-inset-x-2.5 after:-inset-y-1.5 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
-      >{item.in_stock ? "家" : "✓"}</button>
-      <span className={`transition-all ${item.checked || item.in_stock ? "line-through text-text3" : ""}`}>{item.name}</span>
+        className={`relative after:absolute after:-inset-x-2.5 after:-inset-y-1.5 w-[22px] h-[22px] rounded-md border-2 flex items-center justify-center text-xs flex-shrink-0 transition-all ${item.checked ? "bg-mint border-mint text-white" : item.in_stock && !needsShopping(item) ? "bg-yellow-light border-yellow text-yellow" : "border-border2 text-transparent"}`}
+      >{item.in_stock && !needsShopping(item) ? "家" : "✓"}</button>
+      <span className={`min-w-0 break-words transition-all ${!needsShopping(item) && (item.checked || item.in_stock) ? "line-through text-text3" : ""}`}>{item.name}</span>
       <div className="ml-auto flex items-center gap-2.5 flex-shrink-0">
-        <span className="text-xs text-text3">{item.amount}</span>
+        <span className="text-xs text-text3 text-right">
+          {needsShopping(item) && item.pending_review ? <>
+            <span className="block text-text2">用量待核对</span>
+            <span className="block text-[11px]">需 {item.amount}</span>
+          </> : needsShopping(item) && pendingShoppingAmount(item) !== item.amount ? <>
+            <span className="block text-text2">待买 {pendingShoppingAmount(item)}</span>
+            <span className="block text-[11px]">共 {item.amount}</span>
+          </> : item.amount}
+        </span>
         <button
           onClick={() => {
             // 取消"家中有"会把冰箱里这个食材的批次一起移出，先确认
@@ -433,7 +430,7 @@ export default function More() {
           aria-label={`${item.in_stock ? "取消家中有" : "标记家中有"}${item.name}`}
           className={`relative after:absolute after:-inset-x-1 after:-inset-y-2 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-60 ${item.in_stock ? "bg-yellow-light text-yellow border-yellow/30" : "bg-bg text-text3 border-border"}`}
         >
-          {item.in_stock ? "家中有" : "库存"}
+          {item.in_stock ? needsShopping(item) ? "有库存" : "家中有" : "库存"}
         </button>
         {item.removable && (
           <button
@@ -454,12 +451,12 @@ export default function More() {
     const amountText = (amount: string) => (amount && amount !== "适量" ? ` ${amount}` : "")
     const sections = mainCategories
       .map((cat: ShoppingCategory) => {
-        const need = cat.items.filter((item) => !item.checked && !item.in_stock)
-        return need.length > 0 ? `${cat.category}：${need.map((i) => i.name + amountText(i.amount)).join("、")}` : ""
+        const need = cat.items.filter(needsShopping)
+        return need.length > 0 ? `${cat.category}：${need.map((i) => i.name + amountText(pendingShoppingAmount(i)) + (i.pending_review ? "（用量待核对）" : "")).join("、")}` : ""
       })
       .filter(Boolean)
     if (showStaples) {
-      const staples = stapleItems.filter((item) => !item.checked && !item.in_stock)
+      const staples = stapleItems.filter(needsShopping)
       if (staples.length > 0) sections.push(`调料：${staples.map((i) => i.name).join("、")}`)
     }
     if (sections.length === 0) {
@@ -476,8 +473,8 @@ export default function More() {
     cat.category === "配料"
       ? []
       : cat.items
-        .filter((item) => item.checked && !item.stocked && !item.in_stock)
-        .map((item) => ({ name: item.name, amount: item.amount, category: cat.category })),
+        .filter((item) => item.stock_in_amount !== undefined ? !!item.stock_in_amount : item.checked && !item.stocked && !item.in_stock)
+        .map((item) => ({ name: item.name, amount: item.stock_in_amount || item.amount, category: cat.category })),
   )
 
   const days = (weekPlan?.days || []).slice().sort((a: WeekDayPlan, b: WeekDayPlan) => (dayOrder[a.day_name] || 0) - (dayOrder[b.day_name] || 0))

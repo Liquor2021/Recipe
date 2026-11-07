@@ -124,8 +124,8 @@ func TestShoppingListExtraNotDoubleCountedAfterRecording(t *testing.T) {
 	database.DB.Create(&models.ShoppingCheck{MealDate: today, MealType: "extra", DishID: 9, ItemName: "洋葱", ItemAmount: "1个"})
 
 	items := shoppingItemsByName(t, today)
-	if it := items["牛腩"]; it.Amount != "700g" || !it.Checked {
-		t.Fatalf("牛腩应为 500g(同一份需求只算一次)+200g = 700g 且保留勾选, got %+v", it)
+	if it := items["牛腩"]; it.Amount != "700g" || it.Checked || it.PendingAmount != "200g" || it.StockInAmount != "500g" || !it.NeedsBuy {
+		t.Fatalf("牛腩应保留同一份需求已买500g，另一道菜200g仍待买, got %+v", it)
 	}
 	if it := items["洋葱"]; it.Amount != "1个" {
 		t.Fatalf("独立的补料条目应照常计入, got %+v", it)
