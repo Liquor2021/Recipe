@@ -86,6 +86,8 @@ type ShoppingCheck struct {
 	DishName   string `json:"dish_name"`
 	ItemName   string `json:"item_name" gorm:"not null"`
 	ItemAmount string `json:"item_amount"`
+	// BaseAmount 关联菜谱原量的快照，调整份量时避免多次乘除产生舍入误差。
+	BaseAmount string `json:"-"`
 	Checked    bool   `json:"checked" gorm:"default:false;index;index:idx_shopping_checks_date_checked,priority:2"`
 	// Stocked 已买的已经放进冰箱：不再出现在"放进冰箱"的候选里（之后批次被用完也不会再提示放一次）
 	Stocked   bool      `json:"stocked" gorm:"default:false"`

@@ -34,7 +34,7 @@ async function verifyFoodFixes(AH) {
     return r.data
   }
   const record = async (dish) => {
-    const r = await req("POST", "/records", { dish_id: dish.id, dish_name: dish.name, meal_type: "dinner", meal_date: todayString() })
+    const r = await req("POST", "/records", { dish_id: dish.id, dish_name: dish.name, meal_type: "dinner", meal_date: todayString(), status: "completed" })
     if (r.code !== 0 || !r.data?.id) throw new Error(`创建回归记录失败: ${JSON.stringify(r)}`)
     recordIDs.push(r.data.id)
   }
@@ -144,7 +144,7 @@ async function main() {
     name: "E2E荤素测试菜", category: "家常菜", meal_type: "all",
     ingredients: JSON.stringify([{ name: "瘦肉", amount: "200克" }, { name: testVeg, amount: "1把" }, { name: "小葱", amount: "1根" }]),
   }, AH)
-  const mixRec = await req("POST", "/records", { dish_id: mixDish.data?.id, dish_name: "E2E荤素测试菜", meal_type: "dinner", meal_date: todayStr })
+  const mixRec = await req("POST", "/records", { dish_id: mixDish.data?.id, dish_name: "E2E荤素测试菜", meal_type: "dinner", meal_date: todayStr, status: "completed" })
   check("记录一道荤素搭配的菜", mixDish.code === 0 && mixRec.code === 0, JSON.stringify({ d: mixDish.code, r: mixRec }))
   const balAfter = (await req("GET", "/report?range=week")).data?.balance
   check("有荤有素 +1，另外两类不变", balAfter && balAfter.mixed_count === balBefore.mixed_count + 1 && balAfter.meat_count === balBefore.meat_count && balAfter.veg_count === balBefore.veg_count, JSON.stringify({ balBefore, balAfter }))

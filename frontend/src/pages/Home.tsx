@@ -14,7 +14,6 @@ import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { gsap, motionDuration, scrollToElement, useGSAP } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
-import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import toast from "react-hot-toast"
 import { Home as HomeIcon, Settings } from "lucide-react"
 
@@ -58,8 +57,8 @@ export default function Home() {
     queryFn: () => dishesApi.list({ enabled: "true", pageSize: "12", sort: "random", recommend: "1" }),
   })
   const { data: recordsData } = useQuery({
-    queryKey: ["records"],
-    queryFn: () => recordsApi.list({ pageSize: "100" }),
+    queryKey: ["records", "today", todayKey],
+    queryFn: () => recordsApi.list({ pageSize: "100", date_from: todayKey, date_to: todayKey }),
   })
   const { data: todayRating } = useQuery({
     queryKey: ["day-rating", todayKey],
@@ -77,9 +76,6 @@ export default function Home() {
   const [blindRevealed, setBlindRevealed] = useState(false)
   const [spinning, setSpinning] = useState(false)
   const [wheelResult, setWheelResult] = useState<Dish | null>(null)
-  // 记录一餐后提示清库存：记录时先记住做的哪道菜，成功回调里弹出
-  const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
-  const consumeDishRef = useRef<Dish | null>(null)
   // 临期提醒关闭状态按天持久化：当天关过就不再打扰，第二天重新出现
   const [urgentDismissed, setUrgentDismissed] = useState(() => {
     try { return localStorage.getItem("urgent_dismissed_date") === dateKey() } catch { return false }
@@ -151,16 +147,16 @@ export default function Home() {
 
   const recordMut = useMutation({
     mutationFn: (data: { dish_id: number; dish_name: string; meal_type: string; meal_date: string }) =>
-      recordsApi.create(data),
+      recordsApi.create({ ...data, status: "planned" }),
     onSuccess: () => {
-      toast.success("❤ 已记录！")
+      toast.success("已加入今日计划，吃过后到记录页确认")
       launchConfetti(confettiRef.current)
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
-      if (consumeDishRef.current) {
-        setConsumeDish(consumeDishRef.current)
-        consumeDishRef.current = null
-      }
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      qc.invalidateQueries({ queryKey: ["record"] })
+      qc.invalidateQueries({ queryKey: ["dish-records"] })
+      qc.invalidateQueries({ queryKey: ["admin", "records"] })
     },
     onError: (err: unknown) => {
       const msg = (err instanceof Error ? err.message : "") || "记录失败"
@@ -309,13 +305,12 @@ export default function Home() {
 
   function recordForDish(dish: Dish, mealType: "lunch" | "dinner") {
     const alreadyPicked = todayRecords.some(
-      (r) => r.dish_id === dish.id && r.meal_type === mealType && r.meal_date === todayKey
+      (r) => r.status !== "cancelled" && r.dish_id === dish.id && r.meal_type === mealType && r.meal_date === todayKey
     )
     if (alreadyPicked) {
       toast.error(`${dish.name} 已在今日${mealType === "lunch" ? "午餐" : "晚餐"}中记录过啦~`)
       return
     }
-    consumeDishRef.current = dish
     recordMut.mutate({
       dish_id: dish.id,
       dish_name: dish.name,
@@ -550,7 +545,7 @@ export default function Home() {
                     <div className="text-xs text-text2">{blindBoxMut.data.dish.category} · {blindBoxMut.data.dish.cook_time}分钟 · {diffLabel(blindBoxMut.data.dish.difficulty)}</div>
                   </div>
                   <div className="flex flex-col gap-1.5 flex-shrink-0">
-                    <button onClick={(e) => { e.stopPropagation(); setPickedRec(blindBoxMut.data!.dish); handlePickMeal("dinner"); resetBlindBox() }} className="py-1.5 px-3.5 rounded-full text-xs font-semibold bg-primary text-white">🍲 今晚吃这个</button>
+                    <button onClick={(e) => { e.stopPropagation(); recordForDish(blindBoxMut.data!.dish, "dinner"); resetBlindBox() }} className="py-1.5 px-3.5 rounded-full text-xs font-semibold bg-primary text-white">🍲 今晚吃这个</button>
                     <button onClick={(e) => { e.stopPropagation(); resetBlindBox() }} className="py-1.5 px-3.5 rounded-full text-xs font-semibold border-[1.5px] border-border2">换一个</button>
                   </div>
                 </div>
@@ -568,9 +563,6 @@ export default function Home() {
           <span className="text-text3 text-sm">›</span>
         </button>
       </div>
-
-      {/* 做完菜清库存弹层 */}
-      <ConsumeInventorySheet dish={consumeDish} onClose={() => setConsumeDish(null)} />
 
       {/* 转盘结果弹层 */}
       {wheelResult && (

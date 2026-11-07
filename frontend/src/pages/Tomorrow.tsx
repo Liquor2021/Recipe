@@ -119,7 +119,7 @@ function uniqueById(items: Dish[]) {
 
 function mealRecords(records: MealRecord[], meal: MealType) {
   return records
-    .filter((r) => r.meal_type === meal)
+    .filter((r) => r.meal_type === meal && r.status !== "cancelled")
     .slice()
     .sort((a, b) => a.id - b.id)
 }
@@ -670,17 +670,18 @@ export default function Tomorrow() {
   const [picking, setPicking] = useState(false)
   const initStartedForRef = useRef<string | null>(null)
 
-  const { data: tomorrowRecords, isLoading: recordsLoading } = useQuery({
+  const { data: tomorrowRecords, isLoading: recordsLoading, isFetchedAfterMount, isSuccess: recordsReady, isError: recordsError, refetch: reloadRecords } = useQuery({
     queryKey: ["records", "tomorrow", tomorrowStr],
     queryFn: () => recordsApi.list({ date_from: tomorrowStr, date_to: tomorrowStr, pageSize: "100" }),
+    refetchOnMount: "always",
   })
 
   useEffect(() => {
-    if (recordsLoading || initializedFor === tomorrowStr) return
+    if (!isFetchedAfterMount || !recordsReady || initializedFor === tomorrowStr) return
     if (initStartedForRef.current === tomorrowStr) return
     initStartedForRef.current = tomorrowStr
 
-    const records = tomorrowRecords?.items || []
+    const records = (tomorrowRecords?.items || []).filter(r => r.status !== "cancelled")
     setOriginalRecords(records)
 
     if (records.length > 0) {
@@ -701,7 +702,7 @@ export default function Tomorrow() {
     setTargets(defaultTargets)
     void generateAll(profile, defaultTargets).finally(() => setInitializedFor(tomorrowStr))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initializedFor, recordsLoading, tomorrowRecords, tomorrowStr])
+  }, [initializedFor, isFetchedAfterMount, recordsReady, tomorrowRecords, tomorrowStr])
 
   // 从已保存记录还原的菜只有 id/名字/图片（recordToDish），用时和难度都是占位值：
   // 按 id 批量取完整菜品用于展示（编辑和保存仍以 lunch/dinner 状态为准，只用到 id 和名字）
@@ -727,8 +728,12 @@ export default function Tomorrow() {
 
   const recordsToSave = useMemo<Partial<MealRecord>[]>(() => {
     const records: Partial<MealRecord>[] = []
-    lunch.forEach((dish) => records.push({ dish_id: dish.id, dish_name: dish.name, meal_type: "lunch", meal_date: tomorrowStr }))
-    dinner.forEach((dish) => records.push({ dish_id: dish.id, dish_name: dish.name, meal_type: "dinner", meal_date: tomorrowStr }))
+    for (const [meal, dishes] of [["lunch", lunch], ["dinner", dinner]] as const) {
+      dishes.forEach((dish) => records.push({
+        dish_id: dish.id, dish_name: dish.name, meal_type: meal, meal_date: tomorrowStr,
+        status: "planned",
+      }))
+    }
     return records
   }, [dinner, lunch, tomorrowStr])
 
@@ -738,36 +743,54 @@ export default function Tomorrow() {
   const originalKey = keyFromRecords(originalRecords)
   const hasChanges = initializedFor === tomorrowStr && currentKey !== originalKey
   const loading = recordsLoading || initializedFor !== tomorrowStr
-  const disabled = loading || picking
 
   const savePlanMut = useMutation({
     mutationFn: async ({ oldRecords, records }: SavePlanPayload) => {
-      await Promise.all(
-        oldRecords.map(async (record) => {
-          try {
-            await recordsApi.delete(record.id)
-          } catch {
-            // Stale local records should not block replacing tomorrow's plan.
-          }
-        }),
-      )
-      if (records.length === 0) return { created: [] as MealRecord[], skipped: 0, failed: 0, total: 0 }
-      return recordsApi.batchCreate(records)
+      const key = (record: Partial<MealRecord>) => `${record.meal_type}:${record.dish_id}`
+      const existingKeys = new Set(oldRecords.map(key))
+      const desiredKeys = new Set(records.map(key))
+      const additions = records.filter(record => !existingKeys.has(key(record)))
+      // 保留没换的菜及其份量、买菜状态；新增成功后再取消移走的菜。
+      if (additions.length > 0) {
+        const result = await recordsApi.batchCreate(additions)
+        if (result.failed > 0) throw new Error(`${result.failed} 道菜保存失败，请重试`)
+      }
+      for (const record of oldRecords.filter(record => !desiredKeys.has(key(record)))) {
+        await recordsApi.update(record.id, { status: "cancelled" })
+      }
+      return recordsApi.list({ date_from: tomorrowStr, date_to: tomorrowStr, pageSize: "100" })
     },
     onSuccess: (res, variables) => {
-      // 全部已记录过时后端 created 为 null
-      setOriginalRecords(res.created ?? [])
+      setOriginalRecords(res.items.filter(r => r.status !== "cancelled"))
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
-      qc.refetchQueries({ queryKey: ["shopping-list"] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      qc.invalidateQueries({ queryKey: ["record"] })
+      qc.invalidateQueries({ queryKey: ["dish-records"] })
+      qc.invalidateQueries({ queryKey: ["admin", "records"] })
       launchConfetti(confettiRef.current)
       toast.success(variables.wasSaved ? "明天菜单已更新" : "明天菜单已保存")
     },
-    onError: () => toast.error("保存失败，请重试"),
+    onError: async () => {
+      // 部分请求失败时重新读取实际保存结果，草稿保留以便重试。
+      try {
+        const res = await recordsApi.list({ date_from: tomorrowStr, date_to: tomorrowStr, pageSize: "100" })
+        setOriginalRecords(res.items.filter(r => r.status !== "cancelled"))
+      } catch { /* 网络恢复后仍可重试保存 */ }
+      qc.invalidateQueries({ queryKey: ["records"] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      toast.error("部分改动可能已保存，请重试")
+    },
   })
+  const disabled = loading || picking || savePlanMut.isPending
 
   function getMeal(meal: MealType) {
     return meal === "lunch" ? lunch : dinner
+  }
+
+  function openDish(dish: Dish, meal: MealType) {
+    const saved = originalRecords.find(r => r.dish_id === dish.id && r.meal_type === meal)
+    navigate(`/dishes/${dish.id}${saved ? `?record_id=${saved.id}` : ""}`)
   }
 
   function updateMeal(meal: MealType, updater: (prev: Dish[]) => Dish[]) {
@@ -905,7 +928,7 @@ export default function Tomorrow() {
   }
 
   function savePlan() {
-    if (recordsToSave.length === 0) {
+    if (recordsToSave.length === 0 && !hasSavedPlan) {
       toast.error("至少选一道菜")
       return
     }
@@ -927,11 +950,16 @@ export default function Tomorrow() {
         onBack={() => navigate(-1)}
       />
 
-      {loading ? (
+      {recordsError && initializedFor !== tomorrowStr ? (
+        <div className="px-5 py-12 text-center text-text2">
+          <p>明日计划读取失败，请重试。</p>
+          <button onClick={() => reloadRecords()} className="mt-4 rounded-full bg-primary px-5 py-2 text-sm text-white">重新读取</button>
+        </div>
+      ) : loading ? (
         <LoadingState />
       ) : (
         <main className="px-5 py-4">
-          <div className="mx-auto max-w-[640px] space-y-4">
+          <fieldset disabled={savePlanMut.isPending} className="mx-auto min-w-0 max-w-[640px] space-y-4">
             <PlanSummary
               dateLabel={tomorrowLabel}
               totalCount={totalCount}
@@ -977,7 +1005,7 @@ export default function Tomorrow() {
               target={targets.lunch}
               disabled={disabled}
               onTargetChange={(value) => updateTarget("lunch", value)}
-              onOpenDish={(dish) => navigate(`/dishes/${dish.id}`)}
+              onOpenDish={(dish) => openDish(dish, "lunch")}
               onFill={() => fillMeal("lunch")}
               onReplaceMeal={() => replaceMeal("lunch")}
               onSwapDish={(dishId) => swapDish("lunch", dishId)}
@@ -991,14 +1019,14 @@ export default function Tomorrow() {
               target={targets.dinner}
               disabled={disabled}
               onTargetChange={(value) => updateTarget("dinner", value)}
-              onOpenDish={(dish) => navigate(`/dishes/${dish.id}`)}
+              onOpenDish={(dish) => openDish(dish, "dinner")}
               onFill={() => fillMeal("dinner")}
               onReplaceMeal={() => replaceMeal("dinner")}
               onSwapDish={(dishId) => swapDish("dinner", dishId)}
               onRemoveDish={(dishId) => removeDish("dinner", dishId)}
               onOpenPicker={() => setPickerMeal("dinner")}
             />
-          </div>
+          </fieldset>
         </main>
       )}
 
@@ -1018,7 +1046,7 @@ export default function Tomorrow() {
             </div>
             <button
               onClick={savePlan}
-              disabled={savePlanMut.isPending || totalCount === 0 || (hasSavedPlan && !hasChanges)}
+              disabled={disabled || (totalCount === 0 && !hasSavedPlan) || (hasSavedPlan && !hasChanges)}
               className="flex h-12 min-w-[148px] items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-extrabold text-white transition-all hover:bg-primary-dark active:scale-95 disabled:opacity-50"
             >
               <Check size={17} strokeWidth={2.6} />

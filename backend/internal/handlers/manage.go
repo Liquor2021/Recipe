@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
+	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
 	"strings"
 	"time"
@@ -347,7 +348,7 @@ func GetDashboard(c *gin.Context) {
 		TodayRecords int64
 	}
 	var recordStats recordStatsRow
-	database.DB.Model(&models.MealRecord{}).Select(
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).Select(
 		"count(*) as total_records, coalesce(sum(case when meal_date = ? then 1 else 0 end), 0) as today_records",
 		todayStr(),
 	).Scan(&recordStats)
@@ -370,7 +371,7 @@ func GetDashboard(c *gin.Context) {
 		Count    int64  `json:"count"`
 	}
 	var topDishes []TopDish
-	database.DB.Model(&models.MealRecord{}).
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).
 		Select("dish_id, dish_name, count(*) as count").
 		Group("dish_id, dish_name").
 		Order("count DESC").
@@ -387,7 +388,7 @@ func GetDashboard(c *gin.Context) {
 		Rating   int    `json:"rating"`
 	}
 	var recentRecords []RecentRecord
-	database.DB.Model(&models.MealRecord{}).
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).
 		Select("id, dish_id, dish_name, meal_type, meal_date, mood, rating").
 		Order("meal_date DESC, created_at DESC").
 		Limit(10).
@@ -400,7 +401,7 @@ func GetDashboard(c *gin.Context) {
 	// 一条 GROUP BY 拉齐近 7 天，替代逐天 COUNT
 	weekStart := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 	var trendRows []DayCount
-	database.DB.Model(&models.MealRecord{}).
+	database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).
 		Select("meal_date as date, count(*) as count").
 		Where("meal_date >= ?", weekStart).
 		Group("meal_date").

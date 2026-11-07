@@ -40,7 +40,9 @@ export default function AdminRecords() {
   const deleteMut = useMutation({
     mutationFn: (id: number) => recordsApi.delete(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["admin", "records"] })
+      for (const key of ["admin", "dashboard", "records", "record", "stats", "report", "favorites", "achievements", "dish-records", "shopping-list", "photo-wall"]) {
+        qc.invalidateQueries({ queryKey: [key] })
+      }
       toast.success("已删除")
     },
   })
@@ -83,6 +85,7 @@ export default function AdminRecords() {
                 <div className="text-sm font-semibold truncate">{r.dish_name}</div>
                 <div className="text-[11px] text-text2 truncate">
                   {r.meal_date} · {mealLabel(r.meal_type)}
+                  <span> · {r.status === "completed" ? "已吃" : r.status === "cancelled" ? "已取消" : "计划中"} · 原量 × {r.portion_scale || 1}</span>
                   {r.rating > 0 && <span className="ml-1">评分{r.rating}</span>}
                   {r.remark && <span className="ml-1">· {r.remark}</span>}
                 </div>

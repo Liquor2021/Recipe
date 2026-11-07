@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ninimenu/internal/database"
 	"ninimenu/internal/ingredients"
@@ -16,7 +17,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string, mealDate string) error {
+func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string, mealDate string, scales ...float64) error {
+	scale := 1.0
+	if len(scales) > 0 {
+		scale = scales[0]
+	}
 	var dish models.Dish
 	if err := db.Unscoped().First(&dish, dishID).Error; err != nil {
 		// 菜品不存在（可能已被删）不阻塞记录创建，只跳过买菜清单联动
@@ -38,7 +43,8 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 				DishID:     dishID,
 				DishName:   dishName,
 				ItemName:   ing.Name,
-				ItemAmount: ing.Amount,
+				ItemAmount: services.ScaleIngredientAmount(ing.Amount, scale),
+				BaseAmount: ing.Amount,
 			})
 		}
 	}
@@ -65,6 +71,8 @@ type MealRecordResponse struct {
 	DishEmoji    string    `json:"dish_emoji"`
 	MealType     string    `json:"meal_type"`
 	MealDate     string    `json:"meal_date"`
+	Status       string    `json:"status"`
+	PortionScale float64   `json:"portion_scale"`
 	Rating       int       `json:"rating"`
 	Remark       string    `json:"remark"`
 	Mood         string    `json:"mood"`
@@ -133,6 +141,13 @@ func GetRecords(c *gin.Context) {
 	if mealType := c.Query("meal_type"); mealType != "" {
 		query = query.Where("meal_type = ?", mealType)
 	}
+	if status := c.Query("status"); status != "" {
+		if !validMealStatus(status) {
+			utils.BadRequest(c, "用餐状态无效")
+			return
+		}
+		query = query.Where("status = ?", status)
+	}
 	if dateFrom := c.Query("date_from"); dateFrom != "" {
 		query = query.Where("meal_date >= ?", dateFrom)
 	}
@@ -169,16 +184,18 @@ func GetRecords(c *gin.Context) {
 	responses := make([]MealRecordResponse, len(records))
 	for i, r := range records {
 		responses[i] = MealRecordResponse{
-			ID:        r.ID,
-			DishID:    r.DishID,
-			DishName:  r.DishName,
-			MealType:  r.MealType,
-			MealDate:  r.MealDate,
-			Rating:    r.Rating,
-			Remark:    r.Remark,
-			Mood:      r.Mood,
-			Photo:     r.Photo,
-			CreatedAt: r.CreatedAt,
+			ID:           r.ID,
+			DishID:       r.DishID,
+			DishName:     r.DishName,
+			MealType:     r.MealType,
+			MealDate:     r.MealDate,
+			Status:       r.Status,
+			PortionScale: r.PortionScale,
+			Rating:       r.Rating,
+			Remark:       r.Remark,
+			Mood:         r.Mood,
+			Photo:        r.Photo,
+			CreatedAt:    r.CreatedAt,
 		}
 		if dish, ok := dishInfoMap[r.DishID]; ok {
 			responses[i].DishImageURL = getEffectiveDishImageURL(dish)
@@ -192,14 +209,152 @@ func GetRecords(c *gin.Context) {
 }
 
 type CreateRecordRequest struct {
-	DishID   uint   `json:"dish_id" binding:"required"`
-	DishName string `json:"dish_name" binding:"required"`
-	MealType string `json:"meal_type" binding:"required"`
-	MealDate string `json:"meal_date" binding:"required"`
-	Rating   int    `json:"rating"`
-	Remark   string `json:"remark"`
-	Mood     string `json:"mood"`
-	Photo    string `json:"photo"`
+	DishID       uint     `json:"dish_id" binding:"required"`
+	DishName     string   `json:"dish_name" binding:"required"`
+	MealType     string   `json:"meal_type" binding:"required"`
+	MealDate     string   `json:"meal_date" binding:"required"`
+	Rating       int      `json:"rating"`
+	Remark       string   `json:"remark"`
+	Mood         string   `json:"mood"`
+	Photo        string   `json:"photo"`
+	Status       string   `json:"status"`
+	PortionScale *float64 `json:"portion_scale"`
+}
+
+var errDuplicateMealRecord = errors.New("该菜品已在当日该餐次中记录过")
+
+func validMealStatus(status string) bool {
+	return status == models.MealPlanned || status == models.MealCompleted || status == models.MealCancelled
+}
+
+func validateCreateRecord(req *CreateRecordRequest) error {
+	if req.DishID == 0 || strings.TrimSpace(req.DishName) == "" || (req.MealType != "lunch" && req.MealType != "dinner") {
+		return errors.New("请填写有效的菜品和餐次")
+	}
+	if date, err := time.Parse("2006-01-02", req.MealDate); err != nil || date.Format("2006-01-02") != req.MealDate {
+		return errors.New("日期格式应为 YYYY-MM-DD")
+	}
+	if req.Status == "" {
+		req.Status = models.MealPlanned
+	}
+	if !validMealStatus(req.Status) {
+		return errors.New("用餐状态无效")
+	}
+	if req.Status == models.MealCompleted && req.MealDate > services.TodayDate() {
+		return errors.New("未来的用餐计划不能标记为已吃")
+	}
+	if req.PortionScale != nil && !services.ValidPortionScale(*req.PortionScale) {
+		return errors.New("份量应为原量的 0.5–8 倍")
+	}
+	if !validRating(req.Rating) {
+		return errors.New("评分应为 0-5")
+	}
+	if req.Status != models.MealCompleted && (req.Rating != 0 || req.Mood != "" || req.Photo != "") {
+		return errors.New("请先标记已吃，再填写评分、心情或成品照片")
+	}
+	return nil
+}
+
+// syncRecordShopping 取消/恢复和份量修改与记录写入共用一个事务。
+// 修改份量只调整已有行用量，保留已买、已入库的标记。
+func syncRecordShopping(tx *gorm.DB, before, after models.MealRecord) error {
+	if after.Status == models.MealCancelled {
+		return removeShoppingItems(tx, after.DishID, after.MealType, after.MealDate)
+	}
+	if before.Status == models.MealCancelled {
+		return addShoppingItems(tx, after.DishID, after.DishName, after.MealType, after.MealDate, after.PortionScale)
+	}
+	if before.PortionScale == after.PortionScale {
+		return nil
+	}
+	var items []models.ShoppingCheck
+	if err := tx.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", after.DishID, after.MealType, after.MealDate).Find(&items).Error; err != nil {
+		return err
+	}
+	oldScale := before.PortionScale
+	if oldScale <= 0 {
+		oldScale = 1
+	}
+	for _, item := range items {
+		base := item.BaseAmount
+		if base == "" {
+			base = services.ScaleIngredientAmount(item.ItemAmount, 1/oldScale)
+		}
+		amount := services.ScaleIngredientAmount(base, after.PortionScale)
+		if err := tx.Model(&item).Updates(map[string]any{"item_amount": amount, "base_amount": base}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createOrCompleteRecord(req CreateRecordRequest) (models.MealRecord, error) {
+	var record models.MealRecord
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", req.DishID, req.MealType, req.MealDate).First(&record).Error
+		if err == nil {
+			if !(record.Status == models.MealPlanned && req.Status == models.MealCompleted) && !(record.Status == models.MealCancelled && req.Status != models.MealCancelled) {
+				return errDuplicateMealRecord
+			}
+			before := record
+			record.Status = req.Status
+			if req.PortionScale != nil {
+				record.PortionScale = *req.PortionScale
+			}
+			// POST 完成已有计划时保留未传的备注等内容，清空请使用 PUT。
+			if req.Rating != 0 {
+				record.Rating = req.Rating
+			}
+			if req.Remark != "" {
+				record.Remark = req.Remark
+			}
+			if req.Mood != "" {
+				record.Mood = req.Mood
+			}
+			if req.Photo != "" {
+				record.Photo = req.Photo
+			}
+			if err := tx.Save(&record).Error; err != nil {
+				return err
+			}
+			return syncRecordShopping(tx, before, record)
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		scale := 1.0
+		if req.PortionScale != nil {
+			scale = *req.PortionScale
+		}
+		record = models.MealRecord{DishID: req.DishID, DishName: req.DishName, MealType: req.MealType, MealDate: req.MealDate,
+			Status: req.Status, PortionScale: scale, Rating: req.Rating, Remark: req.Remark, Mood: req.Mood, Photo: req.Photo}
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+		if record.Status == models.MealCancelled {
+			return nil
+		}
+		return addShoppingItems(tx, record.DishID, record.DishName, record.MealType, record.MealDate, record.PortionScale)
+	})
+	return record, err
+}
+
+func GetRecord(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		utils.BadRequest(c, "记录编号无效")
+		return
+	}
+	var record models.MealRecord
+	if err := database.DB.First(&record, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.NotFound(c, "记录不存在")
+		} else {
+			utils.InternalError(c, "读取记录失败")
+		}
+		return
+	}
+	utils.Success(c, record)
 }
 
 func CreateRecord(c *gin.Context) {
@@ -208,54 +363,20 @@ func CreateRecord(c *gin.Context) {
 		utils.BadRequest(c, "请填写完整信息")
 		return
 	}
-	if !validRating(req.Rating) {
-		utils.BadRequest(c, "评分应为 0-5")
+	if err := validateCreateRecord(&req); err != nil {
+		utils.BadRequest(c, err.Error())
 		return
 	}
-
-	var existing int64
-	database.DB.Model(&models.MealRecord{}).
-		Where("dish_id = ? AND meal_type = ? AND meal_date = ?", req.DishID, req.MealType, req.MealDate).
-		Count(&existing)
-	if existing > 0 {
-		utils.BadRequest(c, "该菜品已在当日该餐次中记录过")
-		return
-	}
-
-	record := models.MealRecord{
-		DishID:   req.DishID,
-		DishName: req.DishName,
-		MealType: req.MealType,
-		MealDate: req.MealDate,
-		Rating:   req.Rating,
-		Remark:   req.Remark,
-		Mood:     req.Mood,
-		Photo:    req.Photo,
-	}
-
-	// 记录与买菜清单联动写入放在同一事务，避免中途失败留脏数据
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&record).Error; err != nil {
-			return err
-		}
-		return addShoppingItems(tx, req.DishID, req.DishName, req.MealType, req.MealDate)
-	})
+	record, err := createOrCompleteRecord(req)
 	if err != nil {
-		// 唯一索引冲突说明并发下已记录过，视为重复而非错误
-		var existing int64
-		database.DB.Model(&models.MealRecord{}).
-			Where("dish_id = ? AND meal_type = ? AND meal_date = ?", req.DishID, req.MealType, req.MealDate).
-			Count(&existing)
-		if existing > 0 {
-			utils.BadRequest(c, "该菜品已在当日该餐次中记录过")
-			return
+		if errors.Is(err, errDuplicateMealRecord) {
+			utils.BadRequest(c, err.Error())
+		} else {
+			utils.InternalError(c, "创建记录失败")
 		}
-		utils.InternalError(c, "创建记录失败")
 		return
 	}
-
 	services.QueueAutoAchievementSync()
-
 	utils.Success(c, record)
 }
 
@@ -268,37 +389,22 @@ func BatchCreateRecords(c *gin.Context) {
 		utils.BadRequest(c, "请求数据无效: "+err.Error())
 		return
 	}
+	// 先验证整批，避免参数错误只写入一半；数据库失败仍逐条报告。
+	for i := range req.Records {
+		if err := validateCreateRecord(&req.Records[i]); err != nil {
+			utils.BadRequest(c, err.Error())
+			return
+		}
+	}
 
 	var created []models.MealRecord
 	var skipped, failed int
 	for _, r := range req.Records {
-		var existing int64
-		database.DB.Model(&models.MealRecord{}).
-			Where("dish_id = ? AND meal_type = ? AND meal_date = ?", r.DishID, r.MealType, r.MealDate).
-			Count(&existing)
-		if existing > 0 {
+		record, err := createOrCompleteRecord(r)
+		if errors.Is(err, errDuplicateMealRecord) {
 			skipped++
 			continue
 		}
-
-		record := models.MealRecord{
-			DishID:   r.DishID,
-			DishName: r.DishName,
-			MealType: r.MealType,
-			MealDate: r.MealDate,
-			Rating:   r.Rating,
-			Remark:   r.Remark,
-			Mood:     r.Mood,
-			Photo:    r.Photo,
-		}
-
-		// 每条记录一个事务：记录+买菜清单要么同时成功，要么跳过
-		err := database.DB.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Create(&record).Error; err != nil {
-				return err
-			}
-			return addShoppingItems(tx, r.DishID, r.DishName, r.MealType, r.MealDate)
-		})
 		if err != nil {
 			failed++
 			continue
@@ -325,10 +431,12 @@ func BatchCreateRecords(c *gin.Context) {
 // UpdateRecordRequest 只更新请求里带了的字段：没带 rating 时不能把已有评分清成 0
 // （历史页评价弹层过去只提交心情/备注/照片）
 type UpdateRecordRequest struct {
-	Rating *int    `json:"rating"`
-	Remark *string `json:"remark"`
-	Mood   *string `json:"mood"`
-	Photo  *string `json:"photo"`
+	Rating       *int     `json:"rating"`
+	Remark       *string  `json:"remark"`
+	Mood         *string  `json:"mood"`
+	Photo        *string  `json:"photo"`
+	Status       *string  `json:"status"`
+	PortionScale *float64 `json:"portion_scale"`
 }
 
 // validRating 评分 1-5 星，0 表示未评分（报告平均分、评分趋势只统计 > 0 的记录）
@@ -350,15 +458,17 @@ func applyRecordUpdate(record *models.MealRecord, req UpdateRecordRequest) {
 	if req.Photo != nil {
 		record.Photo = *req.Photo
 	}
+	if req.Status != nil {
+		record.Status = *req.Status
+	}
+	if req.PortionScale != nil {
+		record.PortionScale = *req.PortionScale
+	}
 }
 
 func UpdateRecord(c *gin.Context) {
 	id := c.Param("id")
 	var record models.MealRecord
-	if err := database.DB.First(&record, id).Error; err != nil {
-		utils.NotFound(c, "记录不存在")
-		return
-	}
 
 	var req UpdateRecordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -369,10 +479,44 @@ func UpdateRecord(c *gin.Context) {
 		utils.BadRequest(c, "评分应为 0-5")
 		return
 	}
-
-	applyRecordUpdate(&record, req)
-	if err := database.DB.Save(&record).Error; err != nil {
-		utils.InternalError(c, "保存记录失败")
+	if req.Status != nil && !validMealStatus(*req.Status) {
+		utils.BadRequest(c, "用餐状态无效")
+		return
+	}
+	if req.PortionScale != nil && !services.ValidPortionScale(*req.PortionScale) {
+		utils.BadRequest(c, "份量应为原量的 0.5–8 倍")
+		return
+	}
+	var transitionError string
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&record, id).Error; err != nil {
+			return err
+		}
+		before := record
+		applyRecordUpdate(&record, req)
+		if before.Status == models.MealCompleted && record.Status != models.MealCompleted {
+			transitionError = "已吃的记录不能改回计划，请在记录页删除误记"
+		} else if record.Status == models.MealCompleted && record.MealDate > services.TodayDate() {
+			transitionError = "未来的用餐计划不能标记为已吃"
+		} else if record.Status != models.MealCompleted && ((req.Rating != nil && *req.Rating != 0) || (req.Mood != nil && *req.Mood != "") || (req.Photo != nil && *req.Photo != "")) {
+			transitionError = "请先标记已吃，再填写评分、心情或成品照片"
+		}
+		if transitionError != "" {
+			return errors.New(transitionError)
+		}
+		if err := tx.Save(&record).Error; err != nil {
+			return err
+		}
+		return syncRecordShopping(tx, before, record)
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.NotFound(c, "记录不存在")
+		} else if transitionError != "" {
+			utils.BadRequest(c, transitionError)
+		} else {
+			utils.InternalError(c, "保存记录失败")
+		}
 		return
 	}
 	services.QueueAutoAchievementSync()
@@ -577,6 +721,7 @@ type PhotoWallRecord struct {
 func GetPhotoWall(c *gin.Context) {
 	var ratings []models.DayRating
 	database.DB.Where("photos IS NOT NULL AND photos != '' AND photos != '[]'").
+		Where("meal_date IN (?)", database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).Select("meal_date")).
 		Order("meal_date DESC").
 		Find(&ratings)
 
@@ -589,7 +734,7 @@ func GetPhotoWall(c *gin.Context) {
 	recordsByDate := make(map[string][]PhotoWallRecord)
 	if len(dates) > 0 {
 		var records []models.MealRecord
-		database.DB.Where("meal_date IN ?", dates).
+		database.DB.Scopes(services.EatenRecords).Where("meal_date IN ?", dates).
 			Order("meal_type ASC, created_at ASC").
 			Find(&records)
 		for _, rec := range records {

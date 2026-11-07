@@ -86,7 +86,7 @@ async function main() {
   check("补料带上菜谱用量 3份", extra && extra.amount === "3份", JSON.stringify(extra))
 
   console.log("== 家中有：过期不算、取消只移未过期批 ==")
-  const rec = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E排骨测试", meal_type: "lunch", meal_date: dayFromNow(0) })
+  const rec = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E排骨测试", meal_type: "lunch", meal_date: dayFromNow(0), status: "completed" })
   check("记录测试菜（生成买菜清单）", rec.code === 0, JSON.stringify(rec))
   r = await req("PUT", `/records/${rec.data?.id}`, { rating: 4, mood: "yum" })
   check("给记录打 4 星", r.code === 0 && r.data?.rating === 4, JSON.stringify(r))

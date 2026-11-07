@@ -385,7 +385,7 @@ func GetDietReport(rng string) *DietReport {
 	}
 	end := today
 	var records []models.MealRecord
-	database.DB.Where("meal_date >= ? AND meal_date <= ?", start.Format("2006-01-02"), end.Format("2006-01-02")).
+	database.DB.Scopes(EatenRecords).Where("meal_date >= ? AND meal_date <= ?", start.Format("2006-01-02"), end.Format("2006-01-02")).
 		Order("meal_date ASC, created_at ASC").Find(&records)
 
 	var dishes []models.Dish
@@ -400,7 +400,7 @@ func GetDietReport(rng string) *DietReport {
 		FirstAt string
 	}
 	var firstRows []firstRow
-	database.DB.Model(&models.MealRecord{}).
+	database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).
 		Select("dish_id, min(meal_date) as first_at").
 		Group("dish_id").Scan(&firstRows)
 	firstCookedAt := make(map[uint]string, len(firstRows))
@@ -410,13 +410,14 @@ func GetDietReport(rng string) *DietReport {
 
 	var prevCookDays int64
 	prevStart, prevEnd := previousPeriod(rng, start, today)
-	database.DB.Model(&models.MealRecord{}).
+	database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).
 		Where("meal_date >= ? AND meal_date <= ?", prevStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).
 		Distinct("meal_date").Count(&prevCookDays)
 
 	var dayRatings []models.DayRating
 	database.DB.Where("meal_date >= ? AND meal_date <= ? AND mood != ''",
-		start.Format("2006-01-02"), end.Format("2006-01-02")).Find(&dayRatings)
+		start.Format("2006-01-02"), end.Format("2006-01-02")).
+		Where("meal_date IN (?)", database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).Select("meal_date")).Find(&dayRatings)
 	moodTokens := make([]string, 0, len(dayRatings))
 	for _, dr := range dayRatings {
 		moodTokens = append(moodTokens, dr.Mood)

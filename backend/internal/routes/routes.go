@@ -41,6 +41,7 @@ func Setup(r *gin.Engine) {
 			app.GET("/dishes/:id", handlers.GetDish)
 			app.GET("/dishes/:id/records", handlers.GetDishRecords)
 			app.GET("/records", handlers.GetRecords)
+			app.GET("/records/:id", handlers.GetRecord)
 			app.POST("/records", handlers.CreateRecord)
 			app.POST("/records/batch", handlers.BatchCreateRecords)
 			app.PUT("/records/:id", handlers.UpdateRecord)

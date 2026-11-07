@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -31,6 +32,9 @@ func Init() error {
 	}
 	if err := configureSQLite(DB); err != nil {
 		return err
+	}
+	if err := migrateMealRecordStatus(DB, time.Now().Format("2006-01-02")); err != nil {
+		return fmt.Errorf("迁移用餐记录状态: %w", err)
 	}
 
 	if err := DB.AutoMigrate(
@@ -57,6 +61,21 @@ func Init() error {
 
 	seedData()
 	return nil
+}
+
+// migrateMealRecordStatus 只在旧表没有 status 列时按旧规则初始化一次。
+// 加列和回填处于同一事务；之后启动即使日期已改变，也不会把计划变成已完成。
+// 必须在 AutoMigrate 之前执行，才能区分旧记录与新版本保存的计划。
+func migrateMealRecordStatus(db *gorm.DB, today string) error {
+	if !db.Migrator().HasTable(&models.MealRecord{}) || db.Migrator().HasColumn(&models.MealRecord{}, "status") {
+		return nil
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("ALTER TABLE meal_records ADD COLUMN status text NOT NULL DEFAULT 'planned'").Error; err != nil {
+			return err
+		}
+		return tx.Exec("UPDATE meal_records SET status = CASE WHEN meal_date <= ? THEN ? ELSE ? END", today, models.MealCompleted, models.MealPlanned).Error
+	})
 }
 
 // migrateInventoryBatches 把库存表从"一食材一行（唯一索引）"升级为"多批次"模型：

@@ -77,8 +77,8 @@ func TestStatsAndDishRecordsIgnorePlannedMeals(t *testing.T) {
 	database.DB.Create(&dish)
 	day := func(n int) string { return time.Now().AddDate(0, 0, n).Format("2006-01-02") }
 	for _, r := range []models.MealRecord{
-		{DishID: dish.ID, DishName: dish.Name, MealType: "lunch", MealDate: day(-3), Rating: 4},
-		{DishID: dish.ID, DishName: dish.Name, MealType: "dinner", MealDate: day(0)},
+		{DishID: dish.ID, DishName: dish.Name, MealType: "lunch", MealDate: day(-3), Rating: 4, Status: models.MealCompleted},
+		{DishID: dish.ID, DishName: dish.Name, MealType: "dinner", MealDate: day(0), Status: models.MealCompleted},
 		{DishID: dish.ID, DishName: dish.Name, MealType: "lunch", MealDate: day(1), Rating: 1}, // 明日菜单：计划
 	} {
 		database.DB.Create(&r)

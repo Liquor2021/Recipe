@@ -37,7 +37,7 @@ async function main() {
   check("创建测试菜品", dish.code === 0 && !!dishID, JSON.stringify(dish))
 
   console.log("== 买菜回来放进冰箱 ==")
-  const rec = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E入库测试菜", meal_type: "dinner", meal_date: dayFromNow(0) })
+  const rec = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E入库测试菜", meal_type: "dinner", meal_date: dayFromNow(0), status: "completed" })
   check("记录测试菜（生成买菜清单）", rec.code === 0, JSON.stringify(rec))
   check("清水不进买菜清单", !(await shoppingItem("清水")))
   await req("POST", "/shopping-list/toggle", { item_name: "E2E入库食材", meal_date: dayFromNow(0), checked: true })

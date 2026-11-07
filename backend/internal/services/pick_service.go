@@ -257,11 +257,10 @@ func TodayDate() string {
 	return time.Now().Format("2006-01-02")
 }
 
-// EatenRecords 只取已经吃过的用餐记录（meal_date 不晚于今天）。保存的明日菜单会生成
-// 未来日期的记录，那是计划：累计次数、上次吃、成就等统计都不能把它算进去。
+// EatenRecords 只取明确完成且日期不晚于今天的记录；计划不会随时间自动完成。
 // 推荐去重（recentDishIDMap）仍然算上计划——明天要吃的菜今天不必再推荐。
 func EatenRecords(db *gorm.DB) *gorm.DB {
-	return db.Where("meal_date <= ?", TodayDate())
+	return db.Where("status = ? AND meal_date <= ?", models.MealCompleted, TodayDate())
 }
 
 func recentDishIDMap(days int) map[uint]bool {
@@ -271,7 +270,7 @@ func recentDishIDMap(days int) map[uint]bool {
 	since := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
 	var recentIDs []uint
 	database.DB.Model(&models.MealRecord{}).
-		Where("meal_date >= ?", since).
+		Where("meal_date >= ? AND status != ?", since, models.MealCancelled).
 		Pluck("dish_id", &recentIDs)
 
 	result := make(map[uint]bool, len(recentIDs))

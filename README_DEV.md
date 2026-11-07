@@ -201,6 +201,7 @@ NiniMenu/
 | GET | `/api/dishes/:id/records` | 菜品用餐记录 |
 | GET/POST/PUT/DELETE | `/api/records` | 用餐记录 CRUD |
 | POST | `/api/records/batch` | 批量创建记录 |
+| GET | `/api/records/:id` | 读取单条计划/用餐记录及保存份量 |
 | GET/POST | `/api/favorites/:dishId` | 收藏/取消收藏 |
 | POST | `/api/pick/lunch\|dinner\|mood\|tomorrow\|blind-box` | 各类推荐 |
 | GET/POST | `/api/day-rating` | 每日评价 |

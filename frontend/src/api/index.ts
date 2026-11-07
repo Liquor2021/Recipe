@@ -28,6 +28,7 @@ export const pickApi = {
 }
 
 export const recordsApi = {
+  get: (id: number) => api<MealRecord>("GET", `/records/${id}`),
   list: (params?: Record<string, string>) =>
     api<PaginatedData<MealRecord>>("GET", "/records", params),
   create: (data: Partial<MealRecord>) => api<MealRecord>("POST", "/records", data),
@@ -176,7 +177,7 @@ export const fridgeApi = {
   removeBatch: (id: number) => api<null>("DELETE", `/fridge/batch/${id}`),
   remove: (itemName: string) => api<null>("DELETE", `/fridge/${encodeURIComponent(itemName)}`),
   recipes: (limit = 12) => api<FridgeMatch[]>("GET", `/fridge/recipes?limit=${limit}`),
-  consumption: (dishId: number) => api<ConsumptionMatch>("GET", `/fridge/consumption?dish_id=${dishId}`),
+  consumption: (dishId: number, portionScale = 1) => api<ConsumptionMatch>("GET", `/fridge/consumption?dish_id=${dishId}&portion_scale=${portionScale}`),
   // batchIds 整批移出；remaining 用了一部分的批次改成剩余数量（同一事务）
   consume: (batchIds: number[], remaining?: { batch_id: number; quantity: string }[]) =>
     api<{ removed: number; updated: number }>("POST", "/fridge/consume", { batch_ids: batchIds, remaining }),

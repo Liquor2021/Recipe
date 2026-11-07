@@ -62,7 +62,7 @@ const MEAL_SECTIONS: { key: MealKey; label: string; titleClass: string; rowClass
   { key: "dinner", label: "🍲 晚餐", titleClass: "text-mint", rowClass: "bg-mint-light text-[#2E8577]" },
 ]
 
-// 某一天的菜单：每道菜都能单独换；今天、明天还能一键点菜（记成用餐、进买菜清单）
+// 某一天的菜单：每道菜都能单独换；今天、明天还能一键加入计划和买菜清单
 function WeekDaySheet({ day, dateLabel, canRecord, swappingKey, recording, onSwap, onConfirm, onClose }: {
   day: WeekDayPlan
   dateLabel: string
@@ -251,15 +251,19 @@ export default function More() {
     onSuccess: ({ created, skipped, failed }) => {
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
-      qc.refetchQueries({ queryKey: ["shopping-list"] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      qc.invalidateQueries({ queryKey: ["record"] })
+      qc.invalidateQueries({ queryKey: ["dish-records"] })
+      qc.invalidateQueries({ queryKey: ["admin", "records"] })
       // 按实际结果提示：全部已记录过/部分失败都不能笼统地说"已记录"
       const n = created?.length ?? 0
       if (n === 0) {
-        toast("这些菜之前都记录过了", { icon: "ℹ️" })
+        if (failed > 0) toast.error(`保存失败 ${failed} 道，请重试`)
+        else toast("这些菜已在菜单中", { icon: "ℹ️" })
       } else {
-        const extra = [skipped > 0 ? `${skipped} 道已记录过` : "", failed > 0 ? `${failed} 道失败` : ""].filter(Boolean).join("，")
-        if (failed > 0) toast.error(`已记录 ${n} 道，${extra}`)
-        else toast.success(extra ? `❤ 已记录 ${n} 道（${extra}）` : "❤ 已记录！")
+        const extra = [skipped > 0 ? `${skipped} 道已在菜单中` : "", failed > 0 ? `${failed} 道失败` : ""].filter(Boolean).join("，")
+        if (failed > 0) toast.error(`已加入计划 ${n} 道，${extra}`)
+        else toast.success(extra ? `已加入计划 ${n} 道（${extra}）` : "已加入计划，吃过后到记录页确认")
       }
       setSheetDate(null)
     },
@@ -346,8 +350,8 @@ export default function More() {
 
   function handleConfirmRecord(day: WeekDayPlan) {
     const data: Partial<MealRecord>[] = []
-    day.lunch.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "lunch", meal_date: day.date }))
-    day.dinner.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "dinner", meal_date: day.date }))
+    day.lunch.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "lunch", meal_date: day.date, status: "planned" }))
+    day.dinner.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "dinner", meal_date: day.date, status: "planned" }))
     if (data.length > 0) recordMut.mutate(data)
   }
 

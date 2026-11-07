@@ -2,15 +2,16 @@ import { useState, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { recordsApi, statsApi, dayRatingApi, uploadApi, getUploadErrorMessage } from "@/api"
+import { recordsApi, statsApi, dayRatingApi, dishesApi, uploadApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
-import type { MealRecord, DayRating } from "@/types"
+import type { MealRecord, DayRating, Dish } from "@/types"
 import StatCard from "@/components/StatCard"
 import SectionHeader from "@/components/SectionHeader"
 import SafeImage from "@/components/SafeImage"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import PhotoViewer from "@/components/PhotoViewer"
 import SwipeDeleteRow from "@/components/SwipeDeleteRow"
+import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import { cardShadow } from "@/components/Card"
 import toast from "react-hot-toast"
 import { CalendarDays, Star } from "lucide-react"
@@ -36,11 +37,69 @@ const homeMoodLabelMap: Record<string, string> = { happy: "开心", tired: "疲�
 
 const todayStr = () => `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-${String(new Date().getDate()).padStart(2,"0")}`
 
-// 明日菜单等未来日期的记录是计划：还没吃，不能评价，也不计入累计做饭等统计
-const isPlanned = (r: MealRecord) => r.meal_date > todayStr()
+const statusLabels = { planned: "计划", completed: "已吃", cancelled: "已取消" }
 
-function PlannedPill() {
-  return <span className="flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium bg-bg text-text3">计划</span>
+function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRating }: {
+  record: MealRecord
+  showDate?: boolean
+  pending: boolean
+  onStatus: (record: MealRecord, status: MealRecord["status"]) => void
+  onRating: (record: MealRecord) => void
+}) {
+  const navigate = useNavigate()
+  const completed = record.status === "completed"
+  const canComplete = record.status === "planned" && record.meal_date <= todayStr()
+  return (
+    <div className="px-4 py-3 border-b border-border last:border-0">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => navigate(`/dishes/${record.dish_id}${completed ? "" : `?record_id=${record.id}`}`)}
+          className="flex flex-1 min-w-0 items-center gap-3 text-left rounded-lg active:opacity-70"
+        >
+          <span className={`w-11 h-11 rounded-[10px] flex items-center justify-center text-xl flex-shrink-0 overflow-hidden ${record.meal_type === "lunch" ? "bg-primary-light" : "bg-mint-light"}`}>
+            <SafeImage src={thumbUrl(record.dish_image_url)} alt="" className="w-full h-full object-cover" fallback={record.dish_emoji} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block text-sm font-semibold mb-0.5 ${record.status === "cancelled" ? "text-text3" : ""}`}>{record.dish_name}</span>
+            <span className="block text-[11px] text-text2">
+              {showDate ? `${record.meal_date} · ` : ""}{record.meal_type === "lunch" ? "午餐" : "晚餐"} · 原量 × {record.portion_scale || 1}
+            </span>
+            {completed && record.remark && <span className="block mt-1 text-[11px] text-text2 truncate">{record.remark}</span>}
+          </span>
+        </button>
+        <span className={`flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium ${completed ? "bg-mint-light text-mint" : record.status === "cancelled" ? "bg-bg text-text3" : "bg-primary-light text-primary"}`}>
+          {statusLabels[record.status] || "计划"}
+        </span>
+        {completed && (
+          <button
+            onClick={() => onRating(record)}
+            aria-label={`评价${record.dish_name}`}
+            className="min-h-11 flex-shrink-0 flex items-center gap-1 px-2 rounded-full text-xs font-medium text-primary active:bg-primary-light"
+          >
+            {record.mood ? <span className="text-lg">{moodEmojiMap[record.mood]}</span> : "评价"}
+            {record.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{record.rating}</span>}
+          </button>
+        )}
+      </div>
+      {!completed && (
+        <div className="mt-2 flex flex-wrap justify-end gap-2">
+          {record.status === "cancelled" ? (
+            <button disabled={pending} onClick={() => onStatus(record, "planned")} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">恢复计划</button>
+          ) : (
+            <>
+              <button disabled={pending} onClick={() => onStatus(record, "cancelled")} className="min-h-11 px-3 rounded-xl text-text3 text-xs font-medium disabled:opacity-50 active:bg-bg">取消计划</button>
+              {canComplete && (
+                <>
+                  <button disabled={pending} onClick={() => navigate(`/dishes/${record.dish_id}/cook?record_id=${record.id}`)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">开始做菜</button>
+                  <button disabled={pending} onClick={() => onStatus(record, "completed")} className="min-h-11 px-3 rounded-xl bg-primary text-white text-xs font-semibold disabled:opacity-50 active:scale-95">标记已吃</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function SwipeRowBg({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
@@ -79,6 +138,32 @@ export default function History() {
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
   const [viewerIdx, setViewerIdx] = useState(0)
   const [showViewer, setShowViewer] = useState(false)
+  const [consumption, setConsumption] = useState<{ dish: Dish; portionScale: number } | null>(null)
+
+  function refreshMealQueries() {
+    return Promise.all([
+      ["records"], ["record"], ["stats"], ["report"], ["achievements"], ["favorites"],
+      ["dish-records"], ["shopping-list"], ["photo-wall"], ["admin", "records"], ["admin", "dashboard"],
+    ].map((queryKey) => qc.invalidateQueries({ queryKey })))
+  }
+
+  const statusMut = useMutation({
+    mutationFn: ({ record, status }: { record: MealRecord; status: MealRecord["status"] }) =>
+      recordsApi.update(record.id, { status }),
+    onSuccess: async (saved, { record, status }) => {
+      toast.success(status === "completed" ? "已记为吃过" : status === "cancelled" ? "已取消计划，购物清单已同步" : "已恢复计划")
+      await refreshMealQueries()
+      if (status === "completed") {
+        try {
+          const dish = await qc.fetchQuery({ queryKey: ["dish", record.dish_id], queryFn: () => dishesApi.get(record.dish_id) })
+          setConsumption({ dish, portionScale: saved.portion_scale || record.portion_scale || 1 })
+        } catch {
+          toast.error("已记为吃过，暂时无法读取菜谱用量，请在冰箱中更新库存")
+        }
+      }
+    },
+    onError: (err) => toast.error(getUploadErrorMessage(err, "更新计划失败，请稍后重试")),
+  })
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => recordsApi.delete(id),
@@ -94,9 +179,7 @@ export default function History() {
       return { prev }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["stats"] })
-      qc.invalidateQueries({ queryKey: ["achievements"] })
+      void refreshMealQueries()
       toast.success("已删除")
     },
     onError: (_err, _id, context) => {
@@ -108,8 +191,7 @@ export default function History() {
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<MealRecord> }) => recordsApi.update(id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["achievements"] })
+      void refreshMealQueries()
       toast.success("评价已保存")
       setRatingRecord(null)
     },
@@ -185,17 +267,28 @@ export default function History() {
     queryFn: () => dayRatingApi.list({ date_from: monthStartKey, date_to: monthEndKey }),
   })
 
+  const { data: monthRecords, isPending: monthPending, isError: monthError, refetch: refetchMonth } = useQuery({
+    queryKey: ["records", "calendar", monthStartKey, monthEndKey],
+    queryFn: async () => {
+      const params = { date_from: monthStartKey, date_to: monthEndKey, pageSize: "100" }
+      const first = await recordsApi.list(params)
+      const remainingPages = Math.max(0, Math.ceil(first.total / 100) - 1)
+      const rest = await Promise.all(Array.from({ length: remainingPages }, (_, i) => recordsApi.list({ ...params, page: String(i + 2) })))
+      return [first, ...rest].flatMap((page) => page.items || [])
+    },
+  })
+
   const records = useMemo(() => recordsData?.items || [], [recordsData])
 
   const recordByDate = useMemo(() => {
     const m = new Map<string, MealRecord[]>()
-    records.forEach((r) => {
+    monthRecords?.forEach((r) => {
       const arr = m.get(r.meal_date) || []
       arr.push(r)
       m.set(r.meal_date, arr)
     })
     return m
-  }, [records])
+  }, [monthRecords])
 
   const dayRatingByDate = useMemo(() => {
     const m = new Map<string, DayRating>()
@@ -204,6 +297,7 @@ export default function History() {
   }, [dayRatings])
 
   function openRating(r: MealRecord) {
+    if (r.status !== "completed") return
     setRatingRecord(r)
     setRatingMood(r.mood || "")
     setRatingStars(r.rating || 0)
@@ -253,6 +347,7 @@ export default function History() {
   }
 
   function openMealRating() {
+    if (!canRateSelectedDay) return
     setMealRatingMood(dayRating?.mood || "")
     setMealRatingRemark(dayRating?.remark || "")
     setMealPhotos(dayRating?.photos ? parsePhotos(dayRating.photos) : [])
@@ -260,7 +355,7 @@ export default function History() {
   }
 
   function submitMealRating() {
-    if (!mealRatingMood || !selectedDateKey) return
+    if (!mealRatingMood || !selectedDateKey || !canRateSelectedDay) return
     dayRatingMut.mutate({
       meal_date: selectedDateKey,
       mood: mealRatingMood,
@@ -369,6 +464,9 @@ export default function History() {
 
   const calCells = buildCalendar()
   const selectedRecords = selectedDay !== null ? (recordByDate.get(selectedDateKey) || []) : []
+  const selectedCompletedRecords = selectedRecords.filter((r) => r.status === "completed")
+  const canRateSelectedDay = !selectedIsFuture && selectedCompletedRecords.length > 0
+  const completedMealTypes = new Set(selectedCompletedRecords.map((r) => r.meal_type))
 
   function changeMonth(dir: number) {
     let m = calMonth + dir
@@ -386,7 +484,7 @@ export default function History() {
     <div className="animate-fadeUp">
       <PageHeader
         title="记录"
-        subtitle="查看日历、评价和最近吃过的菜"
+        subtitle="安排做菜计划，吃过后再记下感受"
         icon={CalendarDays}
         actions={
           <HeaderIconButton onClick={() => navigate("/report")} aria-label="饮食报告">
@@ -409,10 +507,10 @@ export default function History() {
           <div className="grid grid-cols-7 gap-1 text-center">
             {weekdays.map((w) => <div key={w} className="text-[11px] text-text3 font-semibold py-0.5">{w}</div>)}
             {calCells.map((cell, i) => {
-              const hasRecord = recordByDate.has(cell.dateKey)
               const recs = recordByDate.get(cell.dateKey) || []
-              const hasLunch = recs.some((r) => r.meal_type === "lunch")
-              const hasDinner = recs.some((r) => r.meal_type === "dinner")
+              const hasLunch = recs.some((r) => r.status === "completed" && r.meal_type === "lunch")
+              const hasDinner = recs.some((r) => r.status === "completed" && r.meal_type === "dinner")
+              const hasPlan = recs.some((r) => r.status === "planned")
               const isSelected = cell.isCurrentMonth && selectedDay === cell.day
               const homeMood = cell.isCurrentMonth ? dayRatingByDate.get(cell.dateKey)?.home_mood : ""
               const homeMoodEmoji = homeMood ? homeMoodEmojiMap[homeMood] : ""
@@ -420,14 +518,19 @@ export default function History() {
                 <button
                   key={i}
                   onClick={() => cell.isCurrentMonth && setSelectedDay(cell.day)}
-                  className={`h-7 flex items-center justify-center rounded-full text-[12px] cursor-pointer transition-all relative ${!cell.isCurrentMonth ? "text-text4" : ""} ${cell.isToday ? "font-bold text-primary" : ""} ${hasRecord ? "after:content-[''] after:absolute after:bottom-[2px] after:w-1 after:h-1 after:rounded-full " + (hasLunch && hasDinner ? "after:bg-gradient-to-r after:from-primary after:to-mint after:w-2 after:h-1 after:rounded-sm" : hasLunch ? "after:bg-primary" : "after:bg-mint") : ""} ${isSelected ? "bg-primary text-white font-bold after:bg-white" : "active:bg-primary-light"}`}
+                  aria-label={`${cell.dateKey}${hasLunch || hasDinner ? " 已吃" : ""}${hasPlan ? " 有计划" : ""}`}
+                  className={`h-8 flex items-center justify-center rounded-full text-[12px] cursor-pointer transition-all relative ${!cell.isCurrentMonth ? "text-text4" : ""} ${cell.isToday ? "font-bold text-primary" : ""} ${isSelected ? "bg-primary text-white font-bold" : "active:bg-primary-light"}`}
                 >
                   {cell.day}
+                  {(hasLunch || hasDinner || hasPlan) && (
+                    <span className={`absolute bottom-0.5 h-1 w-1 rounded-full ${hasLunch || hasDinner ? isSelected ? "bg-white" : hasLunch ? "bg-primary" : "bg-mint" : isSelected ? "border border-white" : "border border-primary"}`} />
+                  )}
                   {homeMoodEmoji && <span className="absolute -top-0.5 right-0 text-[10px] leading-none">{homeMoodEmoji}</span>}
                 </button>
               )
             })}
           </div>
+          <div className="mt-2 flex justify-end gap-3 text-[11px] text-text3"><span>● 已吃</span><span>○ 计划</span></div>
         </div>
 
         {selectedDay !== null && (
@@ -442,52 +545,37 @@ export default function History() {
                   </span>
                 )}
               </div>
-              {selectedIsFuture ? (
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/80 text-text2">计划中</span>
-              ) : (
+              {canRateSelectedDay ? (
                 <button
                   onClick={openMealRating}
-                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${dayRating?.mood ? "bg-mint text-white" : "bg-primary text-white"}`}
+                  className={`min-h-11 px-2.5 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${dayRating?.mood ? "bg-mint text-white" : "bg-primary text-white"}`}
                 >
                   {dayRating?.mood ? "✓ 已评价" : "😌 评价"}
                 </button>
-              )}
+              ) : selectedRecords.some((r) => r.status === "planned") ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/80 text-text2">待完成</span>
+              ) : null}
             </div>
-            {selectedRecords.length === 0 ? (
+            {monthPending ? (
+              <div className="py-5 px-4 text-center text-[13px] text-text3">正在读取记录…</div>
+            ) : monthError ? (
+              <button onClick={() => void refetchMonth()} className="w-full min-h-11 px-4 py-3 text-[13px] text-primary">记录读取失败，点此重试</button>
+            ) : selectedRecords.length === 0 ? (
               <div className="py-5 px-4 text-center text-[13px] text-text3">
                 {selectedDateKey === todayStr() ? "今天还没有记录哦~" : selectedIsFuture ? "这天还没有安排" : "这天没有记录"}
               </div>
             ) : (
               selectedRecords.map((r) => (
                 <SwipeRowBg key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
-                  <div className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 transition-all active:bg-bg w-full text-left cursor-pointer">
-                    <span onClick={() => navigate(`/dishes/${r.dish_id}`)} className={`w-10 h-10 rounded-[10px] flex items-center justify-center text-xl flex-shrink-0 overflow-hidden ${r.meal_type === "lunch" ? "bg-primary-light" : "bg-mint-light"}`}>
-                      <SafeImage src={thumbUrl(r.dish_image_url)} alt={r.dish_name} className="w-full h-full object-cover" fallback={r.dish_emoji} />
-                    </span>
-                    <div className="flex-1 min-w-0" onClick={() => navigate(`/dishes/${r.dish_id}`)}>
-                      <div className="text-sm font-semibold mb-px">{r.dish_name}</div>
-                      <div className="text-[11px] text-text2">{r.meal_type === "lunch" ? "午餐" : "晚餐"}</div>
-                    </div>
-                    {isPlanned(r) ? (
-                      <PlannedPill />
-                    ) : r.mood ? (
-                      <div onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 transition-transform">
-                        <span className="text-lg">{moodEmojiMap[r.mood]}</span>
-                        {r.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{r.rating}</span>}
-                        {r.remark && <span className="text-[11px] text-text2 max-w-[60px] truncate">{r.remark}</span>}
-                      </div>
-                    ) : (
-                      <button onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium bg-primary-light text-primary active:scale-95 transition-all">评价</button>
-                    )}
-                  </div>
+                  <HistoryRecordRow record={r} pending={statusMut.isPending} onStatus={(record, status) => statusMut.mutate({ record, status })} onRating={openRating} />
                 </SwipeRowBg>
               ))
             )}
-            {dayRating?.mood && (
+            {dayRating?.mood && canRateSelectedDay && (
               <div className="px-4 py-2.5 bg-bg border-t border-border flex items-center gap-2.5 text-[13px]">
                 <span className="text-xl">🍚</span>
                 <span className="flex-1 text-text2">
-                  {selectedRecords.length > 1 ? "午餐+晚餐" : "一餐"} · 整体评价
+                  {completedMealTypes.size > 1 ? "午餐+晚餐" : completedMealTypes.has("lunch") ? "午餐" : "晚餐"} · 整体评价
                   {dayRating.remark && <span className="ml-1 text-text"> {dayRating.remark}</span>}
                 </span>
                 <span className="text-xl">{moodEmojiMap[dayRating.mood] || "😋"}</span>
@@ -496,8 +584,8 @@ export default function History() {
             {(() => {
               const dayPhotos = dayRating?.photos ? parsePhotos(dayRating.photos) : []
               const hasPhotos = dayPhotos.length > 0
-              // 还没到的日子没有饭可拍
-              if (!hasPhotos && (!selectedDateKey || selectedIsFuture)) return null
+              // 只有计划或已取消的日子不提示评价；已上传的照片仍可查看。
+              if (!hasPhotos && !canRateSelectedDay) return null
               return (
                 <div className="px-4 py-2.5 border-t border-border">
                   <div className="text-[11px] text-text3 mb-1.5">{hasPhotos ? `📷 照片 (${dayPhotos.length})` : "📷 拍张照记录一下？"}</div>
@@ -517,13 +605,13 @@ export default function History() {
                          )}
                        </div>
                      ))}
-                    <div
+                    {canRateSelectedDay && <button
                       onClick={openMealRating}
                       className="w-14 h-14 rounded-md flex-shrink-0 border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary text-text3"
                     >
                       <span className="text-base leading-none">+</span>
                       <span className="text-[11px]">添加</span>
-                    </div>
+                    </button>}
                   </div>
                 </div>
               )
@@ -542,26 +630,7 @@ export default function History() {
         <div className="flex flex-col gap-2.5">
           {records.slice(0, 5).map((r) => (
             <SwipeRowCard key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
-              <div className="p-3.5 px-4 flex items-center gap-3.5 w-full text-left cursor-pointer transition-all active:bg-primary-light">
-                <span onClick={() => navigate(`/dishes/${r.dish_id}`)} className={`w-12 h-12 rounded-[10px] flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden ${r.meal_type === "lunch" ? "bg-primary-light" : "bg-mint-light"}`}>
-                  <SafeImage src={thumbUrl(r.dish_image_url)} alt={r.dish_name} className="w-full h-full object-cover" fallback={r.dish_emoji} />
-                </span>
-                <div className="flex-1 min-w-0" onClick={() => navigate(`/dishes/${r.dish_id}`)}>
-                  <div className="text-sm font-semibold mb-px">{r.dish_name}</div>
-                  <div className="text-xs text-text2">{r.meal_date} · {r.meal_type === "lunch" ? "午餐" : "晚餐"}</div>
-                </div>
-                {isPlanned(r) ? (
-                  <PlannedPill />
-                ) : r.mood ? (
-                  <div onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 flex items-center gap-1 cursor-pointer active:scale-95 transition-transform">
-                    <span className="text-lg">{moodEmojiMap[r.mood]}</span>
-                    {r.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{r.rating}</span>}
-                    {r.remark && <span className="text-[11px] text-text2 max-w-[60px] truncate">{r.remark}</span>}
-                  </div>
-                ) : (
-                  <button onClick={(e) => { e.stopPropagation(); openRating(r) }} className="flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium bg-primary-light text-primary active:scale-95 transition-all">评价</button>
-                )}
-              </div>
+              <HistoryRecordRow record={r} showDate pending={statusMut.isPending} onStatus={(record, status) => statusMut.mutate({ record, status })} onRating={openRating} />
             </SwipeRowCard>
           ))}
           {records.length === 0 && (
@@ -573,6 +642,8 @@ export default function History() {
           )}
         </div>
       </div>
+
+      <ConsumeInventorySheet dish={consumption?.dish || null} portionScale={consumption?.portionScale || 1} onClose={() => setConsumption(null)} />
 
       {ratingRecord && createPortal(
         <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => setRatingRecord(null)}>
@@ -644,7 +715,7 @@ export default function History() {
               </div>
               <button
                 onClick={submitRating}
-                disabled={!ratingMood}
+                disabled={!ratingMood || updateMut.isPending}
                 className="w-full py-3 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-40 disabled:active:scale-100"
               >保存评价</button>
             </div>
@@ -710,7 +781,7 @@ export default function History() {
               </div>
               <button
                 onClick={submitMealRating}
-                disabled={!mealRatingMood}
+                disabled={!mealRatingMood || dayRatingMut.isPending}
                 className="w-full py-3 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-40 disabled:active:scale-100"
               >保存评价</button>
             </div>

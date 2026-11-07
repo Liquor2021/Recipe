@@ -286,13 +286,21 @@ func TestGenerateWeekPlanAvoidModeDownweightsDislikes(t *testing.T) {
 
 func TestEatenRecordsExcludesPlans(t *testing.T) {
 	setupTestDB(t, &models.MealRecord{})
-	for _, d := range []string{dateFromNow(-1), dateFromNow(0), dateFromNow(1), dateFromNow(5)} {
-		database.DB.Create(&models.MealRecord{DishID: 1, DishName: "菜", MealType: "dinner", MealDate: d})
+	for i, r := range []models.MealRecord{
+		{MealDate: dateFromNow(-1), Status: models.MealCompleted},
+		{MealDate: dateFromNow(0), Status: models.MealCompleted},
+		{MealDate: dateFromNow(-2), Status: models.MealPlanned},
+		{MealDate: dateFromNow(0), Status: models.MealPlanned},
+		{MealDate: dateFromNow(-1), Status: models.MealCancelled},
+		{MealDate: dateFromNow(1), Status: models.MealCompleted}, // 防御：脏数据也不提前计数
+	} {
+		r.DishID, r.DishName, r.MealType = uint(i+1), "菜", "dinner"
+		database.DB.Create(&r)
 	}
 	var n int64
 	database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).Count(&n)
 	if n != 2 {
-		t.Fatalf("只算今天及以前的记录, got %d", n)
+		t.Fatalf("只算明确完成且日期不晚于今天的记录, got %d", n)
 	}
 }
 

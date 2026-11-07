@@ -511,17 +511,19 @@ func BatchUpdateCategory(c *gin.Context) {
 }
 
 type DishRecordWithDay struct {
-	ID        uint     `json:"id"`
-	MealType  string   `json:"meal_type"`
-	MealDate  string   `json:"meal_date"`
-	Rating    int      `json:"rating"`
-	Remark    string   `json:"remark"`
-	Mood      string   `json:"mood"`
-	Photo     string   `json:"photo"`
-	HomeMood  string   `json:"home_mood"`
-	DayMood   string   `json:"day_mood"`
-	DayRemark string   `json:"day_remark"`
-	Photos    []string `json:"photos"`
+	ID           uint     `json:"id"`
+	MealType     string   `json:"meal_type"`
+	MealDate     string   `json:"meal_date"`
+	Status       string   `json:"status"`
+	PortionScale float64  `json:"portion_scale"`
+	Rating       int      `json:"rating"`
+	Remark       string   `json:"remark"`
+	Mood         string   `json:"mood"`
+	Photo        string   `json:"photo"`
+	HomeMood     string   `json:"home_mood"`
+	DayMood      string   `json:"day_mood"`
+	DayRemark    string   `json:"day_remark"`
+	Photos       []string `json:"photos"`
 }
 
 type DishRecordsStats struct {
@@ -600,7 +602,7 @@ func GetDishRecords(c *gin.Context) {
 			photos = []string{}
 		}
 
-		if r.MealDate <= today {
+		if r.Status == models.MealCompleted && r.MealDate <= today {
 			eatenDates = append(eatenDates, r.MealDate)
 			switch r.Mood {
 			case "yum", "great":
@@ -620,17 +622,19 @@ func GetDishRecords(c *gin.Context) {
 		}
 
 		result = append(result, DishRecordWithDay{
-			ID:        r.ID,
-			MealType:  r.MealType,
-			MealDate:  r.MealDate,
-			Rating:    r.Rating,
-			Remark:    r.Remark,
-			Mood:      r.Mood,
-			Photo:     r.Photo,
-			HomeMood:  homeMood,
-			DayMood:   dayMood,
-			DayRemark: dayRemark,
-			Photos:    photos,
+			ID:           r.ID,
+			MealType:     r.MealType,
+			MealDate:     r.MealDate,
+			Status:       r.Status,
+			PortionScale: r.PortionScale,
+			Rating:       r.Rating,
+			Remark:       r.Remark,
+			Mood:         r.Mood,
+			Photo:        r.Photo,
+			HomeMood:     homeMood,
+			DayMood:      dayMood,
+			DayRemark:    dayRemark,
+			Photos:       photos,
 		})
 	}
 

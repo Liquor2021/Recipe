@@ -353,16 +353,21 @@ func buildAchievementSnapshot() achievementSnapshot {
 	s.longestDateStreak = longestDateStreak(s.recordDates)
 
 	var ratings []models.DayRating
-	database.DB.Select("home_mood", "mood", "remark", "photos").Find(&ratings)
+	database.DB.Select("meal_date", "home_mood", "mood", "remark", "photos").
+		Where("meal_date <= ?", TodayDate()).Find(&ratings)
 	for _, r := range ratings {
+		// 首页心情是独立记录，不要求当天完成做饭；用餐评价与饭照才跟随已吃状态。
+		if strings.TrimSpace(r.HomeMood) != "" {
+			s.homeMoodCounts[r.HomeMood]++
+		}
+		if !s.recordDates[r.MealDate] {
+			continue
+		}
 		if strings.TrimSpace(r.Mood) != "" {
 			s.dayRatingCount++
 		}
 		if strings.TrimSpace(r.Remark) != "" {
 			s.dayRemarkCount++
-		}
-		if strings.TrimSpace(r.HomeMood) != "" {
-			s.homeMoodCounts[r.HomeMood]++
 		}
 		photos := parseStringArray(r.Photos)
 		if len(photos) > 0 {

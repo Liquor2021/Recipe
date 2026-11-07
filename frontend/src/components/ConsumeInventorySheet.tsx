@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fridgeApi } from "@/api"
+import { parsePortionScale, portionLabel } from "@/lib/portions"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import type { ConsumptionBatch, ConsumptionSlot, Dish } from "@/types"
 import toast from "react-hot-toast"
@@ -18,10 +19,11 @@ function expiryText(daysLeft: number): string {
 // 默认只勾选每项主料里最早到期的未过期批次；同类不同部位（菜要排骨、冰箱是五花肉）
 // 只列出供参考、不默认勾选，避免扣错食材。
 // zIndexClass：在全屏层（如做菜模式 z-[300]）上打开时需要更高的层级
-export default function ConsumeInventorySheet({ dish, onClose, zIndexClass }: { dish: Dish | null; onClose: () => void; zIndexClass?: string }) {
+export default function ConsumeInventorySheet({ dish, portionScale = 1, onClose, zIndexClass }: { dish: Dish | null; portionScale?: number; onClose: () => void; zIndexClass?: string }) {
+  const scale = parsePortionScale(portionScale)
   const { data, isError } = useQuery({
-    queryKey: ["fridge-consumption", dish?.id],
-    queryFn: () => fridgeApi.consumption(dish!.id),
+    queryKey: ["fridge-consumption", dish?.id, scale],
+    queryFn: () => fridgeApi.consumption(dish!.id, scale),
     enabled: !!dish,
     // 候选是"做完这道菜那一刻"的快照：每次打开都重新取，打开期间不因切回页面/重连而刷新
     staleTime: 0,
@@ -38,11 +40,11 @@ export default function ConsumeInventorySheet({ dish, onClose, zIndexClass }: { 
   }, [settledEmpty, onClose])
 
   if (!dish || !data || data.dish_id !== dish.id || data.slots.length === 0) return null
-  // key 按菜区分：换一道菜时重置勾选状态
-  return <ConsumeSheetBody key={dish.id} dish={dish} slots={data.slots} onClose={onClose} zIndexClass={zIndexClass} />
+  // 菜品或份量改变时重置勾选状态及剩余数量，不能沿用上一次的扣减建议。
+  return <ConsumeSheetBody key={`${dish.id}:${scale}`} dish={dish} portionScale={scale} slots={data.slots} onClose={onClose} zIndexClass={zIndexClass} />
 }
 
-function ConsumeSheetBody({ dish, slots, onClose, zIndexClass }: { dish: Dish; slots: ConsumptionSlot[]; onClose: () => void; zIndexClass?: string }) {
+function ConsumeSheetBody({ dish, portionScale, slots, onClose, zIndexClass }: { dish: Dish; portionScale: number; slots: ConsumptionSlot[]; onClose: () => void; zIndexClass?: string }) {
   const qc = useQueryClient()
   const batchById = new Map(slots.flatMap((s) => s.batches.map((b) => [b.batch_id, b] as const)))
   const [selected, setSelected] = useState<number[]>(() =>
@@ -71,6 +73,7 @@ function ConsumeSheetBody({ dish, slots, onClose, zIndexClass }: { dish: Dish; s
       qc.invalidateQueries({ queryKey: ["fridge"] })
       qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
       qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
       const parts = [removed > 0 ? `移出 ${removed} 批` : "", updated > 0 ? `更新 ${updated} 批剩余量` : ""].filter(Boolean)
       toast.success(parts.length > 0 ? `🧊 冰箱已${parts.join("，")}` : "这些批次已经不在冰箱里了")
       onClose()
@@ -120,6 +123,7 @@ function ConsumeSheetBody({ dish, slots, onClose, zIndexClass }: { dish: Dish; s
       {({ close }) => (
         <>
           <div className="text-lg font-extrabold mb-0.5">🧊 做完{dish.name}，更新一下冰箱？</div>
+          <div className="text-sm font-semibold text-primary mb-1">本次做菜 {portionLabel(portionScale)}</div>
           <div className="text-xs text-text3 mb-4">勾选用到的批次：用完的移出冰箱，还剩的改成剩余量；默认勾同名食材里最早到期的一批</div>
           <div className="flex flex-col gap-3.5 mb-4 max-h-[50vh] overflow-y-auto">
             {slots.map((slot) => (

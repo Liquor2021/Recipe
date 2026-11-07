@@ -1,17 +1,17 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { createPortal } from "react-dom"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { dishesApi, favoritesApi, recordsApi } from "@/api"
+import { dishesApi, favoritesApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import { asArray } from "@/lib/utils"
+import { parsePortionScale, portionLabel, scaleAmount } from "@/lib/portions"
 import { getDishImageUrl, getDishEmoji, thumbUrl } from "@/lib/dishImage"
 import SafeImage from "@/components/SafeImage"
 import PhotoViewer from "@/components/PhotoViewer"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import SectionHeader from "@/components/SectionHeader"
 import DishCard from "@/components/DishCard"
-import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import { cardShadow } from "@/components/Card"
 import type { Dish, DishRecordsStats } from "@/types"
 import toast from "react-hot-toast"
@@ -47,34 +47,18 @@ function normalizeSteps(raw: unknown[]): Step[] {
   })
 }
 
-function splitAmount(amount: string): { num: number; unit: string } | null {
-  const m = amount.trim().match(/^(\d+(?:\.\d+)?)(.*)$/)
-  if (!m) return null
-  return { num: Number(m[1]), unit: m[2] }
-}
-
 function IngredientCard({ ing, scale }: { ing: Ingredient; scale: number }) {
-  const parsed = splitAmount(ing.amount)
-  const [num, setNum] = useState(parsed ? parsed.num : 0)
-  const displayNum = parsed ? Math.round(num * scale * 100) / 100 : 0
-
   return (
     <div className="bg-card p-2.5 rounded-[10px] text-center text-[13px] border border-border transition-all">
       <div className="font-semibold mb-0.5">{ing.name}</div>
-      {parsed ? (
-        <div className="flex items-center justify-center gap-1.5 mt-0.5">
-          {/* 透明 ::after 撑大 20px 的 −/+ 点击区、外观不变：朝外和上下扩 8px，朝中间的数量只扩 4px，两边不会叠在一起 */}
-          <button onClick={() => setNum((n) => Math.max(0, Math.round((n - 1) * 100) / 100))}
-            className="relative after:absolute after:-inset-y-2 after:-left-2 after:-right-1 w-5 h-5 rounded-full bg-bg border border-border text-text2 flex items-center justify-center text-xs leading-none active:bg-primary-light">−</button>
-          <span className="text-[11px] text-text2 min-w-[28px]">{scale === 1 ? num : displayNum}{parsed.unit}</span>
-          <button onClick={() => setNum((n) => Math.round((n + 1) * 100) / 100)}
-            className="relative after:absolute after:-inset-y-2 after:-left-1 after:-right-2 w-5 h-5 rounded-full bg-bg border border-border text-text2 flex items-center justify-center text-xs leading-none active:bg-primary-light">+</button>
-        </div>
-      ) : (
-        ing.amount && <div className="text-[11px] text-text2">{scale === 1 ? ing.amount : ing.amount}</div>
-      )}
+      {ing.amount && <div className="text-[12px] text-text2">{scaleAmount(ing.amount, scale)}</div>}
     </div>
   )
+}
+
+function todayKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 function formatRelativeDate(dateStr: string): string {
@@ -108,16 +92,23 @@ function getMasteryLevel(count: number): { label: string; icon: string; color: s
 
 export default function DishDetail() {
   const { id } = useParams()
+  const [params] = useSearchParams()
+  return <DishDetailContent key={`${id}:${params.get("record_id") || ""}`} />
+}
+
+function DishDetailContent() {
+  const { id } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const qc = useQueryClient()
   const dishId = Number(id)
+  const requestedRecordId = Number(searchParams.get("record_id")) || 0
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
 
-  const [portionScale, setPortionScale] = useState(1)
+  const [portionChoice, setPortionChoice] = useState<number | null>(null)
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
   const [viewerIdx, setViewerIdx] = useState(0)
   const [showViewer, setShowViewer] = useState(false)
-  const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
 
   const { data: dish, isLoading } = useQuery({
     queryKey: ["dish", dishId],
@@ -127,16 +118,37 @@ export default function DishDetail() {
     gcTime: 0,
   })
 
-  const { data: favDishes } = useQuery({ queryKey: ["favorites"], queryFn: () => favoritesApi.list(), staleTime: 0 })
-  const isFav = favDishes?.some((d: Dish) => d.id === dishId) || false
-
-  const { data: dishRecordsData } = useQuery({
+  const { data: dishRecordsData, isFetchedAfterMount: dishHistoryFetched, isSuccess: dishHistoryReady, isError: dishHistoryError } = useQuery({
     queryKey: ["dish-records", dishId],
     queryFn: () => dishesApi.records(dishId),
     enabled: !!dishId,
     staleTime: 0,
+    refetchOnMount: "always",
   })
-  const dishRecords = useMemo(() => dishRecordsData?.records || [], [dishRecordsData])
+  const todayPlans = (dishRecordsData?.records || []).filter((r) => r.status === "planned" && r.meal_date === todayKey())
+  const suggestedMeal = new Date().getHours() < 15 ? "lunch" : "dinner"
+  const inferredPlan = todayPlans.find((r) => r.meal_type === suggestedMeal) || todayPlans[0]
+  // 先读取最新状态，再固定到具体一餐；跨时段或刷新列表不能改绑编辑中的份量。
+  useEffect(() => {
+    if (!requestedRecordId && dishHistoryFetched && dishHistoryReady && inferredPlan?.id) {
+      navigate(`/dishes/${dishId}?record_id=${inferredPlan.id}`, { replace: true })
+    }
+  }, [dishId, requestedRecordId, dishHistoryFetched, dishHistoryReady, inferredPlan?.id, navigate])
+  const recordId = requestedRecordId || inferredPlan?.id || 0
+  const { data: linkedRecord, isFetchedAfterMount: recordFetched, isError: recordError } = useQuery({
+    queryKey: ["record", recordId],
+    queryFn: () => recordsApi.get(recordId),
+    enabled: recordId > 0,
+    staleTime: 0,
+  })
+  const portionScale = portionChoice ?? parsePortionScale(linkedRecord?.portion_scale ?? searchParams.get("portion_scale"))
+  const portionChanged = !!linkedRecord && portionScale !== linkedRecord.portion_scale
+  const canCook = !linkedRecord || (linkedRecord.status === "planned" && linkedRecord.meal_date <= todayKey())
+
+  const { data: favDishes } = useQuery({ queryKey: ["favorites"], queryFn: () => favoritesApi.list(), staleTime: 0 })
+  const isFav = favDishes?.some((d: Dish) => d.id === dishId) || false
+
+  const dishRecords = useMemo(() => (dishRecordsData?.records || []).filter((r) => r.status === "completed"), [dishRecordsData])
   const dishStats: DishRecordsStats = dishRecordsData?.stats || { total_count: 0, lunch_count: 0, dinner_count: 0, yum_percent: 0, ok_percent: 0, no_percent: 0, avg_rating: 0, last_date: "", avg_interval: 0 }
 
   // 同类推荐按分类向后端取已启用的菜（过去在"最新 100 道"里筛，老分类常常一道都凑不出，还会混进已停用的菜）
@@ -164,21 +176,41 @@ export default function DishDetail() {
       dish_id: dishId,
       dish_name: dish?.name || "",
       meal_type: mealType,
-      meal_date: `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-${String(new Date().getDate()).padStart(2,"0")}`,
+      meal_date: todayKey(),
+      status: "planned",
+      portion_scale: portionScale,
     }),
-    onSuccess: () => {
-      toast.success("❤ 已记录！")
+    onSuccess: (record) => {
+      toast.success(`已加入今天${record.meal_type === "lunch" ? "午餐" : "晚餐"}计划`)
       qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["achievements"] })
       qc.invalidateQueries({ queryKey: ["dish-records", dishId] })
-      if (dish) setConsumeDish(dish)
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      navigate(`/dishes/${dishId}?record_id=${record.id}`, { replace: true })
     },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      if (msg) toast.error(msg)
-      else toast.error("记录失败")
-    },
+    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "加入计划失败")),
   })
+
+  const portionMut = useMutation({
+    mutationFn: () => recordsApi.update(recordId, { portion_scale: portionScale }),
+    onSuccess: (record) => {
+      qc.setQueryData(["record", recordId], record)
+      qc.invalidateQueries({ queryKey: ["records"] })
+      qc.invalidateQueries({ queryKey: ["dish-records", dishId] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      toast.success("份量已保存，买菜清单已更新")
+    },
+    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "保存份量失败")),
+  })
+
+  async function startCooking() {
+    if (!canCook || portionMut.isPending) return
+    if (portionChanged) {
+      try { await portionMut.mutateAsync() } catch { return }
+    }
+    const query = new URLSearchParams({ portion_scale: String(portionScale) })
+    if (recordId) query.set("record_id", String(recordId))
+    navigate(`/dishes/${dishId}/cook?${query}`)
+  }
 
   const allPhotos = useMemo(() => {
     const photos: { url: string; date: string }[] = []
@@ -193,8 +225,14 @@ export default function DishDetail() {
     return photos
   }, [dishRecords])
 
-  if (isLoading) return <div className="p-8 text-center text-text2">加载中...</div>
+  if (isLoading || (!requestedRecordId && !dishHistoryError && (!dishHistoryFetched || !dishHistoryReady)) || (recordId > 0 && !recordError && !recordFetched)) return <div className="p-8 text-center text-text2">加载中...</div>
   if (!dish) return <div className="p-8 text-center text-text2">菜品不存在</div>
+  if ((!requestedRecordId && dishHistoryError) || (recordId > 0 && (recordError || !linkedRecord || linkedRecord.dish_id !== dishId))) return (
+    <div className="p-8 text-center text-text2">
+      <p>这份计划暂时无法读取，请返回重试。</p>
+      <button onClick={() => navigate(-1)} className="mt-4 px-5 py-2 rounded-full bg-primary text-white">返回</button>
+    </div>
+  )
 
   const ingredients: Ingredient[] = normalizeIngredients(asArray(dish.ingredients))
   const seasonings: Ingredient[] = normalizeIngredients(asArray(dish.seasonings))
@@ -235,6 +273,21 @@ export default function DishDetail() {
 
       <div className="px-5 py-5 max-w-[640px] mx-auto" style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
         <div className="text-2xl font-extrabold mb-2">{dish.name}</div>
+        {linkedRecord && (
+          <div className="mb-4 rounded-xl border border-primary/20 bg-primary-light p-3 text-[13px] text-text2">
+            <div className="font-semibold text-primary">{linkedRecord.meal_date} · {linkedRecord.meal_type === "lunch" ? "午餐" : "晚餐"} · {linkedRecord.status === "completed" ? "已吃" : linkedRecord.status === "cancelled" ? "已取消" : "计划吃"}</div>
+            <div className="mt-1">已保存 {portionLabel(linkedRecord.portion_scale)}{portionChanged ? "，下方份量尚未保存" : ""}</div>
+            {linkedRecord.status === "planned" && linkedRecord.meal_date > todayKey() && <div className="mt-1">到了用餐当天，再开始做菜或标记已吃。</div>}
+            {todayPlans.some((r) => r.id !== linkedRecord.id) && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {todayPlans.filter((r) => r.id !== linkedRecord.id).map((r) => <button key={r.id} onClick={() => navigate(`/dishes/${dishId}?record_id=${r.id}`, { replace: true })} className="min-h-10 px-3 rounded-full bg-card text-primary font-semibold">查看今天{r.meal_type === "lunch" ? "午餐" : "晚餐"}计划 · {portionLabel(r.portion_scale)}</button>)}
+              </div>
+            )}
+            {linkedRecord.status === "planned" && linkedRecord.meal_date === todayKey() && !(dishRecordsData?.records || []).some((r) => r.meal_date === todayKey() && r.meal_type !== linkedRecord.meal_type && r.status !== "cancelled") && (
+              <button disabled={recordMut.isPending} onClick={() => recordMut.mutate(linkedRecord.meal_type === "lunch" ? "dinner" : "lunch")} className="mt-2 min-h-10 px-3 rounded-full bg-card text-primary font-semibold disabled:opacity-50">也加入今天{linkedRecord.meal_type === "lunch" ? "晚餐" : "午餐"}计划</button>
+            )}
+          </div>
+        )}
         <div className="flex gap-2 flex-wrap mb-3">
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{dish.category}</span>
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-mint-light text-mint">{dish.cook_time}分钟</span>
@@ -328,17 +381,19 @@ export default function DishDetail() {
 
         {(ingredients.length > 0 || seasonings.length > 0) && (
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center justify-between gap-2 mb-2.5">
               <div className="text-[15px] font-bold flex items-center gap-2"><span className="text-base">🥬</span> 食材</div>
-              <div className="flex items-center gap-1 bg-bg rounded-full px-1 py-0.5 border border-border">
-                {[1, 2, 3, 4].map((s) => (
-                  <button key={s} onClick={() => setPortionScale(s)}
-                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium transition-all ${portionScale === s ? "bg-primary text-white" : "text-text3 active:bg-primary-light"}`}>
-                    {s}人份
+              <div className="flex items-center bg-bg rounded-full p-1 border border-border" aria-label="菜谱份量">
+                {[0.5, 1, 2, 3, 4].map((s) => (
+                  <button key={s} onClick={() => setPortionChoice(s)} disabled={portionMut.isPending || (!!linkedRecord && linkedRecord.status !== "planned")}
+                    aria-label={portionLabel(s)} aria-pressed={portionScale === s}
+                    className={`min-w-10 h-9 px-1.5 rounded-full text-[12px] font-medium transition-all disabled:opacity-50 ${portionScale === s ? "bg-primary text-white" : "text-text3 active:bg-primary-light"}`}>
+                    {s === 1 ? "原量" : `×${s}`}
                   </button>
                 ))}
               </div>
             </div>
+            <div className="text-xs text-text3 mb-3">当前 {portionLabel(portionScale)}；加入计划或保存后同步买菜清单。“适量”等保持原文。</div>
             {ingredients.length > 0 && (
               <div className="mb-3">
                 <div className="text-[12px] text-text3 font-semibold mb-1.5">配料</div>
@@ -396,7 +451,7 @@ export default function DishDetail() {
           </div>
         )}
 
-        <button onClick={() => navigate(`/dishes/${dishId}/cook`)} className="w-full py-3.5 px-7 rounded-full text-base font-semibold bg-primary text-white transition-all active:scale-96 hover:bg-primary-dark mb-6">🍳 开始做菜</button>
+        {canCook && <button onClick={startCooking} disabled={portionMut.isPending} className="w-full py-3.5 px-7 rounded-full text-base font-semibold bg-primary text-white transition-all active:scale-96 hover:bg-primary-dark disabled:opacity-50 mb-6">🍳 开始做菜 · {portionLabel(portionScale)}</button>}
 
         {dishRecords.length > 0 && (
           <div className="mb-6">
@@ -541,16 +596,27 @@ export default function DishDetail() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-[210] bg-bg/92 backdrop-blur-xl px-5 py-3 flex gap-2.5 border-t border-border" style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
-        <button onClick={() => recordMut.mutate("lunch")} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96">🍳 中午吃这个</button>
-        <button onClick={() => recordMut.mutate("dinner")} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96">🍲 晚上吃这个</button>
+        {linkedRecord ? (
+          <>
+            <button onClick={() => navigate("/history")} className="flex-1 py-2.5 rounded-full text-sm font-semibold border border-border2 text-text2 transition-all active:scale-96">查看用餐记录</button>
+            {linkedRecord.status === "planned" ? (
+              <button onClick={() => portionMut.mutate()} disabled={!portionChanged || portionMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">{portionMut.isPending ? "保存中…" : portionChanged ? "保存份量" : "份量已保存"}</button>
+            ) : (
+              <button onClick={() => navigate(`/dishes/${dishId}?portion_scale=${portionScale}`, { replace: true })} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96">重新选这道菜</button>
+            )}
+          </>
+        ) : (
+          <>
+            <button onClick={() => recordMut.mutate("lunch")} disabled={recordMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">🍳 午餐计划吃这个</button>
+            <button onClick={() => recordMut.mutate("dinner")} disabled={recordMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96 disabled:opacity-50">🍲 晚餐计划吃这个</button>
+          </>
+        )}
       </div>
 
       {showViewer && viewerPhotos.length > 0 && createPortal(
         <PhotoViewer photos={viewerPhotos} idx={viewerIdx} setIdx={setViewerIdx} onClose={() => setShowViewer(false)} />,
         document.body
       )}
-
-      <ConsumeInventorySheet dish={consumeDish} onClose={() => setConsumeDish(null)} />
     </div>
   )
 }

@@ -52,6 +52,8 @@ export interface DishInput {
   sort_order?: number
 }
 
+export type MealRecordStatus = "planned" | "completed" | "cancelled"
+
 export interface MealRecord {
   id: number
   dish_id: number
@@ -60,6 +62,8 @@ export interface MealRecord {
   dish_emoji: string
   meal_type: string
   meal_date: string
+  status: MealRecordStatus
+  portion_scale: number // 相对菜谱原量的倍数，不代表人数
   rating: number
   remark: string
   mood: string
@@ -212,6 +216,8 @@ export interface DishRecordWithDay {
   id: number
   meal_type: string
   meal_date: string
+  status: MealRecordStatus
+  portion_scale: number
   rating: number
   remark: string
   mood: string

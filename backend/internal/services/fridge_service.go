@@ -472,7 +472,11 @@ func lessFIFO(aDays, bDays int, aCreated, bCreated time.Time, aID, bID uint) boo
 // 每个批次只分配给一个槽位，避免一批被扣两次：精确匹配先分（同名只对应一个槽位，不存在争抢），
 // 泛称与相近部位按先进先出轮流分（每轮每个槽位最多拿一批），不会让第一个槽位把同类批次全拿走。
 // 没有任何候选批次的主料不出现在结果里。
-func matchDishConsumption(dish models.Dish, batches []models.InventoryBatch, today time.Time) []ConsumptionSlot {
+func matchDishConsumption(dish models.Dish, batches []models.InventoryBatch, today time.Time, scales ...float64) []ConsumptionSlot {
+	scale := 1.0
+	if len(scales) > 0 {
+		scale = scales[0]
+	}
 	type slot struct {
 		name, amount string
 		head         bool
@@ -489,7 +493,7 @@ func matchDishConsumption(dish models.Dish, batches []models.InventoryBatch, tod
 			continue
 		}
 		seen[key] = true
-		slots = append(slots, &slot{name: ing.Name, amount: ing.Amount, head: ingredients.IsCategoryHead(ing.Name)})
+		slots = append(slots, &slot{name: ing.Name, amount: ScaleIngredientAmount(ing.Amount, scale), head: ingredients.IsCategoryHead(ing.Name)})
 	}
 
 	ordered := make([]models.InventoryBatch, len(batches))
@@ -564,7 +568,7 @@ func matchDishConsumption(dish models.Dish, batches []models.InventoryBatch, tod
 
 // MatchDishConsumption 某道菜做完后可扣减的库存候选；菜品不存在返回 found=false，
 // 数据库读取失败返回 error（不能伪装成"菜品不存在"或"冰箱里没有"）
-func MatchDishConsumption(dishID uint) (*ConsumptionMatch, bool, error) {
+func MatchDishConsumption(dishID uint, scales ...float64) (*ConsumptionMatch, bool, error) {
 	var dish models.Dish
 	if err := database.DB.First(&dish, dishID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -576,7 +580,7 @@ func MatchDishConsumption(dishID uint) (*ConsumptionMatch, bool, error) {
 	if err := database.DB.Where("in_stock = ?", true).Find(&batches).Error; err != nil {
 		return nil, false, err
 	}
-	return &ConsumptionMatch{DishID: dish.ID, Slots: matchDishConsumption(dish, batches, time.Now())}, true, nil
+	return &ConsumptionMatch{DishID: dish.ID, Slots: matchDishConsumption(dish, batches, time.Now(), scales...)}, true, nil
 }
 
 // unitAliases 同一单位的常见写法归一（只做写法归一，不做克/斤之类的换算）
@@ -602,7 +606,7 @@ func parseSimpleAmount(s string) (float64, string, bool) {
 	if s == "" || strings.ContainsAny(s, "+＋") {
 		return 0, "", false
 	}
-	m := amountPattern.FindStringSubmatch(s)
+	m := scalableAmount.FindStringSubmatch(s)
 	if m == nil {
 		return 0, "", false
 	}

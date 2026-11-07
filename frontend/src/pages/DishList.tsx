@@ -135,10 +135,10 @@ export default function DishList() {
   const favIds = useMemo(() => new Set((favDishes || []).map((d: Dish) => d.id)), [favDishes])
 
   const { data: recordsData } = useQuery({
-    queryKey: ["records"],
-    queryFn: () => recordsApi.list({ pageSize: "100" }),
+    queryKey: ["records", "today", today],
+    queryFn: () => recordsApi.list({ pageSize: "100", date_from: today, date_to: today }),
   })
-  const todayRecords = useMemo(() => (recordsData?.items || []) as MealRecord[], [recordsData])
+  const todayRecords = useMemo(() => (recordsData?.items || []).filter(r => r.status !== "cancelled"), [recordsData])
 
   const todayLunchIds = useMemo(() => new Set(
     todayRecords.filter(r => r.meal_type === "lunch" && r.meal_date === today).map(r => r.dish_id)
@@ -160,11 +160,15 @@ export default function DishList() {
 
   const recordMut = useMutation({
     mutationFn: (data: { dish_id: number; dish_name: string; meal_type: string; meal_date: string }) =>
-      recordsApi.create(data),
+      recordsApi.create({ ...data, status: "planned" }),
     onSuccess: () => {
-      toast.success("❤ 已记录！")
+      toast.success("已加入今日计划")
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      qc.invalidateQueries({ queryKey: ["record"] })
+      qc.invalidateQueries({ queryKey: ["dish-records"] })
+      qc.invalidateQueries({ queryKey: ["admin", "records"] })
     },
     onError: (err: unknown) => {
       const msg = (err instanceof Error ? err.message : "") || "记录失败"
@@ -173,11 +177,11 @@ export default function DishList() {
   })
 
   const deleteRecordMut = useMutation({
-    mutationFn: (id: number) => recordsApi.delete(id),
+    mutationFn: (id: number) => recordsApi.update(id, { status: "cancelled" }),
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: ["records"] })
-      const prev = qc.getQueryData(["records"])
-      qc.setQueryData(["records"], (old: unknown) => {
+      const prev = qc.getQueryData(["records", "today", today])
+      qc.setQueryData(["records", "today", today], (old: unknown) => {
         if (!old || typeof old !== "object" || old === null) return old
         const o = old as { items?: MealRecord[] }
         if (!o.items) return old
@@ -187,10 +191,16 @@ export default function DishList() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      qc.invalidateQueries({ queryKey: ["records"] })
+      qc.invalidateQueries({ queryKey: ["record"] })
+      qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      toast.success("已取消计划，可在记录页恢复")
+      qc.invalidateQueries({ queryKey: ["dish-records"] })
+      qc.invalidateQueries({ queryKey: ["admin", "records"] })
     },
     onError: (_err, _id, context) => {
-      if (context?.prev) qc.setQueryData(["records"], context.prev)
-      toast.error("删除失败")
+      if (context?.prev) qc.setQueryData(["records", "today", today], context.prev)
+      toast.error("取消失败")
     },
   })
 
@@ -198,7 +208,8 @@ export default function DishList() {
     const isAdded = mealType === "lunch" ? todayLunchIds.has(dish.id) : todayDinnerIds.has(dish.id)
     if (isAdded) {
       const record = todayRecords.find(r => r.dish_id === dish.id && r.meal_type === mealType && r.meal_date === today)
-      if (record) deleteRecordMut.mutate(record.id)
+      if (record?.status === "completed") toast("这道菜已吃过，可在记录页查看或删除")
+      else if (record) deleteRecordMut.mutate(record.id)
     } else {
       recordMut.mutate({
         dish_id: dish.id,
@@ -493,7 +504,7 @@ export default function DishList() {
                           record={r}
                           dish={dishMap.get(r.dish_id)}
                           onDelete={() => deleteRecordMut.mutate(r.id)}
-                          onClick={() => { close(); navigate(`/dishes/${r.dish_id}`) }}
+                          onClick={() => { close(); navigate(`/dishes/${r.dish_id}?record_id=${r.id}`) }}
                         />
                       ))}
                     </div>
@@ -509,7 +520,7 @@ export default function DishList() {
                           record={r}
                           dish={dishMap.get(r.dish_id)}
                           onDelete={() => deleteRecordMut.mutate(r.id)}
-                          onClick={() => { close(); navigate(`/dishes/${r.dish_id}`) }}
+                          onClick={() => { close(); navigate(`/dishes/${r.dish_id}?record_id=${r.id}`) }}
                         />
                       ))}
                     </div>
@@ -554,6 +565,7 @@ function TodayMenuItem({ record, dish, onDelete, onClick }: { record: MealRecord
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-[14px] font-semibold truncate">{record.dish_name}</div>
+        <div className="text-[11px] text-primary mt-0.5">{record.status === "completed" ? "已吃" : "计划中"} · 原量 × {record.portion_scale || 1}</div>
         <div className="flex items-center gap-1.5 text-[11px] text-text2 mt-0.5">
           {dish?.category && <span>{dish.category}</span>}
           {dish?.cook_time != null && dish.cook_time > 0 && (
@@ -570,12 +582,13 @@ function TodayMenuItem({ record, dish, onDelete, onClick }: { record: MealRecord
           )}
         </div>
       </div>
-      <button
+      {record.status === "planned" && <button
         onClick={(e) => { e.stopPropagation(); onDelete() }}
+        aria-label={`取消${record.dish_name}的计划`}
         className="w-8 h-8 rounded-full bg-red-light text-red flex items-center justify-center transition-all active:scale-90 flex-shrink-0"
       >
         <Trash2 size={14} />
-      </button>
+      </button>}
     </div>
   )
 }

@@ -130,7 +130,12 @@ func GetFridgeConsumption(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	match, found, err := services.MatchDishConsumption(uint(dishID))
+	scale, err := strconv.ParseFloat(c.DefaultQuery("portion_scale", "1"), 64)
+	if err != nil || !services.ValidPortionScale(scale) {
+		utils.BadRequest(c, "份量应为原量的 0.5–8 倍")
+		return
+	}
+	match, found, err := services.MatchDishConsumption(uint(dishID), scale)
 	if err != nil {
 		utils.InternalError(c, "读取冰箱库存失败")
 		return
