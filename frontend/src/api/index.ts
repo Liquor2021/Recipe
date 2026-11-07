@@ -177,15 +177,16 @@ export const fridgeApi = {
   list: () => api<InventoryBatch[]>("GET", "/fridge"),
   add: (item_name: string, quantity?: string, expiry_date?: string) =>
     api<null>("POST", "/fridge", { item_name, quantity: quantity || "", expiry_date: expiry_date || "" }),
-  updateBatch: (id: number, quantity: string, expiry_date: string) =>
-    api<null>("PUT", `/fridge/batch/${id}`, { quantity, expiry_date }),
+  updateBatch: (id: number, quantity: string, expiry_date: string, expected: ConsumptionExpectation) =>
+    api<null>("PUT", `/fridge/batch/${id}`, { quantity, expiry_date, expected_batch: expected }),
   removeBatch: (id: number) => api<null>("DELETE", `/fridge/batch/${id}`),
   remove: (itemName: string) => api<null>("DELETE", `/fridge/${encodeURIComponent(itemName)}`),
   recipes: (limit = 12) => api<FridgeMatch[]>("GET", `/fridge/recipes?limit=${limit}`),
   consumption: (dishId: number, portionScale = 1) => api<ConsumptionMatch>("GET", `/fridge/consumption?dish_id=${dishId}&portion_scale=${portionScale}`),
   // batchIds 整批移出；remaining 用了一部分的批次改成剩余数量（同一事务）
-  consume: (batchIds: number[], remaining?: { batch_id: number; quantity: string }[]) =>
-    api<{ removed: number; updated: number }>("POST", "/fridge/consume", { batch_ids: batchIds, remaining }),
+  consume: (batchIds: number[], remaining: { batch_id: number; quantity: string }[], expected: ConsumptionExpectation[]) =>
+    api<{ removed: number; updated: number }>("POST", "/fridge/consume", { batch_ids: batchIds, remaining, expected_batches: expected }),
+  clearExpired: (batchIds: number[]) => api<{ removed: number; skipped: number }>("POST", "/fridge/clear-expired", { batch_ids: batchIds }),
   urgent: () => api<InventoryBatch[]>("GET", "/fridge/urgent"),
 }
 

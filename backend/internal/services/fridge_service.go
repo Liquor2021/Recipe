@@ -211,10 +211,12 @@ func matchDishesWithInventory(dishes []models.Dish, stock []StockItem, limit int
 }
 
 // ListInventoryBatches 冰箱全部批次：按食材名分组有序（组内临期在前，未设置的最后）
-func ListInventoryBatches() []models.InventoryBatch {
+func ListInventoryBatches() ([]models.InventoryBatch, error) {
 	batches := []models.InventoryBatch{}
-	database.DB.Where("in_stock = ?", true).
-		Order("item_name ASC, updated_at DESC").Find(&batches)
+	if err := database.DB.Where("in_stock = ?", true).
+		Order("item_name ASC, updated_at DESC").Find(&batches).Error; err != nil {
+		return nil, err
+	}
 	today := time.Now()
 	sort.SliceStable(batches, func(i, j int) bool {
 		if batches[i].ItemName != batches[j].ItemName {
@@ -223,7 +225,7 @@ func ListInventoryBatches() []models.InventoryBatch {
 		di, dj := daysLeftFor(batches[i].ExpiryDate, today), daysLeftFor(batches[j].ExpiryDate, today)
 		return di < dj
 	})
-	return batches
+	return batches, nil
 }
 
 // ErrEmptyItemName 食材名为空（调用方应按参数错误处理）
@@ -252,13 +254,75 @@ func CreateInventoryBatch(itemName string, quantity string, expiryDate string) e
 	return database.DB.Create(&batch).Error
 }
 
-// UpdateInventoryBatch 更新某批次的质量字段（数量/保质期）；批次不存在返回 found=false
-func UpdateInventoryBatch(id uint, quantity string, expiryDate string) (bool, error) {
-	// 只更新现存行；Save 在读后被另一请求删除时会回退 INSERT，复活已用完的批次。
-	res := database.DB.Model(&models.InventoryBatch{}).Where("id = ?", id).Updates(map[string]any{
+var ErrInventoryVersion = errors.New("库存版本信息不完整，请刷新页面后重新编辑")
+var ErrInventoryChanged = errors.New("这批库存已变动或被移出，请读取最新库存后重新编辑")
+
+// UpdateInventoryBatch 与扣库存共用数量和更新时间快照，条件更新防止旧弹层覆盖新库存。
+// 版本必填：旧客户端不能降级为无条件写入。
+func UpdateInventoryBatch(id uint, quantity string, expiryDate string, expected ExpectedConsumptionBatch) (bool, error) {
+	if expected.BatchID != id || expected.UpdatedAt.IsZero() {
+		return false, ErrInventoryVersion
+	}
+	res := inventoryVersionQuery(database.DB, expected).Updates(map[string]any{
 		"quantity": strings.TrimSpace(quantity), "expiry_date": strings.TrimSpace(expiryDate),
 	})
-	return res.RowsAffected > 0, res.Error
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return false, ErrInventoryChanged
+	}
+	return true, nil
+}
+
+func inventoryVersionQuery(tx *gorm.DB, expected ExpectedConsumptionBatch) *gorm.DB {
+	return tx.Model(&models.InventoryBatch{}).
+		Where("id = ? AND in_stock = ? AND quantity = ? AND updated_at = ?", expected.BatchID, true, expected.Quantity, expected.UpdatedAt)
+}
+
+type ClearExpiredInventoryResult struct {
+	Removed int64 `json:"removed"`
+	Skipped int64 `json:"skipped"`
+}
+
+// ClearExpiredInventory 只清理用户选择且提交时仍过期的批次；其他批次计入 skipped。
+// 删除时再次匹配读取的日期，避免更正保质期后的批次被陈旧页面误删。
+func ClearExpiredInventory(ids []uint) (ClearExpiredInventoryResult, error) {
+	result := ClearExpiredInventoryResult{}
+	if len(ids) == 0 || len(ids) > 100 {
+		return result, consumptionInputError("请选择要清理的批次（一次最多 100 批）")
+	}
+	seen := make(map[uint]bool, len(ids))
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			return result, consumptionInputError("批次参数重复或无效")
+		}
+		seen[id] = true
+	}
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var batches []models.InventoryBatch
+		if err := tx.Where("id IN ? AND in_stock = ?", ids, true).Find(&batches).Error; err != nil {
+			return err
+		}
+		today := TodayDate()
+		for _, batch := range batches {
+			if _, err := time.Parse("2006-01-02", batch.ExpiryDate); err != nil || batch.ExpiryDate >= today {
+				continue
+			}
+			res := tx.Where("id = ? AND in_stock = ? AND expiry_date = ?", batch.ID, true, batch.ExpiryDate).
+				Delete(&models.InventoryBatch{})
+			if res.Error != nil {
+				return res.Error
+			}
+			result.Removed += res.RowsAffected
+		}
+		result.Skipped = int64(len(ids)) - result.Removed
+		return nil
+	})
+	if err != nil {
+		return ClearExpiredInventoryResult{}, err
+	}
+	return result, nil
 }
 
 // RemoveInventoryBatch 移出单批食材；批次不存在返回 removed=false
@@ -313,8 +377,11 @@ func removeAvailableBatches(itemName string) (int64, error) {
 }
 
 // UrgentInventoryItems 临期/已过期批次（含今天过期），供首页提醒条使用
-func UrgentInventoryItems() []models.InventoryBatch {
-	batches := ListInventoryBatches()
+func UrgentInventoryItems() ([]models.InventoryBatch, error) {
+	batches, err := ListInventoryBatches()
+	if err != nil {
+		return nil, err
+	}
 	today := time.Now()
 	urgent := []models.InventoryBatch{}
 	for _, b := range batches {
@@ -322,7 +389,7 @@ func UrgentInventoryItems() []models.InventoryBatch {
 			urgent = append(urgent, b)
 		}
 	}
-	return urgent
+	return urgent, nil
 }
 
 // foldBatchesByCategory 纯函数：把库存批次折叠成参与匹配的库存项。
@@ -358,21 +425,39 @@ func foldBatchesByCategory(batches []models.InventoryBatch, today time.Time) []S
 }
 
 // MatchFridgeRecipes 用冰箱现有食材推荐能做的菜
-func MatchFridgeRecipes(limit int) []FridgeMatch {
+func MatchFridgeRecipes(limit int) ([]FridgeMatch, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 12
 	}
 	var dishes []models.Dish
-	database.DB.Where("enabled = ?", true).Find(&dishes)
+	if err := database.DB.Where("enabled = ?", true).Find(&dishes).Error; err != nil {
+		return nil, err
+	}
 	// strict 忌口：命中的菜不出现在清冰箱推荐里（avoid 模式不影响，推荐列表本就供人挑选）
-	dishes = applyDislikeMode(dishes, loadFamilyDislikeConfig())
-	batches := ListInventoryBatches()
+	// 设置不存在仍用默认值；读取失败不能降级为未设置忌口。
+	var settings []models.Setting
+	if err := database.DB.Where("`key` IN ?", []string{"family_members", "family_dislike_mode"}).Find(&settings).Error; err != nil {
+		return nil, err
+	}
+	var cfg familyDislikeConfig
+	for _, setting := range settings {
+		if setting.Key == "family_dislike_mode" {
+			cfg.strict = strings.TrimSpace(setting.Value) == "strict"
+		} else if setting.Key == "family_members" {
+			cfg.tokens = parseFamilyDislikeTokens(setting.Value)
+		}
+	}
+	dishes = applyDislikeMode(dishes, cfg)
+	batches, err := ListInventoryBatches()
+	if err != nil {
+		return nil, err
+	}
 	stock := foldBatchesByCategory(batches, time.Now())
 	matches := matchDishesWithInventory(dishes, stock, limit)
 	if matches == nil {
-		return []FridgeMatch{}
+		return []FridgeMatch{}, nil
 	}
-	return matches
+	return matches, nil
 }
 
 // 扣库存匹配类型。推荐用宽松的大类语义（有五花肉也算"能做排骨"），
@@ -639,25 +724,57 @@ type BatchRemaining struct {
 	Quantity string
 }
 
-// ConsumeInventory 做完菜后更新冰箱：removeIDs 整批移出，remaining 改成剩余数量，
-// 在同一事务里完成，任一步失败全部回滚。已不在库的批次不算错误，按实际影响行数返回。
-func ConsumeInventory(removeIDs []uint, remaining []BatchRemaining) (removed, updated int64, err error) {
+// ConsumeInventory 保留旧批量入口，但与单批编辑一样强制提交原版本；任一冲突整批回滚。
+func ConsumeInventory(removeIDs []uint, remaining []BatchRemaining, expected []ExpectedConsumptionBatch) (removed, updated int64, err error) {
+	total := len(removeIDs) + len(remaining)
+	if total == 0 || total > 100 {
+		return 0, 0, consumptionInputError("请选择要更新的批次（一次最多 100 批）")
+	}
+	selected := make(map[uint]bool, total)
+	for _, id := range removeIDs {
+		if id == 0 || selected[id] {
+			return 0, 0, consumptionInputError("批次参数重复或无效")
+		}
+		selected[id] = true
+	}
+	for _, item := range remaining {
+		if item.BatchID == 0 || selected[item.BatchID] || strings.TrimSpace(item.Quantity) == "" || len([]rune(strings.TrimSpace(item.Quantity))) > 50 {
+			return 0, 0, consumptionInputError("批次或剩余数量无效")
+		}
+		selected[item.BatchID] = true
+	}
+	versions := make(map[uint]ExpectedConsumptionBatch, total)
+	for _, version := range expected {
+		if !selected[version.BatchID] || version.UpdatedAt.IsZero() {
+			return 0, 0, ErrInventoryVersion
+		}
+		if _, duplicate := versions[version.BatchID]; duplicate {
+			return 0, 0, ErrInventoryVersion
+		}
+		versions[version.BatchID] = version
+	}
+	if len(versions) != total {
+		return 0, 0, ErrInventoryVersion
+	}
 	err = database.DB.Transaction(func(tx *gorm.DB) error {
-		if len(removeIDs) > 0 {
-			res := tx.Where("id IN ?", removeIDs).Delete(&models.InventoryBatch{})
+		for _, id := range removeIDs {
+			res := inventoryVersionQuery(tx, versions[id]).Delete(&models.InventoryBatch{})
 			if res.Error != nil {
 				return res.Error
 			}
-			removed = res.RowsAffected
+			if res.RowsAffected == 0 {
+				return ErrInventoryChanged
+			}
+			removed += res.RowsAffected
 		}
 		for _, r := range remaining {
 			qty := strings.TrimSpace(r.Quantity)
-			if qty == "" {
-				return errors.New("剩余数量为空")
-			}
-			res := tx.Model(&models.InventoryBatch{}).Where("id = ?", r.BatchID).Update("quantity", qty)
+			res := inventoryVersionQuery(tx, versions[r.BatchID]).Update("quantity", qty)
 			if res.Error != nil {
 				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return ErrInventoryChanged
 			}
 			updated += res.RowsAffected
 		}

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { isAxiosError } from "axios"
 import { fridgeApi, shoppingListApi } from "@/api"
+import { getUploadErrorMessage } from "@/api/client"
 import PageHeader from "@/components/PageHeader"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
@@ -115,6 +117,11 @@ export default function Fridge() {
   const [editing, setEditing] = useState<InventoryBatch | null>(null)
   const [editQuantity, setEditQuantity] = useState("")
   const [editDate, setEditDate] = useState("")
+  const [editConflict, setEditConflict] = useState(false)
+  // undefined 尚未读取，null 表示最新库存中已没有这批。
+  const [latestBatch, setLatestBatch] = useState<InventoryBatch | null | undefined>(undefined)
+  const [batchRefreshing, setBatchRefreshing] = useState(false)
+  const editSession = useRef(0)
 
   useEffect(() => {
     const checkDate = () => setToday(todayStr())
@@ -179,13 +186,22 @@ export default function Fridge() {
   })
   // 批次编辑（数量/保质期）与"新放入"分开提示
   const batchMut = useMutation({
-    mutationFn: (p: { id: number; quantity: string; expiry: string }) => fridgeApi.updateBatch(p.id, p.quantity, p.expiry),
+    retry: false,
+    mutationFn: (p: { id: number; quantity: string; expiry: string; original: InventoryBatch }) => fridgeApi.updateBatch(p.id, p.quantity, p.expiry, {
+      batch_id: p.original.id, quantity: p.original.quantity, updated_at: p.original.updated_at,
+    }),
     onSuccess: async (_, saved) => {
       await invalidate()
       setEditing((current) => current?.id === saved.id ? null : current)
       toast.success("📅 批次已更新")
     },
-    onError: () => toast.error("保存失败"),
+    onError: (err: unknown) => {
+      if (isAxiosError(err) && err.response?.status === 409) {
+        setEditConflict(true)
+        setLatestBatch(undefined)
+      }
+      toast.error(getUploadErrorMessage(err, "保存失败"))
+    },
     onSettled: () => { batchWriteInFlight.current = false },
   })
   const removeBatchMut = useMutation({
@@ -202,16 +218,26 @@ export default function Fridge() {
   const clearExpiredMut = useMutation({
     mutationFn: async (ids: number[]) => {
       let removed = 0
-      for (let i = 0; i < ids.length; i += 100) {
-        removed += (await fridgeApi.consume(ids.slice(i, i + 100))).removed
+      let skipped = 0
+      try {
+        for (let i = 0; i < ids.length; i += 100) {
+          const result = await fridgeApi.clearExpired(ids.slice(i, i + 100))
+          removed += result.removed
+          skipped += result.skipped
+        }
+      } catch (err) {
+        throw new Error(`${removed > 0 ? `已清理 ${removed} 批，其余` : ""}${getUploadErrorMessage(err, "清理失败，请重试")}`, { cause: err })
       }
-      return removed
+      return { removed, skipped }
     },
-    onSuccess: async (removed) => { await invalidate(); toast.success(`已清理 ${removed} 批过期食材`) },
-    onError: () => { void invalidate(); toast.error("清理未完成，请检查库存后重试") },
+    onSuccess: async ({ removed, skipped }) => {
+      await invalidate()
+      toast.success(`已清理 ${removed} 批过期食材${skipped > 0 ? `，${skipped} 批已变动或不再过期，已跳过` : ""}`)
+    },
+    onError: async (err: unknown) => { await invalidate(); toast.error(getUploadErrorMessage(err, "清理未完成，请检查库存后重试")) },
     onSettled: () => { batchWriteInFlight.current = false },
   })
-  const batchBusy = batchMut.isPending || removeBatchMut.isPending || clearExpiredMut.isPending
+  const batchBusy = batchMut.isPending || removeBatchMut.isPending || clearExpiredMut.isPending || batchRefreshing
 
   // 缺料一键补入买菜清单（今天去买，做今天的菜）
   const addMissingMut = useMutation({
@@ -271,15 +297,42 @@ export default function Fridge() {
 
   function openBatchEditor(batch: InventoryBatch) {
     if (batchWriteInFlight.current) return
+    editSession.current++
     setEditing(batch)
     setEditQuantity(batch.quantity || "")
     setEditDate(batch.expiry_date || "")
+    setEditConflict(false)
+    setLatestBatch(undefined)
   }
 
   function saveBatch() {
-    if (!editing || batchWriteInFlight.current) return
+    if (!editing || editConflict || batchWriteInFlight.current) return
     batchWriteInFlight.current = true
-    batchMut.mutate({ id: editing.id, quantity: editQuantity, expiry: editDate })
+    batchMut.mutate({ id: editing.id, quantity: editQuantity, expiry: editDate, original: editing })
+  }
+
+  async function readLatestBatch() {
+    if (!editing || batchWriteInFlight.current) return
+    const id = editing.id
+    const session = editSession.current
+    batchWriteInFlight.current = true
+    setBatchRefreshing(true)
+    try {
+      const fresh = await fridgeApi.list()
+      qc.setQueryData(["fridge"], fresh)
+      if (session === editSession.current) setLatestBatch(fresh.find((batch) => batch.id === id) ?? null)
+    } catch (err) {
+      toast.error(getUploadErrorMessage(err, "读取最新库存失败，请重试"))
+    } finally {
+      batchWriteInFlight.current = false
+      setBatchRefreshing(false)
+    }
+  }
+
+  function useLatestBatch() {
+    if (!latestBatch || batchWriteInFlight.current) return
+    // 用户明确选择重新编辑后才替换草稿，不自动重试旧写入。
+    openBatchEditor(latestBatch)
   }
 
   function removeBatch(id: number) {
@@ -516,9 +569,27 @@ export default function Fridge() {
 
       {/* 批次编辑弹层 */}
       {editing && (
-        <AnimatedBottomSheet onClose={() => setEditing(null)} className="rounded-t-3xl p-5">
+        <AnimatedBottomSheet onClose={() => { editSession.current++; setEditing(null) }} className="rounded-t-3xl p-5 max-h-[90dvh] overflow-y-auto">
           <div className="text-lg font-extrabold mb-0.5">{editing.item_name}</div>
           <div className="text-xs text-text3 mb-4">编辑这一批的数量和保质期</div>
+          {editConflict && (
+            <div role="alert" className="mb-4 rounded-xl border border-border bg-bg p-3 text-sm">
+              <div className="font-bold">库存已变动，尚未保存</div>
+              <p className="mt-1 text-xs text-text2">你的修改已保留。先读取最新库存，核对后再重新编辑。</p>
+              {latestBatch === undefined ? (
+                <button type="button" disabled={batchBusy} onClick={() => { void readLatestBatch() }} className="mt-2 min-h-10 text-sm font-bold text-primary disabled:opacity-50">
+                  {batchRefreshing ? "读取中…" : "读取最新库存"}
+                </button>
+              ) : latestBatch === null ? (
+                <p className="mt-2 text-xs text-text2">这批食材已被移出冰箱，不能再保存。</p>
+              ) : (
+                <>
+                  <p className="mt-2 text-xs text-text2">最新数量：{latestBatch.quantity || "未填写"} · 到期日：{latestBatch.expiry_date || "未设置"}</p>
+                  <button type="button" disabled={batchBusy} onClick={useLatestBatch} className="mt-2 min-h-10 text-sm font-bold text-primary disabled:opacity-50">用最新库存重新编辑</button>
+                </>
+              )}
+            </div>
+          )}
           <input
             value={editQuantity}
             disabled={batchBusy}
@@ -557,7 +628,7 @@ export default function Fridge() {
             <button
               type="button"
               onClick={() => removeBatch(editing.id)}
-              disabled={batchBusy}
+              disabled={batchBusy || editConflict}
               className="py-2.5 px-4 rounded-full text-sm font-semibold bg-red-light text-red active:scale-96 transition-all"
             >
               {removeBatchMut.isPending ? "移出中…" : "移出该批"}
@@ -565,7 +636,7 @@ export default function Fridge() {
             <button
               type="button"
               onClick={saveBatch}
-              disabled={batchBusy}
+              disabled={batchBusy || editConflict}
               className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white active:scale-96 transition-all"
             >
               {batchMut.isPending ? "保存中…" : "保存"}

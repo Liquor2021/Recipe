@@ -88,6 +88,7 @@ func Setup(r *gin.Engine) {
 			app.GET("/fridge/recipes", handlers.GetFridgeRecipes)
 			app.GET("/fridge/consumption", handlers.GetFridgeConsumption)
 			app.POST("/fridge/consume", handlers.ConsumeFridgeBatches)
+			app.POST("/fridge/clear-expired", handlers.ClearExpiredFridge)
 			app.GET("/fridge/urgent", handlers.GetUrgentInventory)
 			app.GET("/report", handlers.GetReport)
 		}

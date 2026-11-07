@@ -436,12 +436,12 @@ func TestMatchFridgeRecipesStrictDislike(t *testing.T) {
 	database.DB.Create(&models.InventoryBatch{ItemName: "鸡蛋", InStock: true})
 	seedSetting(t, "family_members", `[{"name":"妈妈","dislikes":["辣"]}]`)
 
-	if got := MatchFridgeRecipes(12); len(got) != 2 {
+	if got, err := MatchFridgeRecipes(12); err != nil || len(got) != 2 {
 		t.Fatalf("avoid 下清冰箱推荐不过滤, got %v", matchNames(got))
 	}
 	database.DB.Create(&models.Setting{Key: "family_dislike_mode", Value: "strict"})
-	got := MatchFridgeRecipes(12)
-	if len(got) != 1 || got[0].Dish.ID != 2 {
+	got, err := MatchFridgeRecipes(12)
+	if err != nil || len(got) != 1 || got[0].Dish.ID != 2 {
 		t.Fatalf("strict 下清冰箱推荐不应出现忌口菜, got %v", matchNames(got))
 	}
 }

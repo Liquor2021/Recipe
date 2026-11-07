@@ -70,7 +70,7 @@ try {
   if (batch) batches.push(batch.id)
   check("旧页面入库总量不能超过尚未入库的400克采购", batch?.quantity === "400克", batch)
   // 后续验证扣减建议：单独补录家中实际库存到1000克，不用入库接口伪造采购量。
-  if (batch) await req("PUT", `/fridge/batch/${batch.id}`, { quantity: "1000克", expiry_date: batch.expiry_date })
+  if (batch) await req("PUT", `/fridge/batch/${batch.id}`, { quantity: "1000克", expiry_date: batch.expiry_date, expected_batch: { batch_id: batch.id, quantity: batch.quantity, updated_at: batch.updated_at } })
   await req("PUT", "/records/" + id, { portion_scale: 2 })
   items = await shopping()
   check("再次改份量仍保留入库标记", items.find(i => i.name === numericItem)?.stocked && items.find(i => i.name === numericItem)?.amount === "400克", items)

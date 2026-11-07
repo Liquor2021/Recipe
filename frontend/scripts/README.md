@@ -16,5 +16,6 @@ node --test scripts/*.test.*
 | `home-mood.test.mjs` | 心情异步恢复、快速点选、失败回退与跨日隔离 |
 | `fridge-filters.test.mjs` | 同名多批筛选、名称搜索、临期边界、无效日期与跨日更新 |
 | `auth-regression.test.cjs` | 管理员与应用认证分离、状态同步、登录失败和迟到的旧请求 |
+| `cook-timer.test.mjs` | 做菜倒计时延迟纠偏、暂停继续、总进度保持、到时与重置边界 |
 
-前三类直接导入 TypeScript helper；认证测试使用项目已安装的 TypeScript 编译并加载实际客户端源码，模拟网络和存储。所有测试均不读写真实用户数据。
+逻辑测试直接导入 TypeScript helper；认证测试使用项目已安装的 TypeScript 编译并加载实际客户端源码，模拟网络和存储。所有测试均不读写真实用户数据。

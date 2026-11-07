@@ -445,8 +445,8 @@ func TestConsumeInventoryRemoveAndUpdate(t *testing.T) {
 	var all []models.InventoryBatch
 	database.DB.Order("id ASC").Find(&all)
 
-	// 番茄用完移出、鸡蛋还剩 7 个；9999 已不在库不算错误
-	removed, updated, err := ConsumeInventory([]uint{all[0].ID}, []BatchRemaining{{BatchID: all[1].ID, Quantity: " 7个 "}, {BatchID: 9999, Quantity: "1个"}})
+	// 番茄用完移出、鸡蛋还剩 7 个；提交用户看到的原库存版本。
+	removed, updated, err := ConsumeInventory([]uint{all[0].ID}, []BatchRemaining{{BatchID: all[1].ID, Quantity: " 7个 "}}, expectedConsumptionBatches(all[0], all[1]))
 	if err != nil || removed != 1 || updated != 1 {
 		t.Fatalf("removed=%d updated=%d err=%v, want 1 1 nil", removed, updated, err)
 	}
@@ -457,7 +457,7 @@ func TestConsumeInventoryRemoveAndUpdate(t *testing.T) {
 	}
 
 	// 剩余数量为空：整个事务回滚，排骨不能被先移出
-	if _, _, err := ConsumeInventory([]uint{all[2].ID}, []BatchRemaining{{BatchID: all[1].ID, Quantity: "  "}}); err == nil {
+	if _, _, err := ConsumeInventory([]uint{all[2].ID}, []BatchRemaining{{BatchID: all[1].ID, Quantity: "  "}}, expectedConsumptionBatches(all[2], egg)); err == nil {
 		t.Fatalf("剩余数量为空应返回错误")
 	}
 	var n int64

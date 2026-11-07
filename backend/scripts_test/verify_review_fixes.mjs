@@ -57,7 +57,7 @@ async function main() {
   check("排骨槽默认勾选排骨批（不是明天到期的五花肉）", slot && slot.suggested_batch_id === ribs?.id, JSON.stringify(r.data))
   check("五花肉只作为相近部位列出", slot && slot.batches.some((b) => b.batch_id === pork?.id && b.kind === "similar"), JSON.stringify(slot))
   check("常备配料小葱不参与扣减", !(r.data?.slots || []).some((s) => s.requested_name === "小葱"), JSON.stringify(r.data?.slots))
-  r = await req("POST", "/fridge/consume", { batch_ids: [ribs?.id] })
+  r = await req("POST", "/fridge/consume", { batch_ids: [ribs?.id], expected_batches: [{ batch_id: ribs?.id, quantity: ribs?.quantity, updated_at: ribs?.updated_at }] })
   check("批量扣库存移除 1 批", r.code === 0 && r.data?.removed === 1, JSON.stringify(r))
   const left = (await req("GET", "/fridge")).data || []
   check("五花肉仍在冰箱", left.some((b) => b.id === pork?.id) && !left.some((b) => b.id === ribs?.id), JSON.stringify(left.map((b) => b.item_name)))
@@ -72,7 +72,7 @@ async function main() {
   const partSlot = (r.data?.slots || []).find((s) => s.requested_name === "E2E测试食材")
   const partBatch = partSlot?.batches?.[0]
   check("库存 5份、菜谱 3份 → 建议还剩 2份", partBatch && partBatch.remaining_hint === "2份", JSON.stringify(partSlot))
-  r = await req("POST", "/fridge/consume", { remaining: [{ batch_id: partBatch?.batch_id, quantity: "2份" }] })
+  r = await req("POST", "/fridge/consume", { remaining: [{ batch_id: partBatch?.batch_id, quantity: "2份" }], expected_batches: [{ batch_id: partBatch?.batch_id, quantity: partBatch?.quantity, updated_at: partBatch?.updated_at }] })
   const partLeft = ((await req("GET", "/fridge")).data || []).find((b) => b.id === partBatch?.batch_id)
   check("只改剩余量、批次仍在冰箱", r.code === 0 && r.data?.updated === 1 && r.data?.removed === 0 && partLeft?.quantity === "2份", JSON.stringify({ r, partLeft }))
   await req("DELETE", `/fridge/${encodeURIComponent("E2E测试食材")}`)
@@ -138,10 +138,13 @@ async function main() {
   check("午餐道数 +1 后菜单重新生成", (morePlan?.days || []).length === 7 && morePlan.days.every((d) => d.lunch.length === Number(lunchBefore) + 1), JSON.stringify((morePlan?.days || []).map((d) => d.lunch.length)))
 
   // 清理：记录、测试菜、冰箱、设置
-  if (rec.data?.id) await req("DELETE", `/records/${rec.data.id}`)
-  // 删掉记录后只剩补料条目：可以从清单直接删掉
+  r = await req("DELETE", `/records/${rec.data?.id}`)
+  check("删除计划需求后不残留已被接管的补料", r.code === 0 && !(await shoppingItem("E2E测试食材")), JSON.stringify(r))
+  // 计划已接管的补料不会再次出现；重新添加独立补料，单独验证直接删除的入口。
+  r = await req("POST", "/shopping-list/items", { dish_id: dishID, dish_name: "E2E排骨测试", items: [{ name: "E2E测试食材" }] })
+  check("无计划时可重新添加独立补料", r.code === 0 && r.data?.added === 1, JSON.stringify(r))
   const leftover = await shoppingItem("E2E测试食材")
-  check("只剩补料的条目标记为可删除", leftover && leftover.removable === true, JSON.stringify(leftover))
+  check("独立补料保留用量并标记为可删除", leftover && leftover.amount === "3份" && leftover.removable === true, JSON.stringify(leftover))
   r = await req("DELETE", `/shopping-list/items/${encodeURIComponent("E2E测试食材")}`)
   check("删掉补料条目", r.code === 0 && r.data?.removed === 1 && !(await shoppingItem("E2E测试食材")), JSON.stringify(r))
   if (dishID) await req("DELETE", `/dishes/${dishID}`, undefined, AH)

@@ -127,7 +127,7 @@ function MemoryDay({ day, onOpen }: { day: PhotoWallDay; onOpen: (photos: string
 
 export default function PhotoWall() {
   const navigate = useNavigate()
-  const { data, isLoading } = useQuery({ queryKey: ["photo-wall"], queryFn: () => photoWallApi.get() })
+  const { data, isPending, isError, isFetching, refetch } = useQuery({ queryKey: ["photo-wall"], queryFn: () => photoWallApi.get() })
 
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
   const [viewerIdx, setViewerIdx] = useState(0)
@@ -151,8 +151,19 @@ export default function PhotoWall() {
       />
 
       <div className="px-5 py-5 max-w-[640px] mx-auto">
-        {isLoading ? (
-          <div className="flex flex-col gap-6">
+        {isError && (
+          <div role="alert" className="rounded-2xl border border-border bg-card p-4 mb-5">
+            <div className="text-sm font-semibold text-text mb-1">{data ? "照片刷新失败" : "照片暂时加载失败"}</div>
+            <div className="text-[13px] text-text2 mb-3">{data ? "仍保留上次加载的内容，可以稍后重试。" : "请检查网络后重试。"}</div>
+            <button
+              onClick={() => { void refetch() }}
+              disabled={isFetching}
+              className="px-4 py-2.5 rounded-full bg-primary text-white text-sm font-semibold active:scale-95 transition-transform disabled:opacity-60"
+            >{isFetching ? "正在重试…" : "重新加载"}</button>
+          </div>
+        )}
+        {isPending ? (
+          <div role="status" aria-label="正在加载照片" className="flex flex-col gap-6">
             {[0, 1, 2].map((i) => (
               <div key={i} className="pl-12">
                 <div className="skeleton h-5 w-28 rounded-md mb-3" />
@@ -160,7 +171,7 @@ export default function PhotoWall() {
               </div>
             ))}
           </div>
-        ) : days.length === 0 ? (
+        ) : days.length === 0 ? (isError ? null : (
           <div className="text-center py-20">
             <span className="text-[56px] block mb-4 animate-float">📷</span>
             <div className="text-base font-semibold mb-1.5">还没有回忆照片</div>
@@ -170,7 +181,7 @@ export default function PhotoWall() {
               className="px-5 py-2.5 rounded-full bg-primary text-white text-sm font-semibold active:scale-95 transition-transform"
             >去记录今天</button>
           </div>
-        ) : (
+        )) : (
           <>
             <div className="text-center mb-7">
               <div className="text-[13px] text-text2 leading-relaxed">

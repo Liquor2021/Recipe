@@ -35,7 +35,7 @@ const SOON = dayFromNow(1), LATER = dayFromNow(30)
   const tomatoSlot = (r.data?.slots || []).find(s => s.batches.some(b => b.stock_name === "番茄"))
   check("扣库存默认勾选早批", tomatoSlot && tomatoSlot.suggested_batch_id === earlyBatchID, `want ${earlyBatchID}: ${JSON.stringify(tomatoSlot)}`)
 
-  r = await fetch(B + "/fridge/consume", { method: "POST", headers: H, body: JSON.stringify({ batch_ids: [earlyBatchID] }) }).then(r => r.json())
+  r = await fetch(B + "/fridge/consume", { method: "POST", headers: H, body: JSON.stringify({ batch_ids: [earlyBatchID], expected_batches: [{ batch_id: earlyBatchID, quantity: batches[0].quantity, updated_at: batches[0].updated_at }] }) }).then(r => r.json())
   check("批量扣库存移除早批", r.code === 0 && r.data?.removed === 1, JSON.stringify(r))
   r = await fetch(B + "/fridge", { headers: H }).then(r => r.json())
   const left = (r.data || []).filter(i => i.item_name === "番茄")
@@ -44,7 +44,7 @@ const SOON = dayFromNow(1), LATER = dayFromNow(30)
   check("移除后无临期番茄", !(r.data || []).some(i => i.item_name === "番茄"), JSON.stringify(r.data))
 
   const newID = left[0].id
-  r = await fetch(B + `/fridge/batch/${newID}`, { method: "PUT", headers: H, body: JSON.stringify({ quantity: "5个", expiry_date: "2026-12-01" }) }).then(r => r.json())
+  r = await fetch(B + `/fridge/batch/${newID}`, { method: "PUT", headers: H, body: JSON.stringify({ quantity: "5个", expiry_date: "2026-12-01", expected_batch: { batch_id: newID, quantity: left[0].quantity, updated_at: left[0].updated_at } }) }).then(r => r.json())
   check("批次编辑成功", r.code === 0, JSON.stringify(r))
   r = await fetch(B + "/fridge", { headers: H }).then(r => r.json())
   const edited = (r.data || []).find(i => i.id === newID)

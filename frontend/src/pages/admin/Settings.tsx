@@ -59,7 +59,7 @@ function formatSize(bytes: number) {
 
 // BackupCard 数据备份：服务端每天自动备份数据库；这里看备份情况、手动下载一份当前数据库
 function BackupCard() {
-  const { data } = useQuery({ queryKey: ["admin", "backups"], queryFn: () => backupApi.list() })
+  const { data, isPending, isError, isFetching, refetch } = useQuery({ queryKey: ["admin", "backups"], queryFn: () => backupApi.list() })
   const [downloading, setDownloading] = useState(false)
   const download = async () => {
     setDownloading(true)
@@ -74,11 +74,24 @@ function BackupCard() {
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
       <div className="text-[13px] font-semibold text-text2 mb-1">数据备份</div>
+      {isPending && <div role="status" className="text-[11px] text-text3 mb-3">正在读取备份状态…</div>}
+      {isError && (
+        <div role="alert" className="mb-3">
+          <div className="text-[11px] text-text3 leading-relaxed">
+            {data ? "备份状态刷新失败，下面保留上次读取的信息。" : "暂时无法读取备份状态，请检查网络后重试。"}
+          </div>
+          <button
+            onClick={() => { void refetch() }}
+            disabled={isFetching}
+            className="mt-2 px-4 py-2.5 rounded-full bg-primary-light text-primary text-xs font-semibold active:scale-95 transition-transform disabled:opacity-60"
+          >{isFetching ? "正在重试…" : "重新加载"}</button>
+        </div>
+      )}
       <div className="text-[11px] text-text3 mb-3 leading-relaxed">
-        {data && data.keep > 0
-          ? `每天自动备份一次数据库，保留最近 ${data.keep} 份（${data.dir}）。不含上传的图片，图片原图另在上传备份目录。`
-          : "自动备份已关闭（DB_BACKUP_KEEP=0）。"}
-        恢复时停止服务，用备份文件替换数据库文件即可（步骤见 README_DEV）。
+        {data && (data.keep > 0
+          ? `每天自动备份一次数据库，保留最近 ${data.keep} 份。`
+          : "自动备份已关闭。")}
+        下载的数据库不含上传的图片。恢复数据需由管理员在服务器上操作。
       </div>
       <button
         onClick={download}

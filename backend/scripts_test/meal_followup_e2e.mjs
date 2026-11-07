@@ -74,7 +74,7 @@ try {
   batchIDs.add(originalBatch.id)
   check("入库按已买的400克计算，不信任旧页面提交的总量", originalBatch.quantity === "400克", originalBatch)
   // 消费/撤销链路使用单独核对后的1000克库存；采购快照仍保留已买的400克。
-  await must("PUT", `/fridge/batch/${originalBatch.id}`, { quantity: "1000克", expiry_date: originalBatch.expiry_date })
+  await must("PUT", `/fridge/batch/${originalBatch.id}`, { quantity: "1000克", expiry_date: originalBatch.expiry_date, expected_batch: version(originalBatch) })
   check("计划买菜状态包含已买、已入库和双倍用量", (await shoppingItem(itemName))?.checked && (await shoppingItem(itemName))?.stocked && (await shoppingItem(itemName))?.amount === "400克")
 
   let response = await req("PUT", `/records/${id}`, { status: "cancelled" })
@@ -161,7 +161,7 @@ try {
   check("重复撤销不会重复补回库存", response.code === 0 && (await get("/fridge")).filter(item => item.id === secondBatch.id).length === 1 && (await batch(originalBatch.id))?.quantity === "1000克")
 
   const stale = await batch(originalBatch.id)
-  await must("PUT", `/fridge/batch/${originalBatch.id}`, { quantity: "900克", expiry_date: stale.expiry_date })
+  await must("PUT", `/fridge/batch/${originalBatch.id}`, { quantity: "900克", expiry_date: stale.expiry_date, expected_batch: version(stale) })
   response = await consume(id, { remaining: [{ batch_id: originalBatch.id, quantity: "600克" }], expected_batches: [version(stale)] })
   check("失效版本不能覆盖其他页面更新的库存", response.httpStatus === 400 && (await batch(originalBatch.id))?.quantity === "900克" && !(await history(id)).applied, response)
   const fresh = await batch(originalBatch.id)

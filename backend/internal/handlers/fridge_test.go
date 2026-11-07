@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
+	"ninimenu/internal/services"
 	"testing"
 )
 
@@ -32,6 +33,10 @@ func TestConsumeFridgeBatchesValidation(t *testing.T) {
 	w := serveJSON(t, ConsumeFridgeBatches, "POST", "/api/fridge/consume", map[string]any{
 		"batch_ids": []uint{tomato.ID},
 		"remaining": []map[string]any{{"batch_id": egg.ID, "quantity": "7个"}},
+		"expected_batches": []services.ExpectedConsumptionBatch{
+			{BatchID: tomato.ID, Quantity: tomato.Quantity, UpdatedAt: tomato.UpdatedAt},
+			{BatchID: egg.ID, Quantity: egg.Quantity, UpdatedAt: egg.UpdatedAt},
+		},
 	})
 	var resp struct {
 		Data struct {

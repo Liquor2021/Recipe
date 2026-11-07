@@ -759,10 +759,13 @@ type PhotoWallRecord struct {
 // GetPhotoWall 返回所有留下照片的日子，按日期倒序，组成"回忆照片墙"
 func GetPhotoWall(c *gin.Context) {
 	var ratings []models.DayRating
-	database.DB.Where("photos IS NOT NULL AND photos != '' AND photos != '[]'").
+	if err := database.DB.Where("photos IS NOT NULL AND photos != '' AND photos != '[]'").
 		Where("meal_date IN (?)", database.DB.Model(&models.MealRecord{}).Scopes(services.EatenRecords).Select("meal_date")).
 		Order("meal_date DESC").
-		Find(&ratings)
+		Find(&ratings).Error; err != nil {
+		utils.InternalError(c, "读取照片墙失败")
+		return
+	}
 
 	// 一次性取出所有相关日期的菜品记录，避免 N+1 查询
 	dates := make([]string, 0, len(ratings))
@@ -773,9 +776,12 @@ func GetPhotoWall(c *gin.Context) {
 	recordsByDate := make(map[string][]PhotoWallRecord)
 	if len(dates) > 0 {
 		var records []models.MealRecord
-		database.DB.Scopes(services.EatenRecords).Where("meal_date IN ?", dates).
+		if err := database.DB.Scopes(services.EatenRecords).Where("meal_date IN ?", dates).
 			Order("meal_type ASC, created_at ASC").
-			Find(&records)
+			Find(&records).Error; err != nil {
+			utils.InternalError(c, "读取照片墙失败")
+			return
+		}
 		for _, rec := range records {
 			recordsByDate[rec.MealDate] = append(recordsByDate[rec.MealDate], PhotoWallRecord{
 				DishID:   rec.DishID,

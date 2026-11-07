@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"testing"
@@ -18,7 +19,7 @@ func TestUpdateInventoryBatchPreservesMetadataAndClearsEmptyValues(t *testing.T)
 		{" 600克 ", " 2030-01-02 ", "600克", "2030-01-02"},
 		{" ", " ", "", ""},
 	} {
-		found, err := UpdateInventoryBatch(batch.ID, input.quantity, input.expiry)
+		found, err := UpdateInventoryBatch(batch.ID, input.quantity, input.expiry, expectedConsumptionBatches(batch)[0])
 		if err != nil || !found {
 			t.Fatalf("existing update failed: found=%v err=%v", found, err)
 		}
@@ -29,8 +30,11 @@ func TestUpdateInventoryBatchPreservesMetadataAndClearsEmptyValues(t *testing.T)
 		if got.Quantity != input.wantQuantity || got.ExpiryDate != input.wantExpiry || got.ItemName != batch.ItemName || !got.InStock || !got.CreatedAt.Equal(batch.CreatedAt) {
 			t.Fatalf("wrong updated batch: %+v", got)
 		}
+		batch = got
 	}
-	if found, err := UpdateInventoryBatch(batch.ID+100, "2个", ""); err != nil || found {
+	missing := expectedConsumptionBatches(batch)[0]
+	missing.BatchID += 100
+	if found, err := UpdateInventoryBatch(missing.BatchID, "2个", "", missing); !errors.Is(err, ErrInventoryChanged) || found {
 		t.Fatalf("missing batch should stay missing: found=%v err=%v", found, err)
 	}
 }
@@ -53,8 +57,8 @@ func TestUpdateInventoryBatchDoesNotRecreateConcurrentlyRemovedBatch(t *testing.
 	}); err != nil {
 		t.Fatal(err)
 	}
-	found, err := UpdateInventoryBatch(batch.ID, "600克", "")
-	if err != nil || found || !removed {
+	found, err := UpdateInventoryBatch(batch.ID, "600克", "", expectedConsumptionBatches(batch)[0])
+	if !errors.Is(err, ErrInventoryChanged) || found || !removed {
 		t.Fatalf("removed batch should not update: found=%v removed=%v err=%v", found, removed, err)
 	}
 	var count int64

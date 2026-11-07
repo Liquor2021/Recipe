@@ -12,7 +12,12 @@ import (
 )
 
 func GetFridge(c *gin.Context) {
-	utils.Success(c, services.ListInventoryBatches())
+	batches, err := services.ListInventoryBatches()
+	if err != nil {
+		utils.InternalError(c, "读取冰箱库存失败")
+		return
+	}
+	utils.Success(c, batches)
 }
 
 type AddFridgeRequest struct {
@@ -59,8 +64,9 @@ func AddFridge(c *gin.Context) {
 }
 
 type UpdateFridgeBatchRequest struct {
-	Quantity   string `json:"quantity"`
-	ExpiryDate string `json:"expiry_date"`
+	Quantity   string                            `json:"quantity"`
+	ExpiryDate string                            `json:"expiry_date"`
+	Expected   services.ExpectedConsumptionBatch `json:"expected_batch"`
 }
 
 // UpdateFridgeBatch 编辑某批次的质量字段
@@ -79,8 +85,12 @@ func UpdateFridgeBatch(c *gin.Context) {
 		utils.BadRequest(c, "保质期日期格式应为 YYYY-MM-DD")
 		return
 	}
-	found, err := services.UpdateInventoryBatch(uint(id), req.Quantity, req.ExpiryDate)
+	found, err := services.UpdateInventoryBatch(uint(id), req.Quantity, req.ExpiryDate, req.Expected)
 	if err != nil {
+		if errors.Is(err, services.ErrInventoryVersion) || errors.Is(err, services.ErrInventoryChanged) {
+			utils.Conflict(c, err.Error())
+			return
+		}
 		utils.InternalError(c, "保存失败")
 		return
 	}
@@ -155,6 +165,7 @@ type ConsumeFridgeRequest struct {
 		BatchID  uint   `json:"batch_id"`
 		Quantity string `json:"quantity"`
 	} `json:"remaining"`
+	Expected []services.ExpectedConsumptionBatch `json:"expected_batches"`
 }
 
 // ConsumeFridgeBatches 做完菜后更新冰箱：用完的批次移出、用了一部分的改成剩余量（同一事务）
@@ -191,8 +202,12 @@ func ConsumeFridgeBatches(c *gin.Context) {
 		seen[r.BatchID] = true
 		remaining = append(remaining, services.BatchRemaining{BatchID: r.BatchID, Quantity: qty})
 	}
-	removed, updated, err := services.ConsumeInventory(req.BatchIDs, remaining)
+	removed, updated, err := services.ConsumeInventory(req.BatchIDs, remaining, req.Expected)
 	if err != nil {
+		if errors.Is(err, services.ErrInventoryVersion) || errors.Is(err, services.ErrInventoryChanged) {
+			utils.Conflict(c, err.Error())
+			return
+		}
 		utils.InternalError(c, "更新冰箱失败")
 		return
 	}
@@ -201,9 +216,40 @@ func ConsumeFridgeBatches(c *gin.Context) {
 
 func GetFridgeRecipes(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "12"))
-	utils.Success(c, services.MatchFridgeRecipes(limit))
+	matches, err := services.MatchFridgeRecipes(limit)
+	if err != nil {
+		utils.InternalError(c, "读取清冰箱推荐失败")
+		return
+	}
+	utils.Success(c, matches)
 }
 
 func GetUrgentInventory(c *gin.Context) {
-	utils.Success(c, services.UrgentInventoryItems())
+	batches, err := services.UrgentInventoryItems()
+	if err != nil {
+		utils.InternalError(c, "读取临期库存失败")
+		return
+	}
+	utils.Success(c, batches)
+}
+
+func ClearExpiredFridge(c *gin.Context) {
+	var req struct {
+		BatchIDs []uint `json:"batch_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.BadRequest(c, "参数无效")
+		return
+	}
+	result, err := services.ClearExpiredInventory(req.BatchIDs)
+	if err != nil {
+		var inputErr *services.ConsumptionInputError
+		if errors.As(err, &inputErr) {
+			utils.BadRequest(c, err.Error())
+			return
+		}
+		utils.InternalError(c, "清理过期食材失败")
+		return
+	}
+	utils.Success(c, result)
 }
