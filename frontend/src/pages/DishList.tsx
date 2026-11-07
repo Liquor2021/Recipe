@@ -1,19 +1,17 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
 import { dishesApi, favoritesApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
 import { readDishListSession, saveDishListSession, useDishListSession } from "@/lib/dishListSession"
 import { hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, pendingMealSelectionKey, reconcileMealSelection } from "@/lib/mealSelection"
-import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
+import KitchenTodayMenu from "@/components/KitchenTodayMenu"
 import DishImage from "@/components/DishImage"
-import SafeImage from "@/components/SafeImage"
-import { isImageUrl, thumbUrl } from "@/lib/dishImage"
 import type { Dish, MealRecord } from "@/types"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import { useAuthStore } from "@/store/useAuthStore"
 import toast from "react-hot-toast"
-import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, X, Trash2, LoaderCircle } from "lucide-react"
+import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, LoaderCircle } from "lucide-react"
 
 const DEFAULT_CATEGORIES = ["川菜", "粤菜", "家常菜", "快手菜", "汤品", "主食"]
 const DEFAULT_TASTES = ["酸", "甜", "辣", "鲜", "清淡", "咸鲜", "麻辣", "蒜香", "酱香", "糖醋", "酸辣", "香辣"]
@@ -54,6 +52,7 @@ export default function DishList() {
 
 function DishListPage({ today, generation }: { today: string; generation: number }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const qc = useQueryClient()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const [session] = useState(() => readDishListSession(today))
@@ -61,6 +60,12 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const [activeCategory, setActiveCategory] = useState(session.activeCategory)
   const [activeTaste, setActiveTaste] = useState(session.activeTaste)
   const [showTodayModal, setShowTodayModal] = useState(false)
+  // Tab pages remain mounted: dismiss the portal when browser navigation leaves.
+  const [menuPath, setMenuPath] = useState(location.pathname)
+  if (menuPath !== location.pathname) {
+    setMenuPath(location.pathname)
+    if (showTodayModal) setShowTodayModal(false)
+  }
   const listRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const tasteRef = useRef<HTMLDivElement>(null)
@@ -349,20 +354,6 @@ function DishListPage({ today, generation }: { today: string; generation: number
     todayRecords.filter(r => r.meal_type === "dinner" && r.meal_date === today),
     [todayRecords, today]
   )
-  const todayMenuCount = todayLunchRecords.length + todayDinnerRecords.length
-  const todayLunchCookMinutes = useMemo(() => (
-    todayLunchRecords.reduce((sum, record) => {
-      const cookTime = dishMap.get(record.dish_id)?.cook_time || 0
-      return sum + Math.max(0, cookTime)
-    }, 0)
-  ), [dishMap, todayLunchRecords])
-  const todayDinnerCookMinutes = useMemo(() => (
-    todayDinnerRecords.reduce((sum, record) => {
-      const cookTime = dishMap.get(record.dish_id)?.cook_time || 0
-      return sum + Math.max(0, cookTime)
-    }, 0)
-  ), [dishMap, todayDinnerRecords])
-
   const showGrouped = activeCategory === "全部" && activeTaste === "全部" && !search
 
   return (
@@ -575,141 +566,24 @@ function DishListPage({ today, generation }: { today: string; generation: number
         </div>
       )}
 
-      {showTodayModal && (
-        <AnimatedBottomSheet
+      {showTodayModal && location.pathname === "/dishes" && (
+        <KitchenTodayMenu
+          today={today}
+          lunchRecords={todayLunchRecords}
+          dinnerRecords={todayDinnerRecords}
+          dishes={dishMap}
+          pendingMeals={pendingMeals}
+          unavailable={mealStateUnavailable}
+          refreshing={recordsFetching}
+          onRetry={() => { void reloadRecords() }}
           onClose={() => setShowTodayModal(false)}
-          className="flex max-h-[70dvh] flex-col rounded-t-2xl"
-        >
-          {({ close }) => (
-            <>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                <div className="text-base font-bold">📋 今日菜单</div>
-                <button onClick={close} className="w-8 h-8 rounded-full bg-bg flex items-center justify-center text-text2 active:scale-95 transition-transform">
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-5 py-3 scrollbar-none">
-                <div className="mb-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-2xl bg-bg px-3 py-2.5">
-                    <div className="text-[11px] font-semibold text-text3">菜品</div>
-                    <div className="text-lg font-extrabold leading-tight">{todayMenuCount} 道</div>
-                  </div>
-                  <div className="rounded-2xl bg-bg px-3 py-2.5">
-                    <div className="text-lg font-extrabold leading-tight">午餐 {todayLunchRecords.length} 道</div>
-                    <div className="mt-0.5 truncate text-[11px] font-semibold text-text3">
-                      约用时 {todayLunchCookMinutes > 0 ? `${todayLunchCookMinutes}m` : "-"}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl bg-bg px-3 py-2.5">
-                    <div className="text-lg font-extrabold leading-tight">晚餐 {todayDinnerRecords.length} 道</div>
-                    <div className="mt-0.5 truncate text-[11px] font-semibold text-text3">
-                      约用时 {todayDinnerCookMinutes > 0 ? `${todayDinnerCookMinutes}m` : "-"}
-                    </div>
-                  </div>
-                </div>
-
-                {todayLunchRecords.length > 0 && (
-                  <div className="mb-5">
-                    <div className="text-[13px] font-bold text-primary mb-2.5 flex items-center gap-1.5">🍳 午餐</div>
-                    <div className="space-y-2">
-                      {todayLunchRecords.map((r) => (
-                        <TodayMenuItem
-                          key={r.id}
-                          record={r}
-                          dish={dishMap.get(r.dish_id)}
-                          pending={pendingMeals.has(mealSelectionKey(r))}
-                          disabled={mealStateUnavailable}
-                          onDelete={() => cancelMeal(r)}
-                          onClick={() => { close(); navigate(`/dishes/${r.dish_id}?record_id=${r.id}`) }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {todayDinnerRecords.length > 0 && (
-                  <div className="mb-2">
-                    <div className="text-[13px] font-bold text-mint mb-2.5 flex items-center gap-1.5">🍲 晚餐</div>
-                    <div className="space-y-2">
-                      {todayDinnerRecords.map((r) => (
-                        <TodayMenuItem
-                          key={r.id}
-                          record={r}
-                          dish={dishMap.get(r.dish_id)}
-                          pending={pendingMeals.has(mealSelectionKey(r))}
-                          disabled={mealStateUnavailable}
-                          onDelete={() => cancelMeal(r)}
-                          onClick={() => { close(); navigate(`/dishes/${r.dish_id}?record_id=${r.id}`) }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {todayLunchRecords.length === 0 && todayDinnerRecords.length === 0 && (
-                  <div className="text-center py-8 text-text3 text-sm">还没有选择今日菜品</div>
-                )}
-              </div>
-
-              <div className="px-5 py-3 border-t border-border" style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
-                <button onClick={close} className="w-full py-2.5 rounded-full text-[13px] font-semibold bg-primary text-white transition-all active:scale-96">
-                  继续选菜
-                </button>
-              </div>
-            </>
-          )}
-        </AnimatedBottomSheet>
+          onCancel={cancelMeal}
+          onOpenDish={(record) => {
+            setShowTodayModal(false)
+            navigate(`/dishes/${record.dish_id}?record_id=${record.id}`)
+          }}
+        />
       )}
-    </div>
-  )
-}
-
-function TodayMenuItem({ record, dish, pending, disabled, onDelete, onClick }: { record: MealRecord; dish?: Dish; pending: boolean; disabled: boolean; onDelete: () => void; onClick: () => void }) {
-  const dishHasImage = dish && isImageUrl(dish.image_url)
-  const recordHasImage = !dishHasImage && isImageUrl(record.dish_image_url)
-  return (
-    <div className="flex items-center gap-3 p-2.5 bg-bg rounded-xl transition-all active:scale-98" onClick={onClick}>
-      <div className="w-[52px] h-[52px] rounded-lg overflow-hidden flex-shrink-0 bg-gradient-to-br from-primary-light to-pink-light cursor-pointer">
-        {dishHasImage ? (
-          <DishImage dish={dish!} className="w-full h-full" emojiSize="text-[20px]" />
-        ) : recordHasImage ? (
-          <SafeImage
-            src={thumbUrl(record.dish_image_url)}
-            alt={record.dish_name}
-            className="w-full h-full object-cover"
-            fallback={<div className="w-full h-full flex items-center justify-center text-[20px]">{record.dish_emoji || "🍽"}</div>}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-[20px]">{record.dish_emoji || "🍽"}</div>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[14px] font-semibold truncate">{record.dish_name}</div>
-        <div className="text-[11px] text-primary mt-0.5">{record.status === "completed" ? "已吃" : "计划中"} · 原量 × {record.portion_scale || 1}</div>
-        <div className="flex items-center gap-1.5 text-[11px] text-text2 mt-0.5">
-          {dish?.category && <span>{dish.category}</span>}
-          {dish?.cook_time != null && dish.cook_time > 0 && (
-            <>
-              <span className="w-[3px] h-[3px] rounded-full bg-text3" />
-              <span>{dish.cook_time}分钟</span>
-            </>
-          )}
-          {dish?.difficulty && (
-            <>
-              <span className="w-[3px] h-[3px] rounded-full bg-text3" />
-              <span className={diffColor(dish.difficulty)}>{diffLabel(dish.difficulty)}</span>
-            </>
-          )}
-        </div>
-      </div>
-      {record.status === "planned" && <button
-        onClick={(e) => { e.stopPropagation(); onDelete() }}
-        aria-label={pending ? `正在更新${record.dish_name}的计划` : `取消${record.dish_name}的计划`}
-        aria-busy={pending}
-        disabled={disabled || pending}
-        className="w-8 h-8 rounded-full bg-red-light text-red flex items-center justify-center transition-all active:scale-90 flex-shrink-0 disabled:opacity-50"
-      >
-        <Trash2 size={14} />
-      </button>}
     </div>
   )
 }

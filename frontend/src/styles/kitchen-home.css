@@ -73,13 +73,6 @@
 .kitchen-mood-emoji { display: block; font-size: 25px; margin-bottom: 3px; line-height: 1.2; }
 .kitchen-mood.is-selected { border-color: var(--k-red); color: var(--k-red); transform: rotate(-4deg) translateY(-2px); }
 .kitchen-mood.is-selected::before { content: ""; position: absolute; width: 28px; height: 9px; top: -4px; left: calc(50% - 14px); background: color-mix(in srgb, var(--k-red) 28%, transparent); transform: rotate(-4deg); }
-.kitchen-play-strip { display: grid; grid-template-columns: 1fr 1fr 1.17fr; padding: 8px 2px; border: 1px solid var(--k-line); background: var(--k-kraft); border-radius: 6px; }
-.kitchen-play-strip button { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 3px 4px; }
-.kitchen-play-strip button + button { border-left: 1px dashed color-mix(in srgb, var(--k-muted) 35%, transparent); }
-.kitchen-play-strip svg { flex-shrink: 0; color: var(--k-red); }
-.kitchen-play-strip span { text-align: left; }
-.kitchen-play-strip strong { display: block; font-size: 12px; white-space: nowrap; }
-.kitchen-play-strip small { display: block; color: var(--k-muted); font-size: 11px; margin-top: 3px; }
 .kitchen-meal-picks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-bottom: 1px dashed var(--k-line); padding: 16px 0 13px; }
 .kitchen-meal-picks button { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-height: 48px; text-align: left; }
 .kitchen-meal-picks button > svg:first-child { color: var(--k-green); flex-shrink: 0; }
@@ -87,7 +80,47 @@
 .kitchen-meal-picks strong { display: block; font-size: 12px; }
 .kitchen-meal-picks small { display: block; margin-top: 3px; font-size: 11px; color: var(--k-muted); }
 .kitchen-page-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 5px; padding-top: 12px; color: var(--k-muted); font-size: 11px; }
-.kitchen-theme-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--k-muted); font-size: 11px; }
+.kitchen-theme-toggle { position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--k-muted); font-size: 11px; background: transparent; transition: color 160ms ease; }
+.kitchen-theme-toggle::after { content: ""; position: absolute; inset: auto 0 9px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform 160ms ease; }
+.kitchen-blind-section { margin-top: 20px; }
+.kitchen-blind-paper { position: relative; margin: 10px 1px 24px; border: 1px solid var(--k-line); border-radius: 7px 10px 6px 8px; background: var(--k-kraft); box-shadow: var(--k-shadow); transform: rotate(-.6deg); }
+.kitchen-blind-tape { position: absolute; top: -8px; width: 60px; height: 21px; background: color-mix(in srgb, #c99e6d 48%, transparent); pointer-events: none; z-index: 1; }
+.kitchen-blind-tape.tape-left { left: 21px; transform: rotate(-15deg); }
+.kitchen-blind-tape.tape-right { right: 23px; transform: rotate(12deg); }
+.kitchen-blind-lid { display: flex; align-items: center; justify-content: center; flex-direction: column; width: 100%; min-height: 170px; gap: 7px; padding: 24px 15px; }
+.kitchen-question-stamp { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 3px; border: 2px solid var(--k-red); color: var(--k-red); font-family: "Kitchen Serif", SimSun, serif; font-size: 30px; border-radius: 6px; transform: rotate(-7deg); background: var(--k-card); }
+.kitchen-blind-lid strong, .kitchen-blind-dish strong, .kitchen-tomorrow-note strong { font-family: "Kitchen Serif", SimSun, serif; font-weight: 900; font-size: 17px; }
+.kitchen-blind-lid > span:last-child { color: var(--k-muted); font-size: 12px; }
+.kitchen-blind-reveal { padding: 22px 17px 8px; }
+.kitchen-blind-dish { display: flex; gap: 16px; width: 100%; align-items: center; text-align: left; margin-bottom: 17px; }
+.kitchen-blind-thumb { width: 84px; height: 84px; flex-shrink: 0; overflow: hidden; border: 4px solid var(--k-card); box-shadow: var(--k-shadow); transform: rotate(-3deg); }
+.kitchen-blind-dish > span { min-width: 0; }
+.kitchen-blind-dish small { display: block; font-size: 11px; color: var(--k-muted); margin-bottom: 5px; }
+.kitchen-blind-dish strong { display: block; font-size: 21px; overflow-wrap: anywhere; }
+.kitchen-blind-dish > span > span { display: block; font-size: 11px; color: var(--k-muted); margin-top: 5px; }
+.kitchen-blind-recipe { display: flex; margin: 4px auto 0; }
+.kitchen-tomorrow-note { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 78px; padding: 12px 6px; border-block: 1px dashed var(--k-line); text-align: left; }
+.kitchen-tomorrow-note > svg:first-child { color: var(--k-red); flex-shrink: 0; }
+.kitchen-tomorrow-note > span { flex: 1; }
+.kitchen-tomorrow-note strong { display: block; font-size: 15px; }
+.kitchen-tomorrow-note small { display: block; color: var(--k-muted); font-size: 11px; margin-top: 5px; }
+.kitchen-tomorrow-note > svg:last-child { color: var(--k-muted); }
+.kitchen-ticket-sheet { width: calc(100% - 24px); max-width: 556px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 22px 20px 9px; border-radius: 12px; background: var(--k-card); }
+.kitchen-ticket-sheet .kitchen-sheet-heading { position: absolute; top: 3px; right: 3px; z-index: 1; }
+.kitchen-ticket-sheet .kitchen-sheet-heading .kitchen-icon-button { width: 44px; height: 44px; }
+.kitchen-ticket-cut { display: flex; align-items: center; gap: 10px; margin: 0 25px 22px 0; color: var(--k-faint); }
+.kitchen-ticket-cut > span { flex: 1; height: 0; border-top: 1px dashed var(--k-line); }
+.kitchen-ticket-body { display: grid; grid-template-columns: 84px minmax(0,1fr) 35px; gap: 14px; margin-bottom: 19px; align-items: center; }
+.kitchen-ticket-photo { padding: 5px; border: 1px solid var(--k-line); border-radius: 3px; background: var(--k-card); transform: rotate(-3deg); box-shadow: var(--k-shadow); }
+.kitchen-ticket-image { width: 72px; height: 82px; overflow: hidden; background: var(--k-kraft); }
+.kitchen-ticket-recipe > p { color: var(--k-muted); font-size: 11px; margin-bottom: 5px; }
+.kitchen-ticket-recipe h3 { font-size: 23px; line-height: 1.35; margin-bottom: 6px; overflow-wrap: anywhere; }
+.kitchen-ticket-recipe > div { font-size: 11px; color: var(--k-muted); margin-bottom: 10px; }
+.kitchen-ticket-recipe .kitchen-difficulty { display: inline-block; font-size: 11px; }
+.kitchen-ticket-stub { display: flex; flex-direction: column; align-items: center; align-self: stretch; justify-content: space-between; gap: 14px; border-left: 1px dashed var(--k-line); padding: 3px 0 3px 12px; }
+.kitchen-ticket-stub > span { writing-mode: vertical-rl; font-size: 11px; letter-spacing: 4px; color: var(--k-muted); }
+.kitchen-ticket-stub > b { display: grid; place-items: center; width: 26px; height: 28px; border-radius: 4px 3px 5px 2px; background: var(--k-red); color: var(--k-card); transform: rotate(-8deg); font-family: "Kitchen Serif", SimSun, serif; font-size: 17px; }
+.kitchen-ticket-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .kitchen-recipe-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; }
 .kitchen-recipe-list button, .kitchen-result-dish { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; text-align: left; padding: 12px 0; border-bottom: 1px dashed var(--k-line); }
 .kitchen-recipe-thumb { width: 50px; height: 50px; flex-shrink: 0; border-radius: 3px; background: var(--k-kraft); overflow: hidden; }
@@ -100,30 +133,11 @@
 .kitchen-urgent strong { font-size: 12px; display: block; color: var(--k-red); }
 .kitchen-urgent span { font-size: 11px; display: flex; align-items: center; gap: 4px; color: var(--k-muted); margin-top: 4px; }
 .kitchen-empty { display: grid; place-items: center; min-height: 280px; align-content: center; gap: 12px; color: var(--k-muted); border: 1px dashed var(--k-line); background: var(--k-card); }
-.kitchen-sheet { position: fixed; inset: auto 0 0; width: 100%; max-width: 600px; max-height: 90dvh; margin: 0 auto; padding: 20px 24px calc(20px + env(safe-area-inset-bottom)); border: 1px solid var(--k-line); border-radius: 15px 15px 0 0; box-shadow: var(--k-shadow); overflow-y: auto; overscroll-behavior: contain; }
-.kitchen-sheet[open] { animation: kitchen-sheet-arrive 220ms ease-out; }
-.kitchen-sheet::backdrop { background: rgb(25 20 15 / 48%); backdrop-filter: blur(3px); }
-.kitchen-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
-.kitchen-sheet-heading h2 { font-size: 22px; }
-.kitchen-sheet-intro, .kitchen-wheel-hint { font-size: 13px; line-height: 1.7; color: var(--k-muted); text-align: center; margin: 8px 0 18px; }
-.kitchen-wheel-wrap { width: 240px; height: 240px; margin: 25px auto; position: relative; border: 1px solid var(--k-line); border-radius: 50%; background: var(--k-kraft); box-shadow: var(--k-shadow); }
-.kitchen-wheel { position: absolute; inset: 13px; border-radius: 50%; overflow: hidden; }
-.kitchen-wheel canvas { width: 212px; height: 212px; }
-.kitchen-wheel-pointer { position: absolute; left: calc(50% - 10px); top: -6px; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 20px solid var(--k-red); z-index: 1; }
-.kitchen-wheel-spin { position: absolute; width: 56px; height: 56px; left: calc(50% - 28px); top: calc(50% - 28px); background: var(--k-card); color: var(--k-red); border: 3px solid var(--k-kraft); border-radius: 50%; font-family: "Kitchen Serif", SimSun, serif; font-size: 22px; font-weight: 900; }
-.kitchen-wheel-result .kitchen-meal-actions { margin-top: 14px; }
-.kitchen-another { display: flex; margin: 10px auto 0; }
-.kitchen-blind-envelope { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 16px; width: 100%; min-height: 270px; margin: 18px 0; background: var(--k-kraft); border: 1px dashed var(--k-muted); border-radius: 5px; }
-.kitchen-envelope-seal { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; color: var(--k-red); border: 1px solid var(--k-red); outline: 1px solid var(--k-red); outline-offset: -5px; transform: rotate(-8deg); }
-.kitchen-blind-envelope strong { font-size: 20px; }
-.kitchen-blind-envelope > span:last-child { color: var(--k-muted); font-size: 12px; }
-.kitchen-blind-photo { display: block; width: 100%; padding: 6px; border: 1px solid var(--k-line); margin: 14px 0; }
-.kitchen-blind-result h3 { font-size: 24px; }
-.kitchen-blind-result p { font-size: 12px; color: var(--k-muted); margin: 6px 0 18px; }
-@keyframes kitchen-sheet-arrive { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
 @media (hover: hover) {
   .kitchen-photo-link:hover img { transform: scale(1.025); }
-  .kitchen-icon-button:hover, .kitchen-theme-toggle:hover { background: var(--k-kraft); }
+  .kitchen-icon-button:hover { background: var(--k-kraft); }
+  .kitchen-theme-toggle:hover { color: var(--k-red); }
+  .kitchen-theme-toggle:hover::after { transform: scaleX(1); }
   .kitchen-mood:hover { border-color: var(--k-red); }
   .kitchen-text-button:hover { text-decoration: underline; text-underline-offset: 4px; }
   .kitchen-button-outline:hover { border-color: var(--k-muted); }
@@ -138,8 +152,6 @@
   .kitchen-recipe-note { padding: 10px 10px 15px; }
   .kitchen-mood-grid { gap: 14px; }
   .kitchen-mood { min-height: 78px; }
-  .kitchen-play-strip strong { font-size: 14px; }
-  .kitchen-play-strip small { font-size: 11px; }
 }
 @media (max-width: 360px) {
   .kitchen-masthead { padding-inline: 16px; }
@@ -151,12 +163,13 @@
   .kitchen-greeting { padding-right: 0; }
   .kitchen-margin-note { display: none; }
   .kitchen-mood-grid { gap: 6px; }
-  .kitchen-play-strip svg { width: 19px; }
-  .kitchen-play-strip button { gap: 3px; padding-inline: 2px; }
-  .kitchen-play-strip strong { font-size: 11px; }
   .kitchen-meal-picks { gap: 10px; }
   .kitchen-meal-picks button { gap: 4px; }
   .kitchen-recipe-list { grid-template-columns: 1fr; }
+  .kitchen-ticket-sheet { padding-inline: 15px; }
+  .kitchen-ticket-body { grid-template-columns: 70px minmax(0, 1fr) 30px; gap: 10px; }
+  .kitchen-ticket-image { width: 58px; height: 72px; }
+  .kitchen-ticket-recipe h3 { font-size: 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .kitchen-home *, .kitchen-sheet[open] { animation: none; transition: none; }

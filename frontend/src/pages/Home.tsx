@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -10,10 +10,12 @@ import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { isCurrentMoodChoice, savedHomeMood, selectedHomeMood } from "@/lib/homeMood"
 import type { HomeMood, HomeMoodChoice } from "@/lib/homeMood"
-import { gsap, motionDuration, scrollToElement, useGSAP } from "@/lib/gsap"
+import { scrollToElement } from "@/lib/gsap"
 import toast from "react-hot-toast"
-import { ArrowRight, Check, ChefHat, Clock3, Dices, Gift, Moon, RefreshCw, Settings, Soup, Sun, Utensils, X } from "lucide-react"
+import { ArrowRight, Check, ChefHat, Clock3, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
+import KitchenWheel from "@/components/KitchenWheel"
+import type { KitchenWheelHandle } from "@/components/KitchenWheel"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import "@/styles/kitchen-fonts.css"
 import "@/styles/kitchen-home.css"
@@ -45,12 +47,13 @@ export default function Home() {
   const location = useLocation()
   const theme = useKitchenTheme((s) => s.theme)
   const toggleTheme = useKitchenTheme((s) => s.toggleTheme)
-  const [playPanel, setPlayPanel] = useState<"wheel" | "blind" | null>(null)
-  // Home stays mounted between tabs; changing routes must dismiss its portal.
+  const [wheelResult, setWheelResult] = useState<Dish | null>(null)
+  const wheelHandle = useRef<KitchenWheelHandle>(null)
+  // 首页保留挂载，离开时关闭抽签票据。
   const [panelPath, setPanelPath] = useState(location.pathname)
   if (panelPath !== location.pathname) {
     setPanelPath(location.pathname)
-    if (playPanel) setPlayPanel(null)
+    if (wheelResult) setWheelResult(null)
   }
   const qc = useQueryClient()
   const [todayKey, setTodayKey] = useState(dateKey)
@@ -62,10 +65,6 @@ export default function Home() {
   const { data: dishesData, isPending: dishesLoading, isError: dishesError, refetch: reloadDishes } = useQuery({
     queryKey: ["dishes", "enabled"],
     queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", recommend: "1" }),
-  })
-  const { data: wheelData } = useQuery({
-    queryKey: ["dishes", "wheel"],
-    queryFn: () => dishesApi.list({ enabled: "true", pageSize: "12", sort: "random", recommend: "1" }),
   })
   const { data: recordsData } = useQuery({
     queryKey: ["records", "today", todayKey],
@@ -88,17 +87,11 @@ export default function Home() {
   const moodRequestId = useRef(0)
   const selectedMood = selectedHomeMood(moodChoice, todayKey, todayRating?.home_mood)
   const [blindRevealed, setBlindRevealed] = useState(false)
-  const [spinning, setSpinning] = useState(false)
-  const [wheelResult, setWheelResult] = useState<Dish | null>(null)
   // 临期提醒关闭状态按天持久化：当天关过就不再打扰，第二天重新出现
   const [urgentDismissedDate, setUrgentDismissedDate] = useState(() => {
     try { return localStorage.getItem("urgent_dismissed_date") } catch { return null }
   })
   const urgentDismissed = urgentDismissedDate === todayKey
-  const wheelDegRef = useRef(0)
-  const wheelHighlightRef = useRef(-1)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const wheelRef = useRef<HTMLDivElement>(null)
   const confettiRef = useRef<HTMLDivElement>(null)
   const recCardRef = useRef<HTMLDivElement>(null)
 
@@ -122,7 +115,6 @@ export default function Home() {
   }, [])
 
   const dishes = dishesData?.items || []
-  const wheelDishes = useMemo(() => wheelData?.items || [], [wheelData])
 
   // 临期提醒文案：已过期与快过期分开说（过去只要有一批过期，就把快过期的也说成"已过期"）；
   // 同一食材多批只列一次名字，过期的排前面
@@ -182,7 +174,8 @@ export default function Home() {
   const recordMut = useMutation({
     mutationFn: (data: { dish_id: number; dish_name: string; meal_type: string; meal_date: string }) =>
       recordsApi.create({ ...data, status: "planned" }),
-    onSuccess: () => {
+    onSuccess: (_saved, request) => {
+      setWheelResult((current) => current?.id === request.dish_id ? null : current)
       toast.success("已加入今日计划，吃过后到记录页确认")
       launchConfetti(confettiRef.current)
       qc.invalidateQueries({ queryKey: ["records"] })
@@ -239,124 +232,17 @@ export default function Home() {
     },
   })
 
-  const drawWheel = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas || wheelDishes.length === 0) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    // 按 devicePixelRatio 放大画布，避免手机高分屏上文字发虚
-    const dpr = Math.min(window.devicePixelRatio || 1, 3)
-    const size = 212
-    if (canvas.width !== size * dpr) {
-      canvas.width = size * dpr
-      canvas.height = size * dpr
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    const cx = 106, cy = 106, r = 105
-    const colors = ["#9B4935", "#7D684E", "#5F7052", "#AA714A", "#76604F", "#536657"]
-    const n = wheelDishes.length
-    const angle = (2 * Math.PI) / n
-    ctx.clearRect(0, 0, size, size)
-    const fontSize = n > 12 ? 9 : n > 8 ? 10 : 11
-    // 文字沿半径方向从内向外排，超出可用长度的名字截断加省略号
-    const textStart = r * 0.26
-    const maxChars = Math.max(2, Math.floor((r * 0.66) / fontSize))
-    for (let i = 0; i < n; i++) {
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.arc(cx, cy, r, i * angle - Math.PI / 2, (i + 1) * angle - Math.PI / 2)
-      ctx.closePath()
-      ctx.fillStyle = colors[i % colors.length]
-      ctx.fill()
-      // 中奖扇区白色高亮
-      if (i === wheelHighlightRef.current) {
-        ctx.fillStyle = "rgba(255,255,255,.35)"
-        ctx.fill()
-        ctx.strokeStyle = "#fff"
-        ctx.lineWidth = 3
-        ctx.stroke()
-      }
-      ctx.save()
-      ctx.translate(cx, cy)
-      ctx.rotate(i * angle + angle / 2 - Math.PI / 2)
-      ctx.fillStyle = "#fff"
-      ctx.font = `bold ${fontSize}px -apple-system, sans-serif`
-      ctx.textAlign = "left"
-      ctx.textBaseline = "middle"
-      ctx.shadowColor = "rgba(0,0,0,.22)"
-      ctx.shadowBlur = 3
-      let label = wheelDishes[i].name
-      if (label.length > maxChars) {
-        label = label.slice(0, maxChars - 1) + "…"
-      }
-      ctx.fillText(label, textStart, 0)
-      ctx.restore()
-    }
-    // 扇区分隔线
-    ctx.strokeStyle = "rgba(255,255,255,.85)"
-    ctx.lineWidth = 2.5
-    for (let i = 0; i < n; i++) {
-      const a = i * angle - Math.PI / 2
-      ctx.beginPath()
-      ctx.moveTo(cx + Math.cos(a) * r * 0.16, cy + Math.sin(a) * r * 0.16)
-      ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
-      ctx.stroke()
-    }
-  }, [wheelDishes])
-
-  useEffect(() => {
-    drawWheel()
-  }, [drawWheel, playPanel])
-
-  useGSAP(() => {
-    if (playPanel !== "wheel" || !wheelRef.current) return
-    const wheel = wheelRef.current
-    gsap.set(wheel, { rotation: wheelDegRef.current, transformOrigin: "50% 50%" })
-    return () => { gsap.killTweensOf(wheel) }
-  }, { dependencies: [playPanel], revertOnUpdate: true, scope: wheelRef })
-
-  function spinWheel() {
-    if (spinning || wheelDishes.length === 0) return
-    setSpinning(true)
-    setWheelResult(null)
-    const pickIdx = Math.floor(Math.random() * wheelDishes.length)
-    const seg = 360 / wheelDishes.length
-    const targetWithin = (360 - (pickIdx * seg + seg / 2)) % 360
-    const base = wheelDegRef.current - (wheelDegRef.current % 360)
-    const nextRotation = base + 360 * 6 + targetWithin
-    wheelDegRef.current = nextRotation
-    wheelHighlightRef.current = -1
-    drawWheel()
-
-    gsap.to(wheelRef.current, {
-      rotation: nextRotation,
-      duration: motionDuration(3.2),
-      ease: "power4.out",
-      overwrite: true,
-      onComplete: () => {
-        setSpinning(false)
-        const pick = wheelDishes[pickIdx]
-        wheelHighlightRef.current = pickIdx
-        drawWheel()
-        setPickedRec(pick)
-        setRecQuote("")
-        setRecMeal(null)
-        setWheelResult(pick)
-        qc.invalidateQueries({ queryKey: ["achievements"] })
-      },
-    })
-  }
-
   function resetBlindBox() {
     blindBoxMut.reset()
     setBlindRevealed(false)
   }
 
-  function closePlayPanel() {
-    gsap.killTweensOf(wheelRef.current)
-    setSpinning(false)
-    setPlayPanel(null)
-    setWheelResult(null)
+  function handleWheelPick(dish: Dish) {
+    setPickedRec(dish)
+    setRecQuote("")
+    setRecMeal(null)
+    setWheelResult(dish)
+    qc.invalidateQueries({ queryKey: ["achievements"] })
   }
 
   function recordForDish(dish: Dish, mealType: "lunch" | "dinner") {
@@ -373,7 +259,6 @@ export default function Home() {
       meal_type: mealType,
       meal_date: todayKey,
     })
-    closePlayPanel()
   }
 
   function handlePickMeal(mealType: "lunch" | "dinner") {
@@ -572,20 +457,51 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="kitchen-play-strip" aria-label="更多选菜方式">
-          <button onClick={() => { setWheelResult(null); setSpinning(false); setPlayPanel("wheel") }}>
-            <Dices size={23} strokeWidth={1.3} />
-            <span><strong>转一转</strong><small>纠结交给它</small></span>
-          </button>
-          <button onClick={() => setPlayPanel("blind")}>
-            <Gift size={23} strokeWidth={1.3} />
-            <span><strong>惊喜盲盒</strong><small>随机一点鲜</small></span>
-          </button>
-          <button onClick={() => navigate("/tomorrow")}>
-            <Moon size={23} strokeWidth={1.3} />
-            <span><strong>明天吃什么</strong><small>提前安排好</small></span>
-          </button>
-        </div>
+        <KitchenWheel
+          ref={wheelHandle}
+          theme={theme}
+          active={location.pathname === "/"}
+          onPick={handleWheelPick}
+        />
+
+        <section className="kitchen-blind-section" aria-labelledby="kitchen-blind-title">
+          <div className="kitchen-section-heading">
+            <h2 id="kitchen-blind-title">「惊喜盲盒」</h2>
+            {blindRevealed && <button className="kitchen-text-button" onClick={resetBlindBox}>
+              <RefreshCw size={14} /> 再拆一份
+            </button>}
+          </div>
+          <div className={`kitchen-blind-paper ${blindRevealed ? "is-open" : ""}`}>
+            <span className="kitchen-blind-tape tape-left" aria-hidden="true" />
+            <span className="kitchen-blind-tape tape-right" aria-hidden="true" />
+            {blindRevealed && blindBoxMut.data ? (
+              <div className="kitchen-blind-reveal" aria-live="polite">
+                <button className="kitchen-blind-dish" onClick={() => navigate(`/dishes/${blindBoxMut.data.dish.id}`)}>
+                  <DishImage dish={blindBoxMut.data.dish} className="kitchen-blind-thumb" />
+                  <span><small>今日拆到</small><strong>{blindBoxMut.data.dish.name}</strong>
+                    <span>{blindBoxMut.data.dish.category} · {blindBoxMut.data.dish.cook_time} 分钟</span>
+                  </span>
+                </button>
+                {mealButtons(blindBoxMut.data.dish)}
+                <button className="kitchen-text-button kitchen-blind-recipe" onClick={() => navigate(`/dishes/${blindBoxMut.data.dish.id}`)}>
+                  看看这道菜怎么做 <ArrowRight size={14} />
+                </button>
+              </div>
+            ) : (
+              <button className="kitchen-blind-lid" onClick={handleBlindBox} disabled={blindBoxMut.isPending} aria-busy={blindBoxMut.isPending}>
+                <span className="kitchen-question-stamp" aria-hidden="true">?</span>
+                <strong>{blindBoxMut.isPending ? "正在准备惊喜…" : "今日惊喜"}</strong>
+                <span>点我拆开 · 随机一道菜</span>
+              </button>
+            )}
+          </div>
+        </section>
+
+        <button className="kitchen-tomorrow-note" onClick={() => navigate("/tomorrow")}>
+          <Moon size={22} strokeWidth={1.4} />
+          <span><strong>明天吃什么</strong><small>提前写好，明天少一点纠结</small></span>
+          <ArrowRight size={16} />
+        </button>
 
         <section className="kitchen-meal-picks" aria-label="按餐次推荐">
           <button disabled={pickMealMut.isPending} onClick={() => pickMealMut.mutate("lunch")}>
@@ -630,85 +546,37 @@ export default function Home() {
         </footer>
       </main>
 
-      {playPanel && location.pathname === "/" && (
+      {wheelResult && location.pathname === "/" && (
         <KitchenSheet
           theme={theme}
-          title={playPanel === "wheel" ? "「转一转」" : "「惊喜盲盒」"}
-          onClose={closePlayPanel}
+          title="转盘开出的菜单"
+          className="kitchen-ticket-sheet"
+          hideHeading
+          onClose={() => setWheelResult(null)}
         >
-          {playPanel === "wheel" ? (
-            <div className="kitchen-play-content">
-              <p className="kitchen-sheet-intro">今天吃什么，让小转盘来拿主意。</p>
-              <div className={`kitchen-wheel-wrap ${wheelResult ? "has-result" : ""}`}>
-                <div className="kitchen-wheel-pointer" />
-                <div ref={wheelRef} className="kitchen-wheel">
-                  <canvas ref={canvasRef} aria-label="随机选菜转盘" />
-                </div>
-                <button
-                  className="kitchen-wheel-spin"
-                  onClick={spinWheel}
-                  disabled={spinning || wheelDishes.length === 0}
-                  aria-label="开始转盘"
-                >
-                  {spinning ? "…" : "转"}
-                </button>
-              </div>
-              {wheelResult ? (
-                <div className="kitchen-wheel-result" aria-live="polite">
-                  <button
-                    className="kitchen-result-dish"
-                    onClick={() => { closePlayPanel(); navigate(`/dishes/${wheelResult.id}`) }}
-                  >
-                    <DishImage dish={wheelResult} className="kitchen-recipe-thumb" />
-                    <span>
-                      <strong>{wheelResult.name}</strong>
-                      <small>{wheelResult.cook_time} 分钟 · 查看做法</small>
-                    </span>
-                    <ArrowRight size={16} />
-                  </button>
-                  {mealButtons(wheelResult)}
-                  <button
-                    className="kitchen-text-button kitchen-another"
-                    onClick={() => { setWheelResult(null); spinWheel() }}
-                  >
-                    再转一次 <RefreshCw size={14} />
-                  </button>
-                </div>
-              ) : (
-                <p className="kitchen-wheel-hint" role="status">
-                  {spinning ? "好菜马上出锅…" : wheelDishes.length ? "轻轻一点，把纠结放下。" : "暂时没有可参与转盘的菜品"}
-                </p>
-              )}
+          <div className="kitchen-ticket-cut" aria-hidden="true"><span /><Scissors size={16} strokeWidth={1.4} /><span /></div>
+          <div className="kitchen-ticket-body">
+            <button className="kitchen-ticket-photo" aria-label={`查看${wheelResult.name}的做法`}
+              onClick={() => { setWheelResult(null); navigate(`/dishes/${wheelResult.id}`) }}>
+              <DishImage dish={wheelResult} className="kitchen-ticket-image" />
+            </button>
+            <div className="kitchen-ticket-recipe">
+              <p>转盘开出</p>
+              <h3>{wheelResult.name}</h3>
+              <div>{wheelResult.category} · {wheelResult.cook_time} 分钟</div>
+              <span className="kitchen-difficulty">{diffLabel(wheelResult.difficulty)}</span>
             </div>
-          ) : (
-            <div className="kitchen-play-content">
-              {blindRevealed && blindBoxMut.data ? (
-                <div className="kitchen-blind-result">
-                  <button
-                    className="kitchen-blind-photo"
-                    onClick={() => { closePlayPanel(); navigate(`/dishes/${blindBoxMut.data.dish.id}`) }}
-                    aria-label={`查看${blindBoxMut.data.dish.name}的做法`}
-                  >
-                    <DishImage dish={blindBoxMut.data.dish} full className="kitchen-food-photo" />
-                  </button>
-                  <h3>{blindBoxMut.data.dish.name}</h3>
-                  <p>
-                    {blindBoxMut.data.dish.category} · {blindBoxMut.data.dish.cook_time} 分钟 · {diffLabel(blindBoxMut.data.dish.difficulty)}
-                  </p>
-                  {mealButtons(blindBoxMut.data.dish)}
-                  <button className="kitchen-text-button kitchen-another" onClick={resetBlindBox}>
-                    再拆一份 <RefreshCw size={14} />
-                  </button>
-                </div>
-              ) : (
-                <button className="kitchen-blind-envelope" onClick={handleBlindBox} disabled={blindBoxMut.isPending}>
-                  <span className="kitchen-envelope-seal"><Gift size={34} strokeWidth={1.3} /></span>
-                  <strong>{blindBoxMut.isPending ? "正在准备惊喜…" : "给今天留一点惊喜"}</strong>
-                  <span>点一下，拆开今日菜单</span>
-                </button>
-              )}
-            </div>
-          )}
+            <aside className="kitchen-ticket-stub" aria-hidden="true"><span>今日加菜</span><b>中</b></aside>
+          </div>
+          {mealButtons(wheelResult)}
+          <div className="kitchen-ticket-footer">
+            <button className="kitchen-text-button" onClick={() => { setWheelResult(null); wheelHandle.current?.spin() }} disabled={recordMut.isPending}>
+              <RefreshCw size={14} /> 再转一次
+            </button>
+            <button className="kitchen-text-button" onClick={() => { setWheelResult(null); navigate(`/dishes/${wheelResult.id}`) }}>
+              看看怎么做 <ArrowRight size={14} />
+            </button>
+          </div>
         </KitchenSheet>
       )}
     </div>

@@ -2,12 +2,15 @@ import { useEffect, useId, useRef } from "react"
 import type { PointerEvent, ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { X } from "lucide-react"
+import "@/styles/kitchen-sheet.css"
 
 interface KitchenSheetProps {
   title: string
   theme: "day" | "night"
   onClose: () => void
   children: ReactNode
+  className?: string
+  hideHeading?: boolean
 }
 
 function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
@@ -19,7 +22,7 @@ function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
 
 // The parent mounts this sheet while open. Native modal dialogs keep keyboard
 // focus inside the sheet and make the rest of the page inert.
-export default function KitchenSheet({ title, theme, onClose, children }: KitchenSheetProps) {
+export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false }: KitchenSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const backdropPointerDown = useRef(false)
   const titleId = useId()
@@ -38,7 +41,7 @@ export default function KitchenSheet({ title, theme, onClose, children }: Kitche
   return createPortal(
     <dialog
       ref={dialogRef}
-      className={`kitchen-surface kitchen-${theme} kitchen-sheet`}
+      className={`kitchen-surface kitchen-${theme} kitchen-sheet ${className}`}
       aria-labelledby={titleId}
       onCancel={(event) => { event.preventDefault(); onClose() }}
       onPointerDown={(event) => { backdropPointerDown.current = isBackdrop(event) }}
@@ -50,7 +53,7 @@ export default function KitchenSheet({ title, theme, onClose, children }: Kitche
       onPointerCancel={() => { backdropPointerDown.current = false }}
     >
       <header className="kitchen-sheet-heading">
-        <h2 id={titleId}>{title}</h2>
+        <h2 id={titleId} className={hideHeading ? "sr-only" : undefined}>{title}</h2>
         <button type="button" className="kitchen-icon-button" aria-label="关闭" onClick={onClose} autoFocus>
           <X size={20} strokeWidth={1.8} aria-hidden="true" />
         </button>

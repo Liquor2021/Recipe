@@ -1,0 +1,25 @@
+.kitchen-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90dvh;
+  margin: 0 auto;
+  padding: 20px 24px calc(20px + env(safe-area-inset-bottom));
+  border: 1px solid var(--k-line);
+  border-radius: 15px 15px 0 0;
+  box-shadow: var(--k-shadow);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.kitchen-sheet[open] { animation: kitchen-sheet-arrive 220ms ease-out; }
+.kitchen-sheet::backdrop { background: rgb(25 20 15 / 48%); backdrop-filter: blur(3px); }
+.kitchen-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; }
+.kitchen-sheet-heading h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 900; font-size: 22px; }
+.kitchen-sheet .kitchen-icon-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44px; height: 44px; color: var(--k-muted); border-radius: 5px; }
+.kitchen-sheet button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kitchen-sheet button:disabled { cursor: default; opacity: .55; }
+.kitchen-sheet button:focus-visible { outline: 2px solid var(--k-red); outline-offset: 4px; }
+@keyframes kitchen-sheet-arrive { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+@media (hover: hover) { .kitchen-sheet .kitchen-icon-button:hover { background: var(--k-kraft); } }
+@media (prefers-reduced-motion: reduce) { .kitchen-sheet[open] { animation: none; } }

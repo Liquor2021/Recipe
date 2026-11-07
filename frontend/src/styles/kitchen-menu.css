@@ -1,0 +1,83 @@
+.kitchen-sheet.kitchen-menu-sheet {
+  width: calc(100% - 24px);
+  max-width: 560px;
+  max-height: 85dvh;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px 14px;
+  border-radius: 9px 12px 8px 10px;
+  background-color: var(--k-card);
+  overflow: hidden;
+}
+
+.kitchen-menu-sheet .kitchen-sheet-heading {
+  position: relative;
+  min-height: 32px;
+  flex-shrink: 0;
+  justify-content: center;
+  padding: 0 35px;
+}
+
+.kitchen-menu-sheet .kitchen-sheet-heading h2 {
+  font-family: "Kitchen Serif", "Songti SC", SimSun, serif;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: 4px;
+}
+
+.kitchen-menu-sheet .kitchen-sheet-heading > button {
+  position: absolute;
+  top: -8px;
+  right: -9px;
+}
+
+.kitchen-menu-date {
+  flex-shrink: 0;
+  padding: 5px 12px 15px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--k-muted);
+}
+
+.kitchen-menu-rule { flex-shrink: 0; border-top: 4px double var(--k-ink); }
+.kitchen-menu-sections { min-height: 0; padding-inline: 3px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.kitchen-menu-section { padding: 16px 0 12px; }
+.kitchen-menu-section + .kitchen-menu-section { border-top: 1px solid var(--k-line); }
+.kitchen-menu-section h3 { margin: 0 0 5px; color: var(--k-red); font-size: 12px; font-weight: 700; letter-spacing: 10px; }
+.kitchen-menu-section ul { list-style: none; padding: 0; margin: 0; }
+.kitchen-menu-item { display: flex; align-items: center; gap: 8px; }
+.kitchen-menu-dish { flex: 1; min-width: 0; min-height: 62px; padding: 9px 0; text-align: left; }
+.kitchen-menu-line { display: flex; align-items: baseline; gap: 7px; }
+.kitchen-menu-line strong { min-width: 0; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 16px; font-weight: 900; line-height: 1.6; overflow-wrap: anywhere; }
+.kitchen-menu-leader { flex: 1; min-width: 12px; border-bottom: 1px dotted var(--k-line); }
+.kitchen-menu-time { flex-shrink: 0; color: var(--k-muted); font-size: 11px; }
+.kitchen-menu-portion { display: block; margin-top: 2px; color: var(--k-muted); font-size: 11px; line-height: 1.5; }
+.kitchen-menu-stamp { flex-shrink: 0; display: inline-flex; min-width: 37px; min-height: 28px; align-items: center; justify-content: center; padding: 3px 4px; border: 1px solid currentColor; border-radius: 3px; font-size: 11px; font-weight: 700; transform: rotate(-4deg); white-space: nowrap; }
+.kitchen-menu-stamp.is-cooked { color: var(--k-green); }
+.kitchen-menu-stamp.is-planned { color: #9b6b2e; border-style: dashed; transform: rotate(4deg); }
+.kitchen-night .kitchen-menu-stamp.is-planned { color: #dab579; }
+.kitchen-menu-cancel { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; color: var(--k-muted); border-radius: 4px; }
+.kitchen-menu-cancel:disabled { opacity: .45; cursor: default; }
+.kitchen-menu-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 13px; border-top: 1px solid var(--k-line); }
+.kitchen-menu-footer > span { color: var(--k-muted); font-size: 11px; line-height: 1.7; }
+.kitchen-menu-footer > button { flex-shrink: 0; min-height: 44px; padding: 9px 17px; background: var(--k-ink); color: var(--k-card); border: 1px solid var(--k-ink); border-radius: 5px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 14px; font-weight: 900; }
+.kitchen-menu-warning { flex-shrink: 0; padding: 10px 0; color: var(--k-red); font-size: 12px; line-height: 1.7; }
+.kitchen-menu-warning button { min-height: 44px; padding: 0 10px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.kitchen-menu-empty { margin: 30px 0; text-align: center; color: var(--k-muted); font-size: 13px; line-height: 1.8; }
+.kitchen-menu-sheet button { cursor: pointer; }
+.kitchen-menu-sheet button:focus-visible { outline: 2px solid var(--k-red); outline-offset: 2px; }
+
+@media (hover: hover) {
+  .kitchen-menu-dish:hover strong { color: var(--k-red); }
+  .kitchen-menu-cancel:hover:not(:disabled) { color: var(--k-red); background: var(--k-kraft); }
+}
+
+@media (max-width: 360px) {
+  .kitchen-sheet.kitchen-menu-sheet { padding-inline: 16px; }
+  .kitchen-menu-item { gap: 5px; }
+  .kitchen-menu-line { gap: 4px; }
+  .kitchen-menu-line strong { font-size: 15px; }
+  .kitchen-menu-leader { min-width: 8px; }
+}
