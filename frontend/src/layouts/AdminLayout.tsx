@@ -24,15 +24,6 @@ export default function AdminLayout() {
     }
   }, [isLoggedIn, location.pathname, navigate])
 
-  useEffect(() => {
-    const onExpired = () => {
-      logout()
-      navigate("/admin/login", { replace: true })
-    }
-    window.addEventListener("admin-auth-expired", onExpired)
-    return () => window.removeEventListener("admin-auth-expired", onExpired)
-  }, [logout, navigate])
-
   const handleLogout = () => {
     logout()
     navigate("/")

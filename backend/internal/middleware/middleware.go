@@ -13,6 +13,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// 保留 HTTP 401 和原响应结构；业务码明确指出哪一层凭证失效。
+const (
+	AdminAuthErrorCode = 40101
+	AppAuthErrorCode   = 40102
+)
+
 func parseAdminToken(rawToken string) bool {
 	token, err := jwt.Parse(rawToken, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -39,13 +45,13 @@ func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		rawToken := bearerToken(c)
 		if rawToken == "" {
-			utils.Unauthorized(c, "未提供认证Token")
+			utils.Error(c, http.StatusUnauthorized, AdminAuthErrorCode, "未提供认证Token")
 			c.Abort()
 			return
 		}
 
 		if !parseAdminToken(rawToken) {
-			utils.Unauthorized(c, "Token无效或已过期")
+			utils.Error(c, http.StatusUnauthorized, AdminAuthErrorCode, "Token无效或已过期")
 			c.Abort()
 			return
 		}
@@ -63,13 +69,13 @@ func AppAuthMiddleware() gin.HandlerFunc {
 
 		appToken := c.GetHeader("X-App-Token")
 		if appToken == "" {
-			utils.Unauthorized(c, "请输入应用密码")
+			utils.Error(c, http.StatusUnauthorized, AppAuthErrorCode, "请输入应用密码")
 			c.Abort()
 			return
 		}
 
 		if subtle.ConstantTimeCompare([]byte(appToken), []byte(config.C.AppPassword)) != 1 {
-			utils.Unauthorized(c, "应用密码错误")
+			utils.Error(c, http.StatusUnauthorized, AppAuthErrorCode, "应用密码错误")
 			c.Abort()
 			return
 		}
