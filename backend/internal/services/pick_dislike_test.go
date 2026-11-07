@@ -2,6 +2,7 @@ package services
 
 import (
 	"math/rand"
+	dishcatalog "ninimenu/internal/dishes"
 	"ninimenu/internal/models"
 	"testing"
 )
@@ -63,6 +64,11 @@ func TestDishMatchesMeatAndOffalDislikes(t *testing.T) {
 		{dish(one("肥膘肉"), ""), "猪肉", true},
 		{dish(one("腊肉"), ""), "猪肉", true},
 		{dish(one("火腿"), ""), "猪肉", true},
+		{dish(one("卤肥肠"), ""), "猪肉", true},
+		{dish(one("熟肥肠"), ""), "猪肉", true},
+		{dish(one("血肠"), ""), "猪肉", true},
+		{dish(one("素肥肠"), ""), "猪肉", false},
+		{dish(one("牛血肠"), ""), "猪肉", false},
 		{dish(one("肉末"), ""), "猪肉", true},
 		{dish(one("猪肉马蹄馅"), ""), "猪肉", true},
 		{dish(one("牛里脊"), ""), "猪肉", false},
@@ -91,6 +97,27 @@ func TestDishMatchesMeatAndOffalDislikes(t *testing.T) {
 		if got := dishMatchesDislike(tt.dish, tt.dislike); got != tt.want {
 			t.Errorf("不吃%s：主料 %s 调料 %s → %v, want %v", tt.dislike, tt.dish.Ingredients, tt.dish.Seasonings, got, tt.want)
 		}
+	}
+}
+
+func TestStrictPorkDislikeFiltersSeedOffal(t *testing.T) {
+	// 用真实种子菜验证整条严格过滤路径，避免测试只覆盖带“猪”字的自造样例。
+	wanted := map[string]bool{"肥肠粉": true, "干锅肥肠": true}
+	var candidates []models.Dish
+	for _, d := range dishcatalog.DefaultDishes() {
+		if wanted[d.Name] {
+			candidates = append(candidates, d)
+			delete(wanted, d.Name)
+		}
+	}
+	if len(wanted) != 0 {
+		t.Fatalf("缺少要验证的种子菜: %v", wanted)
+	}
+	plain := dishWithIngredients(99999, "清炒土豆丝", false, `[{"name":"土豆","amount":"1个"}]`)
+	candidates = append(candidates, plain)
+	got := applyDislikeMode(candidates, familyDislikeConfig{tokens: map[string]bool{"猪肉": true}, strict: true})
+	if len(got) != 1 || got[0].ID != plain.ID {
+		t.Fatalf("不吃猪肉应滤掉两道肥肠菜，仅保留清炒土豆丝, got %v", namesOf(got))
 	}
 }
 

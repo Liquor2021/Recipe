@@ -56,7 +56,7 @@ type DietBalance struct {
 // notVegServing 买菜清单归在"蔬菜"、但不算吃了一份蔬菜的：香菜紫苏这类点缀、
 // 干辣椒小米辣这类调味辣椒、豆沙馅、干豆子（葱蒜见 ingredients.IsStaple，姜按字判）
 var notVegServing = map[string]bool{
-	"香菜": true, "芫荽": true, "紫苏": true, "薄荷": true, "香茅": true, "罗勒": true, "九层塔": true,
+	"香菜": true, "芫荽": true, "芜荽": true, "紫苏": true, "薄荷": true, "香茅": true, "罗勒": true, "九层塔": true,
 	"干辣椒": true, "干红辣椒": true, "小米辣": true, "小米椒": true, "泡椒": true, "剁椒": true,
 	"朝天椒": true, "野山椒": true, "糟辣椒": true,
 	"豆沙": true, "红豆沙": true, "红豆馅": true, "黄豆": true, "绿豆": true, "红豆": true, "黑豆": true,
@@ -64,8 +64,45 @@ var notVegServing = map[string]bool{
 }
 
 func isVegServing(name string) bool {
-	n := strings.TrimSpace(name)
+	// 先去切法、再归别名；保留“干”等前缀，避免干辣椒被当成鲜辣椒。
+	n := ingredients.Normalize(reportIngredientBase(name))
 	return n != "" && !ingredients.IsStaple(n) && !strings.Contains(n, "姜") && !notVegServing[n]
+}
+
+// reportIngredientBase 只去切配后缀，不去干鲜、产地等会改变食材含义的前缀。
+// 一字食材只处理已知葱姜蒜，避免把“芥末”等名称误拆。
+func reportIngredientBase(name string) string {
+	n := strings.TrimSpace(name)
+	for _, suffix := range []string{"片", "丝", "丁", "块", "段", "末", "碎", "泥", "蓉"} {
+		if rest := strings.TrimSuffix(n, suffix); rest != n && (utf8.RuneCountInString(rest) >= 2 || ingredients.IsStaple(rest)) {
+			return rest
+		}
+	}
+	return n
+}
+
+// 种子菜谱中不能按“油/豆豉”等调味关键词推断的完整主料名。
+// 仅补已确认的例外，其他食材沿用买菜分类，后台的人工分类始终优先。
+var reportIngredientCategories = map[string]string{
+	"豆豉鲮鱼罐头": "肉类",
+	"黄辣丁":    "肉类",
+	"东北油豆角":  "蔬菜",
+}
+
+func classifyReportIngredient(name string, overrides map[string]string) string {
+	if category := overrides[name]; isValidShoppingCategory(category) {
+		return category
+	}
+	// 完整名先于去切法后的名称：“黄辣丁”的“丁”是鱼名的一部分。
+	for _, n := range []string{ingredients.Normalize(name), ingredients.Normalize(reportIngredientBase(name))} {
+		if category := reportIngredientCategories[n]; category != "" {
+			return category
+		}
+		if category := shoppingCategoryExact[n]; category != "" {
+			return category
+		}
+	}
+	return classifyShoppingItem(name, nil)
 }
 
 // 数"吃到几种蔬菜"时去掉的前后缀：干香菇=香菇、长茄子=茄子、土豆片=土豆
@@ -105,13 +142,13 @@ type dishBalanceInfo struct {
 	vegKinds []string // 去重后的蔬菜种类
 }
 
-// classifyDishBalance 按菜谱主料归类：食材分类与买菜清单一致（含后台改过的分类）；
+// classifyDishBalance 按菜谱主料归类：沿用买菜分类与人工改写，修正已知主料的关键词歧义；
 // 鸡蛋、咸蛋黄在买菜清单里归肉类，但家常说法里不算荤
 func classifyDishBalance(d models.Dish, overrides map[string]string) dishBalanceInfo {
 	var info dishBalanceInfo
 	seen := make(map[string]bool)
 	for _, ing := range ParseIngredientList(d.Ingredients) {
-		switch classifyShoppingItem(ing.Name, overrides) {
+		switch classifyReportIngredient(ing.Name, overrides) {
 		case "肉类":
 			if !strings.Contains(ing.Name, "蛋") {
 				info.hasMeat = true

@@ -81,6 +81,10 @@ var categoryIndex = buildIndex(CategoryGroups)
 // categoryHeads 大类名集合（每组第一个，如"猪肉"），用于 IsCategoryHead
 var categoryHeads = buildHeads(CategoryGroups)
 
+// 只有不指定部位、切法的叫法才是泛称别名，不能直接使用 AliasGroups：
+// 猪肉片虽然能归一到猪肉，却不能因此默认拿排骨来扣库存。
+var categoryHeadAliases = map[string]bool{"黄牛肉": true}
+
 func buildHeads(groups [][]string) map[string]bool {
 	m := make(map[string]bool, len(groups))
 	for _, group := range groups {
@@ -121,11 +125,12 @@ func CategoryOf(s string) string {
 	return n
 }
 
-// IsCategoryHead 是否大类泛称本身（如"猪肉"），而不是具体部位（如"排骨"）。
+// IsCategoryHead 原始名字是否大类泛称（如"猪肉"），而不是具体部位或切法。
 // 扣库存时用：泛称与同类部位互相算命中（买的"猪肉"可以拿来做排骨菜），
 // 两个不同的具体部位（排骨 vs 五花肉）则不算。
 func IsCategoryHead(name string) bool {
-	return categoryHeads[Normalize(name)]
+	n := strings.ToLower(strings.TrimSpace(name))
+	return categoryHeads[n] || categoryHeadAliases[n]
 }
 
 // tapWater 自来水/烧开的水：菜谱里常写成调料（"清水 500毫升"），但不用买

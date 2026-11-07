@@ -427,7 +427,8 @@ func consumeKind(req, stock string) string {
 	if ingredients.CategoryOf(rn) != ingredients.CategoryOf(sn) {
 		return ""
 	}
-	if ingredients.IsCategoryHead(rn) || ingredients.IsCategoryHead(sn) {
+	// 泛称判断保留原始切法：猪肉片归一成猪肉后，不能让它与排骨默认互扣。
+	if ingredients.IsCategoryHead(req) || ingredients.IsCategoryHead(stock) {
 		return consumeGeneric
 	}
 	return consumeSimilar

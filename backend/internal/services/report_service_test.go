@@ -1,7 +1,10 @@
 package services
 
 import (
+	"encoding/json"
+	"ninimenu/internal/dishes"
 	"ninimenu/internal/models"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -209,5 +212,80 @@ func TestVegKindAndServing(t *testing.T) {
 		if got := isVegServing(name); got != want {
 			t.Errorf("isVegServing(%q) = %v, want %v", name, got, want)
 		}
+	}
+}
+
+func TestDietBalanceSeedIngredients(t *testing.T) {
+	seedByName := make(map[string]models.Dish)
+	for _, dish := range dishes.DefaultDishes() {
+		seedByName[dish.Name] = dish
+	}
+	for _, tc := range []struct {
+		name    string
+		hasMeat bool
+		veg     []string
+	}{
+		{"罐头鲮鱼油麦菜", true, []string{"油麦菜"}},
+		{"豆豉鲮鱼油麦菜", true, []string{"油麦菜"}},
+		{"黄辣丁豆腐汤", true, []string{"豆腐"}},
+		{"排骨炖豆角", true, []string{"东北油豆角", "土豆"}},
+		{"遵义羊肉粉", true, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dish, ok := seedByName[tc.name]
+			if !ok {
+				t.Fatalf("missing seed dish %q", tc.name)
+			}
+			info := classifyDishBalance(dish, nil)
+			if info.hasMeat != tc.hasMeat || !slices.Equal(info.vegKinds, tc.veg) {
+				t.Fatalf("balance = %+v, want meat=%v vegetables=%v", info, tc.hasMeat, tc.veg)
+			}
+		})
+	}
+}
+
+func TestDietBalanceIngredientBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		hasMeat   bool
+		hasVeg    bool
+		overrides map[string]string
+	}{
+		{name: "香菜末"}, {name: "芫荽段"}, {name: "芜荽"}, {name: "芜荽末"},
+		{name: "干辣椒段"}, {name: "干红辣椒碎"}, {name: "小米椒碎"},
+		{name: "蒜泥"}, {name: "小葱段"}, {name: "大蒜片"},
+		{name: "青椒丝", hasVeg: true}, {name: "洋葱丝", hasVeg: true},
+		{name: "蒜苗段", hasVeg: true}, {name: "蒜苔", hasVeg: true},
+		{name: "干香菇片", hasVeg: true}, {name: "油麦菜段", hasVeg: true},
+		{name: "鸡蛋"}, {name: "豆腐", hasVeg: true},
+		{name: "鸡精"}, {name: "猪油"}, {name: "鱼露"}, {name: "豆豉"},
+		{name: "豆豉鲮鱼罐头", hasMeat: true},
+		{name: "黄辣丁块", hasMeat: true},
+		{name: "东北油豆角段", hasVeg: true},
+		{name: "豆豉鲮鱼罐头", overrides: map[string]string{"豆豉鲮鱼罐头": "配料"}},
+		{name: "油麦菜段", overrides: map[string]string{"油麦菜段": "其他"}},
+		{name: "自种食材", hasVeg: true, overrides: map[string]string{"自种食材": "蔬菜"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal([]string{tc.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			info := classifyDishBalance(models.Dish{Ingredients: string(raw)}, tc.overrides)
+			if info.hasMeat != tc.hasMeat || (len(info.vegKinds) > 0) != tc.hasVeg {
+				t.Fatalf("balance = %+v, want meat=%v hasVeg=%v", info, tc.hasMeat, tc.hasVeg)
+			}
+		})
+	}
+}
+
+func TestDietBalanceCondimentsDoNotCountAsVegetableMeal(t *testing.T) {
+	dish := models.Dish{ID: 1, Ingredients: `["猪肉", "干辣椒段", "香菜末", "蒜泥"]`}
+	b := buildDietBalance(
+		[]models.MealRecord{{DishID: 1, MealDate: "2026-11-07", MealType: "dinner"}},
+		map[uint]models.Dish{1: dish}, nil,
+	)
+	if b.MixedCount != 0 || b.MeatCount != 1 || b.VegCount != 0 || b.Meals != 1 || b.MealsWithVeg != 0 || len(b.Vegetables) != 0 {
+		t.Fatalf("condiments should not count as a vegetable meal: %+v", b)
 	}
 }

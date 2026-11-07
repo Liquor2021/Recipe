@@ -239,6 +239,55 @@ func TestMatchDishConsumptionNeverDefaultsToOtherCut(t *testing.T) {
 	}
 }
 
+func TestMatchDishConsumptionCutAliases(t *testing.T) {
+	today := time.Date(2026, 11, 7, 12, 0, 0, 0, time.Local)
+	tests := []struct {
+		recipe, stock string
+		kind          string
+		wantDefault   bool
+	}{
+		{"猪肉片", "排骨", consumeSimilar, false},
+		{"排骨", "猪肉片", consumeSimilar, false},
+		{"猪肉丝", "排骨", consumeSimilar, false},
+		{"牛肉片", "牛腩", consumeSimilar, false},
+		{"羊肉片", "羊排", consumeSimilar, false},
+		{"羊排", "羊肉片", consumeSimilar, false},
+		{"猪肉片", "猪肉片", consumeExact, true},
+		{"猪肉末", "肉末", consumeExact, true},
+		{"猪肋排", "排骨", consumeExact, true},
+		{"西红柿", "番茄", consumeExact, true},
+		{"排骨", "猪肉", consumeGeneric, true},
+		{"猪肉", "排骨", consumeGeneric, true},
+		{"羊排", "羊肉", consumeGeneric, true},
+		{"牛腩", "黄牛肉", consumeGeneric, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.recipe+"_库存"+tt.stock, func(t *testing.T) {
+			dish := dishWithIngredients(1, "测试菜", false, fmt.Sprintf(`[{"name":%q,"amount":"200克"}]`, tt.recipe))
+			batches := []models.InventoryBatch{{ID: 1, ItemName: tt.stock, Quantity: "500克", ExpiryDate: "2026-11-10"}}
+			slots := matchDishConsumption(dish, batches, today)
+			if len(slots) != 1 || len(slots[0].Batches) != 1 {
+				t.Fatalf("同类库存应可见, got %+v", slots)
+			}
+			if got := slots[0].Batches[0].Kind; got != tt.kind {
+				t.Errorf("匹配关系 = %q, want %q", got, tt.kind)
+			}
+			var wantID uint
+			if tt.wantDefault {
+				wantID = 1
+			}
+			if got := slots[0].SuggestedBatchID; got != wantID {
+				t.Errorf("默认扣减批次 = %d, want %d", got, wantID)
+			}
+			// 仅扣减建议需要收紧；清冰箱仍可把同类部位作为代用推荐。
+			matches := matchDishesWithInventory([]models.Dish{dish}, foldBatchesByCategory(batches, today), 12)
+			if len(matches) != 1 || matches[0].Coverage != 100 {
+				t.Errorf("清冰箱宽匹配应保留, got %+v", matches)
+			}
+		})
+	}
+}
+
 func TestMatchDishConsumptionFIFOAndExpired(t *testing.T) {
 	today := time.Date(2026, 10, 28, 12, 0, 0, 0, time.Local)
 	dish := dishWithIngredients(1, "番茄炒蛋", false, `[{"name":"西红柿","amount":"2个"},{"name":"番茄","amount":"1个"},{"name":"鸡蛋","amount":"3个"}]`)

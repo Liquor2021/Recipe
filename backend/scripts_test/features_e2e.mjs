@@ -16,7 +16,7 @@ async function api(method, path, body) {
 function dayStr(offset) {
   const d = new Date()
   d.setDate(d.getDate() + offset)
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 async function main() {
@@ -68,7 +68,8 @@ async function main() {
   const rep = r.data || {}
   check("报告结构完整", typeof rep.cook_days === "number" && typeof rep.repeat_rate === "number" && Array.isArray(rep.taste_shares) && Array.isArray(rep.top_dishes), JSON.stringify(Object.keys(rep)))
   check("周报日期是本周", rep.start_date && rep.end_date && rep.start_date <= dayStr(0) && rep.end_date >= dayStr(0), `${rep.start_date}~${rep.end_date}`)
-  check("总餐数与记录一致", rep.total_meals >= 1, `total_meals=${rep.total_meals}`)
+  const periodRecords = await api("GET", `/records?date_from=${rep.start_date}&date_to=${rep.end_date}&pageSize=1`)
+  check("总餐数与记录一致（空库也成立）", periodRecords.code === 0 && rep.total_meals === periodRecords.data?.total, `report=${rep.total_meals}, records=${periodRecords.data?.total}`)
   r = await api("GET", "/report?range=month")
   check("月报可生成", r.data && r.data.range === "month", JSON.stringify(r.data?.range))
 

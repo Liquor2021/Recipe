@@ -75,48 +75,54 @@ function WeekDaySheet({ day, dateLabel, canRecord, swappingKey, recording, onSwa
 }) {
   const busy = swappingKey !== null
   return (
-    <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5 pb-8 shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
+    <AnimatedBottomSheet onClose={onClose} className="flex max-h-[calc(100dvh-1rem)] flex-col overflow-hidden rounded-t-3xl p-5 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
       {({ close }) => (
       <>
-        <div className="w-10 h-1 rounded-full bg-border2 mx-auto mb-4" />
-        <div className="text-lg font-bold mb-1">{canRecord ? `快速点菜 · ${dateLabel}` : `${dateLabel}的菜单`}</div>
-        <div className="text-xs text-text2 mb-4">{day.date.slice(5)} {day.day_name} · 不想吃哪道，点「换一道」</div>
-        {MEAL_SECTIONS.map(({ key, label, titleClass, rowClass }) => day[key].length > 0 && (
-          <div key={key} className="mb-4">
-            <div className={`text-xs font-semibold mb-1.5 ${titleClass}`}>{label}</div>
-            <div className="flex flex-col gap-1.5">
-              {day[key].map((d) => (
-                <div key={d.id} className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl ${rowClass}`}>
-                  <span className="flex-1 min-w-0 truncate text-sm font-medium">{d.name}</span>
-                  <button
-                    onClick={() => onSwap(key, d.id)}
-                    disabled={busy || recording}
-                    className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold bg-card text-text2 border border-border transition-all active:scale-95 disabled:opacity-50"
-                  >
-                    {swappingKey === `${key}-${d.id}` ? "换菜中…" : "换一道"}
-                  </button>
-                </div>
-              ))}
+        <div className="shrink-0">
+          <div className="w-10 h-1 rounded-full bg-border2 mx-auto mb-4" />
+          <div className="text-lg font-bold mb-1">{canRecord ? `快速点菜 · ${dateLabel}` : `${dateLabel}的菜单`}</div>
+          <div className="text-xs text-text2 mb-4">{day.date.slice(5)} {day.day_name} · 不想吃哪道，点「换一道」</div>
+        </div>
+        <div className="min-h-0 overflow-y-auto overscroll-contain">
+          {MEAL_SECTIONS.map(({ key, label, titleClass, rowClass }) => day[key].length > 0 && (
+            <div key={key} className="mb-4">
+              <div className={`text-xs font-semibold mb-1.5 ${titleClass}`}>{label}</div>
+              <div className="flex flex-col gap-1.5">
+                {day[key].map((d) => (
+                  <div key={d.id} className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl ${rowClass}`}>
+                    <span className="flex-1 min-w-0 truncate text-sm font-medium">{d.name}</span>
+                    <button
+                      onClick={() => onSwap(key, d.id)}
+                      disabled={busy || recording}
+                      className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold bg-card text-text2 border border-border transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {swappingKey === `${key}-${d.id}` ? "换菜中…" : "换一道"}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
-        {canRecord ? (
-          <div className="flex gap-3">
-            <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">取消</button>
-            <button
-              onClick={onConfirm}
-              disabled={busy || recording}
-              className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-60"
-            >
-              {recording ? "记录中…" : "确认点菜"}
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="text-xs text-text3 text-center mb-3">到了前一天就能一键点菜，食材会进买菜清单</div>
-            <button onClick={close} className="w-full py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">好了</button>
-          </>
-        )}
+          ))}
+        </div>
+        <div className="shrink-0 pt-1">
+          {canRecord ? (
+            <div className="flex gap-3">
+              <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">取消</button>
+              <button
+                onClick={onConfirm}
+                disabled={busy || recording}
+                className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-60"
+              >
+                {recording ? "记录中…" : "确认点菜"}
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="text-xs text-text3 text-center mb-3">到了前一天就能一键点菜，食材会进买菜清单</div>
+              <button onClick={close} className="w-full py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">好了</button>
+            </>
+          )}
+        </div>
       </>
       )}
     </AnimatedBottomSheet>

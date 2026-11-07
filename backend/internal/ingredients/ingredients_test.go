@@ -34,13 +34,13 @@ func TestIsStaple(t *testing.T) {
 }
 
 func TestIsCategoryHead(t *testing.T) {
-	for _, name := range []string{"猪肉", " 牛肉 ", "鸡肉"} {
+	for _, name := range []string{"猪肉", " 牛肉 ", "黄牛肉", "鸡肉", "羊肉"} {
 		if !IsCategoryHead(name) {
 			t.Fatalf("IsCategoryHead(%q) = false, want true", name)
 		}
 	}
-	// 具体部位与不在大类表里的食材都不是泛称
-	for _, name := range []string{"排骨", "五花肉", "牛腩", "鸡翅", "番茄", ""} {
+	// 具体部位和切法不是泛称，即使它们的别名会归一到大类名。
+	for _, name := range []string{"排骨", "五花肉", "牛腩", "鸡翅", " 猪肉片 ", "猪肉丝", "牛肉片", "羊肉片", "羊肉丁", "番茄", ""} {
 		if IsCategoryHead(name) {
 			t.Fatalf("IsCategoryHead(%q) = true, want false", name)
 		}
