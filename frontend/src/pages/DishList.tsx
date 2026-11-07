@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
-import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { dishesApi, favoritesApi, settingsApi, recordsApi } from "@/api"
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
+import { dishesApi, favoritesApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
 import { readDishListSession, saveDishListSession, useDishListSession } from "@/lib/dishListSession"
+import { hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, pendingMealSelectionKey, reconcileMealSelection } from "@/lib/mealSelection"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
 import SafeImage from "@/components/SafeImage"
@@ -12,7 +13,7 @@ import type { Dish, MealRecord } from "@/types"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import { useAuthStore } from "@/store/useAuthStore"
 import toast from "react-hot-toast"
-import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, X, Trash2 } from "lucide-react"
+import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, X, Trash2, LoaderCircle } from "lucide-react"
 
 const DEFAULT_CATEGORIES = ["川菜", "粤菜", "家常菜", "快手菜", "汤品", "主食"]
 const DEFAULT_TASTES = ["酸", "甜", "辣", "鲜", "清淡", "咸鲜", "麻辣", "蒜香", "酱香", "糖醋", "酸辣", "香辣"]
@@ -29,6 +30,8 @@ function dateKey(d = new Date()) {
 }
 
 const PAGE_SIZE = 30
+
+type MealSelectionRequest = Pick<MealRecord, "dish_id" | "dish_name" | "meal_date" | "meal_type"> & { cancelRecordId?: number }
 
 export default function DishList() {
   const generation = useDishListSession((s) => s.generation)
@@ -62,6 +65,12 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const sidebarRef = useRef<HTMLDivElement>(null)
   const tasteRef = useRef<HTMLDivElement>(null)
   const restoreScrollRef = useRef<number | null>(session.scrollTop)
+  const mealEditLocks = useRef(new Set<string>())
+  const pendingMealKeys = useMutationState({
+    filters: { mutationKey: mealSelectionMutationKey, status: "pending" },
+    select: mutation => pendingMealSelectionKey(mutation.state.variables),
+  })
+  const pendingMeals = new Set(pendingMealKeys)
 
   const { data: settings } = useQuery({
     queryKey: ["settings"],
@@ -194,10 +203,11 @@ function DishListPage({ today, generation }: { today: string; generation: number
   })
   const favIds = useMemo(() => new Set((favDishes || []).map((d: Dish) => d.id)), [favDishes])
 
-  const { data: recordsData } = useQuery({
+  const { data: recordsData, isError: recordsError, isFetching: recordsFetching, fetchStatus: recordsFetchStatus, refetch: reloadRecords } = useQuery({
     queryKey: ["records", "today", today],
     queryFn: () => recordsApi.list({ pageSize: "100", date_from: today, date_to: today }),
   })
+  const mealStateUnavailable = !recordsData || recordsError || recordsFetchStatus === "paused"
   const todayRecords = useMemo(() => (recordsData?.items || []).filter(r => r.status !== "cancelled"), [recordsData])
 
   const todayLunchIds = useMemo(() => new Set(
@@ -218,60 +228,58 @@ function DishListPage({ today, generation }: { today: string; generation: number
     onError: () => toast.error("操作失败"),
   })
 
-  const recordMut = useMutation({
-    mutationFn: (data: { dish_id: number; dish_name: string; meal_type: string; meal_date: string }) =>
-      recordsApi.create({ ...data, status: "planned" }),
-    onSuccess: () => {
-      toast.success("已加入今日计划")
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["achievements"] })
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
-      qc.invalidateQueries({ queryKey: ["record"] })
-      qc.invalidateQueries({ queryKey: ["dish-records"] })
-      qc.invalidateQueries({ queryKey: ["admin", "records"] })
+  const mealMut = useMutation({
+    mutationKey: mealSelectionMutationKey,
+    retry: false,
+    mutationFn: ({ cancelRecordId, ...data }: MealSelectionRequest) => cancelRecordId !== undefined
+      ? recordsApi.update(cancelRecordId, { status: "cancelled" })
+      : recordsApi.create({ ...data, status: "planned" }),
+    onSuccess: (_saved, request) => {
+      toast.success(request.cancelRecordId !== undefined ? "已取消计划，可在记录页恢复" : "已加入今日计划")
     },
-    onError: (err: unknown) => {
-      const msg = (err instanceof Error ? err.message : "") || "记录失败"
-      toast.error(msg)
+    onError: (err: unknown, request) => {
+      // Until success the row is unchanged, so no whole-list rollback is needed.
+      toast.error(getUploadErrorMessage(err, request.cancelRecordId !== undefined ? "取消失败" : "加入计划失败"))
+    },
+    onSettled: async (saved, _error, request) => {
+      try {
+        await Promise.all([
+          // Reconcile this page even while unmounted; a timed-out write may have
+          // reached the server, so returning must not expose the old toggle.
+          reconcileMealSelection(qc, request.meal_date, saved),
+          qc.invalidateQueries({ queryKey: ["records"], predicate: query => !(query.queryKey.length === 3 && query.queryKey[1] === "today" && query.queryKey[2] === request.meal_date) }),
+          qc.invalidateQueries({ queryKey: ["achievements"] }),
+          qc.invalidateQueries({ queryKey: ["shopping-list"] }),
+          qc.invalidateQueries({ queryKey: ["record"] }),
+          qc.invalidateQueries({ queryKey: ["dish-records"] }),
+          qc.invalidateQueries({ queryKey: ["admin", "records"] }),
+        ])
+      } finally {
+        mealEditLocks.current.delete(mealSelectionKey(request))
+      }
     },
   })
 
-  const deleteRecordMut = useMutation({
-    mutationFn: (id: number) => recordsApi.update(id, { status: "cancelled" }),
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: ["records"] })
-      const prev = qc.getQueryData(["records", "today", today])
-      qc.setQueryData(["records", "today", today], (old: unknown) => {
-        if (!old || typeof old !== "object" || old === null) return old
-        const o = old as { items?: MealRecord[] }
-        if (!o.items) return old
-        return { ...o, items: o.items.filter((r) => r.id !== id) }
-      })
-      return { prev }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["achievements"] })
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["record"] })
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
-      toast.success("已取消计划，可在记录页恢复")
-      qc.invalidateQueries({ queryKey: ["dish-records"] })
-      qc.invalidateQueries({ queryKey: ["admin", "records"] })
-    },
-    onError: (_err, _id, context) => {
-      if (context?.prev) qc.setQueryData(["records", "today", today], context.prev)
-      toast.error("取消失败")
-    },
-  })
+  const startMealEdit = useCallback((request: MealSelectionRequest) => {
+    const key = mealSelectionKey(request)
+    if (mealStateUnavailable || mealEditLocks.current.has(key) || hasPendingMealSelection(qc, request)) return
+    mealEditLocks.current.add(key)
+    mealMut.mutate(request)
+  }, [mealStateUnavailable, qc, mealMut])
+
+  function cancelMeal(record: MealRecord) {
+    if (record.status !== "planned") return
+    startMealEdit({ ...record, cancelRecordId: record.id })
+  }
 
   function toggleMeal(dish: Dish, mealType: "lunch" | "dinner") {
     const isAdded = mealType === "lunch" ? todayLunchIds.has(dish.id) : todayDinnerIds.has(dish.id)
     if (isAdded) {
       const record = todayRecords.find(r => r.dish_id === dish.id && r.meal_type === mealType && r.meal_date === today)
       if (record?.status === "completed") toast("这道菜已吃过，可在记录页查看或删除")
-      else if (record) deleteRecordMut.mutate(record.id)
+      else if (record) cancelMeal(record)
     } else {
-      recordMut.mutate({
+      startMealEdit({
         dish_id: dish.id,
         dish_name: dish.name,
         meal_type: mealType,
@@ -370,6 +378,12 @@ function DishListPage({ today, generation }: { today: string; generation: number
         }
       />
 
+      {(recordsError || recordsFetchStatus === "paused") && (
+        <div role="alert" className="px-5 py-2 text-xs text-text2 bg-card border-b border-border">
+          今日菜单状态读取失败，暂时不能点菜。
+          <button type="button" disabled={recordsFetching} onClick={() => { void reloadRecords() }} className="ml-2 min-h-9 px-2 text-primary disabled:opacity-50">重新读取</button>
+        </div>
+      )}
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div className="absolute inset-0 flex">
           <div
@@ -488,7 +502,12 @@ function DishListPage({ today, generation }: { today: string; generation: number
                         isFav={favIds.has(d.id)}
                         isLunch={todayLunchIds.has(d.id)}
                         isDinner={todayDinnerIds.has(d.id)}
+                        lunchPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "lunch", dish_id: d.id }))}
+                        dinnerPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "dinner", dish_id: d.id }))}
+                        mealDisabled={mealStateUnavailable}
                         onToggleFav={() => favMut.mutate({ id: d.id, active: favIds.has(d.id) })}
+                        // The ref is read only when this click callback runs, never during render.
+                        // eslint-disable-next-line react-hooks/refs
                         onToggleMeal={(mt) => toggleMeal(d, mt)}
                         onClick={() => navigate(`/dishes/${d.id}`)}
                       />
@@ -503,7 +522,12 @@ function DishListPage({ today, generation }: { today: string; generation: number
                     isFav={favIds.has(d.id)}
                     isLunch={todayLunchIds.has(d.id)}
                     isDinner={todayDinnerIds.has(d.id)}
+                    lunchPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "lunch", dish_id: d.id }))}
+                    dinnerPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "dinner", dish_id: d.id }))}
+                    mealDisabled={mealStateUnavailable}
                     onToggleFav={() => favMut.mutate({ id: d.id, active: favIds.has(d.id) })}
+                    // The ref is read only when this click callback runs, never during render.
+                    // eslint-disable-next-line react-hooks/refs
                     onToggleMeal={(mt) => toggleMeal(d, mt)}
                     onClick={() => navigate(`/dishes/${d.id}`)}
                   />
@@ -594,7 +618,9 @@ function DishListPage({ today, generation }: { today: string; generation: number
                           key={r.id}
                           record={r}
                           dish={dishMap.get(r.dish_id)}
-                          onDelete={() => deleteRecordMut.mutate(r.id)}
+                          pending={pendingMeals.has(mealSelectionKey(r))}
+                          disabled={mealStateUnavailable}
+                          onDelete={() => cancelMeal(r)}
                           onClick={() => { close(); navigate(`/dishes/${r.dish_id}?record_id=${r.id}`) }}
                         />
                       ))}
@@ -610,7 +636,9 @@ function DishListPage({ today, generation }: { today: string; generation: number
                           key={r.id}
                           record={r}
                           dish={dishMap.get(r.dish_id)}
-                          onDelete={() => deleteRecordMut.mutate(r.id)}
+                          pending={pendingMeals.has(mealSelectionKey(r))}
+                          disabled={mealStateUnavailable}
+                          onDelete={() => cancelMeal(r)}
                           onClick={() => { close(); navigate(`/dishes/${r.dish_id}?record_id=${r.id}`) }}
                         />
                       ))}
@@ -635,7 +663,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
   )
 }
 
-function TodayMenuItem({ record, dish, onDelete, onClick }: { record: MealRecord; dish?: Dish; onDelete: () => void; onClick: () => void }) {
+function TodayMenuItem({ record, dish, pending, disabled, onDelete, onClick }: { record: MealRecord; dish?: Dish; pending: boolean; disabled: boolean; onDelete: () => void; onClick: () => void }) {
   const dishHasImage = dish && isImageUrl(dish.image_url)
   const recordHasImage = !dishHasImage && isImageUrl(record.dish_image_url)
   return (
@@ -675,8 +703,10 @@ function TodayMenuItem({ record, dish, onDelete, onClick }: { record: MealRecord
       </div>
       {record.status === "planned" && <button
         onClick={(e) => { e.stopPropagation(); onDelete() }}
-        aria-label={`取消${record.dish_name}的计划`}
-        className="w-8 h-8 rounded-full bg-red-light text-red flex items-center justify-center transition-all active:scale-90 flex-shrink-0"
+        aria-label={pending ? `正在更新${record.dish_name}的计划` : `取消${record.dish_name}的计划`}
+        aria-busy={pending}
+        disabled={disabled || pending}
+        className="w-8 h-8 rounded-full bg-red-light text-red flex items-center justify-center transition-all active:scale-90 flex-shrink-0 disabled:opacity-50"
       >
         <Trash2 size={14} />
       </button>}
@@ -689,12 +719,15 @@ interface DishRowProps {
   isFav: boolean
   isLunch: boolean
   isDinner: boolean
+  lunchPending: boolean
+  dinnerPending: boolean
+  mealDisabled: boolean
   onToggleFav: () => void
   onToggleMeal: (mealType: "lunch" | "dinner") => void
   onClick: () => void
 }
 
-function DishRow({ dish, isFav, isLunch, isDinner, onToggleFav, onToggleMeal, onClick }: DishRowProps) {
+function DishRow({ dish, isFav, isLunch, isDinner, lunchPending, dinnerPending, mealDisabled, onToggleFav, onToggleMeal, onClick }: DishRowProps) {
   return (
     <div className="flex items-center gap-3 py-2.5 px-1 rounded-xl transition-all active:bg-card group">
       <div
@@ -728,8 +761,8 @@ function DishRow({ dish, isFav, isLunch, isDinner, onToggleFav, onToggleMeal, on
           )}
         </div>
         <div className="flex items-center gap-2">
-          <MealToggle active={isLunch} emoji="🍳" label="午餐" onClick={() => onToggleMeal("lunch")} color="primary" />
-          <MealToggle active={isDinner} emoji="🍲" label="晚餐" onClick={() => onToggleMeal("dinner")} color="mint" />
+          <MealToggle active={isLunch} pending={lunchPending} disabled={mealDisabled} emoji="🍳" label="午餐" onClick={() => onToggleMeal("lunch")} color="primary" />
+          <MealToggle active={isDinner} pending={dinnerPending} disabled={mealDisabled} emoji="🍲" label="晚餐" onClick={() => onToggleMeal("dinner")} color="mint" />
         </div>
       </div>
     </div>
@@ -738,13 +771,15 @@ function DishRow({ dish, isFav, isLunch, isDinner, onToggleFav, onToggleMeal, on
 
 interface MealToggleProps {
   active: boolean
+  pending: boolean
+  disabled: boolean
   emoji: string
   label: string
   onClick: () => void
   color: "primary" | "mint"
 }
 
-function MealToggle({ active, emoji, label, onClick, color }: MealToggleProps) {
+function MealToggle({ active, pending, disabled, emoji, label, onClick, color }: MealToggleProps) {
   const activeClass = color === "primary"
     ? "bg-primary text-white border-primary"
     : "bg-mint text-white border-mint"
@@ -753,11 +788,14 @@ function MealToggle({ active, emoji, label, onClick, color }: MealToggleProps) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick() }}
-      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all active:scale-95 ${
+      disabled={disabled || pending}
+      aria-busy={pending}
+      aria-label={pending ? `正在更新${label}计划` : undefined}
+      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-50 ${
         active ? activeClass : inactiveClass
       }`}
     >
-      {active ? <Minus size={10} /> : <Plus size={10} />}
+      {pending ? <LoaderCircle size={10} className="animate-spin" /> : active ? <Minus size={10} /> : <Plus size={10} />}
       <span>{emoji}</span>
       <span>{label}</span>
     </button>
