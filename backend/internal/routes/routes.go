@@ -48,6 +48,8 @@ func Setup(r *gin.Engine) {
 			app.POST("/records/:id/undo-completion", handlers.UndoMealCompletion)
 			app.POST("/records", handlers.CreateRecord)
 			app.POST("/records/batch", handlers.BatchCreateRecords)
+			app.GET("/meal-plans/:date", handlers.GetMealPlan)
+			app.PUT("/meal-plans/:date", handlers.SaveMealPlan)
 			app.PUT("/records/:id", handlers.UpdateRecord)
 			app.DELETE("/records/:id", handlers.DeleteRecord)
 			app.GET("/favorites", handlers.GetFavorites)

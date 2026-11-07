@@ -202,12 +202,15 @@ NiniMenu/
 | GET/POST/PUT/DELETE | `/api/records` | 用餐记录 CRUD |
 | POST | `/api/records/batch` | 批量创建记录 |
 | GET | `/api/records/:id` | 读取单条计划/用餐记录及保存份量 |
+| GET/PUT | `/api/meal-plans/:date` | 读取或原子保存明日菜单；PUT 携带 `expected_version`、`request_id`、`dishes`，版本冲突返回 409 并保留客户端草稿供核对 |
 | GET/POST | `/api/favorites/:dishId` | 收藏/取消收藏 |
 | POST | `/api/pick/lunch\|dinner\|mood\|tomorrow\|blind-box` | 各类推荐 |
 | GET/POST | `/api/day-rating` | 每日评价 |
 | GET | `/api/photo-wall` | 照片墙 |
 | GET/POST | `/api/shopping-list` | 购物清单 |
+| POST | `/api/shopping-list/toggle` | 勾选/取消已买，携带对应食材的 `demand_version`；版本缺失或清单变化返回 409，须重新读取并核对 |
 | GET | `/api/week-plan` | 周计划 |
+| POST | `/api/week-plan/regenerate` | 重新生成周菜单，成功响应为已保存的完整菜单；读写失败返回 500 |
 | POST | `/api/week-plan/swap` | 周计划只换一道菜（`{date, meal_type, dish_id}`；菜单已变化返回 409） |
 | GET | `/api/achievements` | 成就列表 |
 | GET | `/api/stats` | 统计数据 |
@@ -224,3 +227,11 @@ NiniMenu/
 | CRUD | `/api/achievements` | 成就管理 |
 | PUT | `/api/settings` | 系统设置（请求体须包裹为 `{"settings":{"key":"value"}}`，扁平键值体会被 400 拒绝） |
 | GET | `/api/admin/dashboard` | 仪表盘 |
+
+## 回归测试
+
+- 后端单元与接口处理器测试：在 `backend` 目录运行 `go test ./...`，测试使用各自创建的临时数据库。
+- HTTP 接口回归脚本：见 `backend/scripts_test/README.md`，需要启动使用独立临时数据库的服务，脚本会修改测试数据。
+- 前端状态逻辑测试：使用支持原生 TypeScript 类型移除的 Node.js（验证环境为 Node.js 24），安装前端依赖后于 `frontend` 目录运行 `node --test scripts/*.test.*`；详见 `frontend/scripts/README.md`。
+
+`.mjs` 表示 JavaScript ES 模块脚本，`.cjs` 表示 CommonJS 模块脚本；本项目这些测试文件由 Node.js 执行，不是应用启动入口，也不会被打包进网页。逻辑与接口测试不能代替浏览器中的点击、布局和手机验证。

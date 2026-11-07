@@ -1,7 +1,7 @@
 // 第二批功能 E2E：买菜回来放进冰箱 / 计划与已吃分开统计 / 数据库备份 / 买菜清单精简
 // 会留下痕迹（记录会解锁成就、测试菜是软删除），请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/features2_e2e.mjs
-const BASE = "http://localhost:8080/api"
+const BASE = process.env.TEST_API_BASE || "http://localhost:8080/api"
 const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
@@ -40,7 +40,7 @@ async function main() {
   const rec = await req("POST", "/records", { dish_id: dishID, dish_name: "E2E入库测试菜", meal_type: "dinner", meal_date: dayFromNow(0), status: "completed" })
   check("记录测试菜（生成买菜清单）", rec.code === 0, JSON.stringify(rec))
   check("清水不进买菜清单", !(await shoppingItem("清水")))
-  await req("POST", "/shopping-list/toggle", { item_name: "E2E入库食材", meal_date: dayFromNow(0), checked: true })
+  await req("POST", "/shopping-list/toggle", { item_name: "E2E入库食材", meal_date: dayFromNow(0), checked: true, demand_version: (await shoppingItem("E2E入库食材"))?.demand_version })
   let item = await shoppingItem("E2E入库食材")
   check("勾选已买后还没放进冰箱", item && item.checked && !item.stocked && !item.in_stock, JSON.stringify(item))
   let r = await req("POST", "/shopping-list/stock-in", { items: [{ item_name: "E2E入库食材", quantity: "2个" }] })

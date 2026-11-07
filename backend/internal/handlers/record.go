@@ -24,8 +24,11 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 	}
 	var dish models.Dish
 	if err := db.Unscoped().First(&dish, dishID).Error; err != nil {
-		// 菜品不存在（可能已被删）不阻塞记录创建，只跳过买菜清单联动
-		return nil
+		// 兼容已删除的历史菜品；数据库读取失败仍须让外层事务回滚。
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("读取买菜清单食材失败: %w", err)
 	}
 
 	// 食材与调料都可能是旧版字符串数组 ["鸡蛋"]，统一按两种格式兼容解析，
@@ -677,7 +680,7 @@ func GetDayRatings(c *gin.Context) {
 }
 
 type CreateDayRatingRequest struct {
-	MealDate string `json:"meal_date" binding:"required"`
+	MealDate string  `json:"meal_date" binding:"required"`
 	Mood     *string `json:"mood"`
 	Remark   *string `json:"remark"`
 	Photos   *string `json:"photos"`

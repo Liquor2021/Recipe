@@ -28,6 +28,9 @@ export const pickApi = {
 }
 
 export const recordsApi = {
+  plan: (date: string) => api<{ records: MealRecord[]; version: string; replayed?: boolean }>("GET", `/meal-plans/${date}`),
+  savePlan: (date: string, data: { expected_version: string; request_id: string; dishes: { dish_id: number; meal_type: string }[] }) =>
+    api<{ records: MealRecord[]; version: string; replayed?: boolean }>("PUT", `/meal-plans/${date}`, data),
   get: (id: number) => api<MealRecord>("GET", `/records/${id}`),
   list: (params?: Record<string, string>) =>
     api<PaginatedData<MealRecord>>("GET", "/records", params),
@@ -100,7 +103,7 @@ export const weekPlanApi = {
 
 export const shoppingListApi = {
   get: () => api<ShoppingCategory[]>("GET", "/shopping-list"),
-  toggle: (data: { item_name: string; meal_date: string; checked: boolean }) =>
+  toggle: (data: { item_name: string; meal_date: string; checked: boolean; demand_version: string }) =>
     api<null>("POST", "/shopping-list/toggle", data),
   setInventory: (data: { item_name: string; in_stock: boolean }) =>
     api<null>("POST", "/shopping-list/inventory", data),

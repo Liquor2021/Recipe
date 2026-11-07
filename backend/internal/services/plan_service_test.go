@@ -249,7 +249,7 @@ func TestToggleShoppingCheckOnlyTouchesVisibleDates(t *testing.T) {
 	for _, offset := range []int{-3, 0, 1, 5} {
 		database.DB.Create(&models.ShoppingCheck{MealDate: dateFromNow(offset), MealType: "lunch", DishID: 1, ItemName: "鸡蛋"})
 	}
-	if err := ToggleShoppingCheck("鸡蛋", true); err != nil {
+	if err := ToggleShoppingCheck("鸡蛋", true, currentShoppingDemandVersion(t, "鸡蛋")); err != nil {
 		t.Fatal(err)
 	}
 	var rows []models.ShoppingCheck

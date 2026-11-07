@@ -64,6 +64,15 @@ func planHas(p *WeekPlan, id uint) bool {
 	return false
 }
 
+func requireWeekPlan(t *testing.T, read func() (*WeekPlan, error)) *WeekPlan {
+	t.Helper()
+	plan, err := read()
+	if err != nil || plan == nil {
+		t.Fatalf("读取周菜单失败: plan=%+v err=%v", plan, err)
+	}
+	return plan
+}
+
 // weekDates 本周一起 7 天的日期（与 getCurrentWeekKey 口径一致）
 func weekDates() []string {
 	now := time.Now()
@@ -97,7 +106,7 @@ func TestGenerateWeekPlanStrictExcludesDislikes(t *testing.T) {
 	seedPlanDishes(t)
 	setStrictSpicyDislike(t)
 
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	if len(plan.Days) != 7 {
 		t.Fatalf("应生成 7 天菜单, got %d", len(plan.Days))
 	}
@@ -114,7 +123,7 @@ func TestWeekPlanCacheSurvivesRestart(t *testing.T) {
 	seedWeekPlanRecord(t, 3, 4)
 
 	// 模拟进程重启：内存缓存为空，只能从 settings 读回
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	for _, d := range plan.Days {
 		if len(d.Lunch) != 1 || d.Lunch[0].ID != 3 || len(d.Dinner) != 1 || d.Dinner[0].ID != 4 {
 			t.Fatalf("重启后应读回已存的菜单（午 3 / 晚 4），而不是重新生成, got %v", planDishIDs(plan))
@@ -140,7 +149,7 @@ func TestWeekPlanCacheReadsLegacyFormat(t *testing.T) {
 	data, _ := json.Marshal(legacy)
 	database.DB.Create(&models.Setting{Key: "week_plan_cache", Value: string(data)})
 
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	if len(plan.Days) != 7 || plan.Days[0].Lunch[0].ID != 3 || plan.Days[6].Dinner[0].ID != 4 {
 		t.Fatalf("旧格式缓存应能读回, got %v", planDishIDs(plan))
 	}
@@ -160,7 +169,7 @@ func TestWeekPlanLegacyFormatChecksDailyCounts(t *testing.T) {
 	database.DB.Create(&models.Setting{Key: "week_plan_cache", Value: string(data)})
 	seedSetting(t, "lunch_dishes_per_day", "2")
 
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	if len(plan.Days) != 7 || len(plan.Days[0].Lunch) != 2 {
 		t.Fatalf("旧格式缓存的每天道数与当前设置不符时应重排, got lunch=%d", len(plan.Days[0].Lunch))
 	}
@@ -193,7 +202,7 @@ func TestSwapWeekPlanDishReplacesOnlyTarget(t *testing.T) {
 	weekPlanMu.Lock()
 	cachedRecord = nil
 	weekPlanMu.Unlock()
-	if p := GetCachedWeekPlan(); p.Days[2].Lunch[0].ID != picked.ID || p.Days[3].Lunch[0].ID != 1 {
+	if p := requireWeekPlan(t, GetCachedWeekPlan); p.Days[2].Lunch[0].ID != picked.ID || p.Days[3].Lunch[0].ID != 1 {
 		t.Fatalf("重启后应读回换过的菜单, got %v", planDishIDs(p))
 	}
 }
@@ -270,7 +279,11 @@ func TestGenerateWeekPlanAvoidModeDownweightsDislikes(t *testing.T) {
 	cfg := weekPlanConfig{lunchCount: 1, dinnerCount: 1, dislikes: familyDislikeConfig{tokens: map[string]bool{"辣": true}}}
 	spicy, total := 0, 0
 	for run := 0; run < 60; run++ {
-		for _, id := range planDishIDs(generateWeekPlan(cfg)) {
+		plan, err := generateWeekPlan(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range planDishIDs(plan) {
 			total++
 			if id > 20 {
 				spicy++
@@ -324,7 +337,7 @@ func TestWeekPlanRegeneratesWhenDishDisabled(t *testing.T) {
 	seedWeekPlanRecord(t, 1, 2)
 	database.DB.Model(&models.Dish{}).Where("id = ?", 1).Update("enabled", false)
 
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	if len(plan.Days) != 7 || planHas(plan, 1) {
 		t.Fatalf("菜单里有菜被停用应重新生成且不含该菜, got %v", planDishIDs(plan))
 	}
@@ -334,13 +347,13 @@ func TestWeekPlanRegeneratesWhenStrictDislikeAdded(t *testing.T) {
 	setupWeekPlanTestDB(t)
 	seedPlanDishes(t)
 	seedWeekPlanRecord(t, 1, 8) // 晚餐是辣菜
-	if p := GetCachedWeekPlan(); !planHas(p, 8) {
+	if p := requireWeekPlan(t, GetCachedWeekPlan); !planHas(p, 8) {
 		t.Fatalf("未设忌口时缓存应原样有效, got %v", planDishIDs(p))
 	}
 
 	// 改成 strict 忌口辣：缓存里的辣菜必须让整份菜单失效重排
 	setStrictSpicyDislike(t)
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	if len(plan.Days) != 7 {
 		t.Fatalf("应重新生成 7 天, got %d", len(plan.Days))
 	}
@@ -357,7 +370,7 @@ func TestWeekPlanRegeneratesWhenMealCountChanged(t *testing.T) {
 	seedWeekPlanRecord(t, 1, 2)
 	seedSetting(t, "lunch_dishes_per_day", "2")
 
-	plan := GetCachedWeekPlan()
+	plan := requireWeekPlan(t, GetCachedWeekPlan)
 	if len(plan.Days) != 7 || len(plan.Days[0].Lunch) != 2 {
 		t.Fatalf("午餐道数改为 2 后应重新生成, got lunch=%d", len(plan.Days[0].Lunch))
 	}
@@ -372,16 +385,16 @@ func TestWeekPlanStrictEmptyDoesNotFallBackToStale(t *testing.T) {
 		database.DB.Create(&models.Dish{ID: uint(i), Name: "辣菜", Taste: "麻辣", MealType: "all", Enabled: true})
 	}
 	seedWeekPlanRecord(t, 1, 2)
-	if p := GetCachedWeekPlan(); len(p.Days) != 7 {
+	if p := requireWeekPlan(t, GetCachedWeekPlan); len(p.Days) != 7 {
 		t.Fatalf("前置：缓存应有效")
 	}
 
 	// 全部菜都命中 strict 忌口：宁可空菜单，也不能退回含忌口菜的旧缓存
 	setStrictSpicyDislike(t)
-	if p := GetCachedWeekPlan(); len(p.Days) != 0 {
+	if p := requireWeekPlan(t, GetCachedWeekPlan); len(p.Days) != 0 {
 		t.Fatalf("strict 全部过滤后应返回空菜单, got %v", planDishIDs(p))
 	}
-	if p := RegenerateWeekPlan(); len(p.Days) != 0 {
+	if p := requireWeekPlan(t, RegenerateWeekPlan); len(p.Days) != 0 {
 		t.Fatalf("手动重新生成也不能退回旧菜单, got %v", planDishIDs(p))
 	}
 }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
@@ -26,6 +27,10 @@ func TestCancelledPlanRetainsShoppingSnapshot(t *testing.T) {
 	}
 	db.Model(&items[0]).Updates(map[string]any{"checked": true, "stocked": true})
 	db.Model(&items[1]).Update("checked", true)
+	versions := map[string]string{}
+	for _, name := range []string{"番茄", "鸡蛋"} {
+		versions[name] = currentShoppingDemandVersion(t, name)
+	}
 	batch := models.InventoryBatch{ItemName: "番茄", Quantity: "1000克", InStock: true}
 	db.Create(&batch)
 	w := serveJSON(t, UpdateRecord, "PUT", "/records/1", map[string]any{"status": "cancelled"}, params...)
@@ -38,8 +43,8 @@ func TestCancelledPlanRetainsShoppingSnapshot(t *testing.T) {
 	}
 	// 在同一天勾选其他菜的食材、以及过期页面的入库请求，不能触碰隐藏的快照。
 	for _, name := range []string{"番茄", "鸡蛋"} {
-		if err := services.ToggleShoppingCheck(name, false); err != nil {
-			t.Fatal(err)
+		if err := services.ToggleShoppingCheck(name, false, versions[name]); !errors.Is(err, services.ErrShoppingDemandChanged) {
+			t.Fatalf("cancelled demand must reject the stale toggle: %v", err)
 		}
 	}
 	if added, err := services.StockInShoppingItems([]services.StockInItem{{ItemName: "鸡蛋", Quantity: "2个"}}); err != nil || added != 0 {

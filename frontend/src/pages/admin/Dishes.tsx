@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { dishesApi, settingsApi } from "@/api"
+import { dishesApi, settingsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
 import { getDishImageUrl, thumbUrl } from "@/lib/dishImage"
 import SafeImage from "@/components/SafeImage"
@@ -51,17 +51,19 @@ export default function AdminDishes() {
   if (filterDifficulty) params.difficulty = filterDifficulty
   if (filterEnabled) params.enabled = filterEnabled
 
-  const { data: dishesData, isLoading } = useQuery({
+  const { data: dishesData, isLoading, isSuccess } = useQuery({
     queryKey: ["admin", "dishes", params],
     queryFn: () => dishesApi.list(params),
   })
   const dishes = useMemo(() => dishesData?.items || [], [dishesData])
   const total = dishesData?.total || 0
   const totalPages = Math.ceil(total / pageSize)
+  if (isSuccess && page > Math.max(1, totalPages)) setPage(Math.max(1, totalPages))
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => dishesApi.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "dishes"] }); toast.success("已删除") },
+    onError: (error) => toast.error(getUploadErrorMessage(error, "删除失败，请重试")),
   })
 
   const cloneMut = useMutation({
@@ -82,6 +84,7 @@ export default function AdminDishes() {
   const batchDeleteMut = useMutation({
     mutationFn: (ids: number[]) => dishesApi.batchDelete(ids),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "dishes"] }); setSelected(new Set()); toast.success("批量删除成功") },
+    onError: (error) => toast.error(getUploadErrorMessage(error, "批量删除失败，请重试")),
   })
 
   const batchCatMut = useMutation({

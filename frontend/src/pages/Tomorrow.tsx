@@ -7,6 +7,8 @@ import type { Dish, MealRecord } from "@/types"
 import { launchConfetti } from "@/lib/confetti"
 import { readTomorrowDraft, tomorrowPlanBaseline, writeTomorrowDraft } from "@/lib/tomorrowDraft"
 import type { TomorrowDraftState, TomorrowProfile } from "@/lib/tomorrowDraft"
+import { createTomorrowRequestGate, isMealPlanConflict } from "@/lib/tomorrowRequests"
+import { getTomorrow, nextLocalMidnightDelay } from "@/lib/tomorrowDate"
 import DishImage from "@/components/DishImage"
 import PageHeader from "@/components/PageHeader"
 import toast from "react-hot-toast"
@@ -36,7 +38,6 @@ import {
 type MealType = "lunch" | "dinner"
 type PlanProfile = TomorrowProfile
 
-const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
 const mealOrder: MealType[] = ["lunch", "dinner"]
 const defaultTargets: Record<MealType, number> = { lunch: 2, dinner: 2 }
 const maxPerMeal = 5
@@ -81,13 +82,6 @@ const mealMeta: Record<MealType, {
     text: "text-mint",
     Icon: Moon,
   },
-}
-
-function getTomorrow() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  return { str, label: `${str.slice(5)} ${weekdayNames[d.getDay()]}` }
 }
 
 function diffLabel(difficulty: string) {
@@ -227,6 +221,7 @@ function PlanSummary({
   totalCount,
   hasSavedPlan,
   hasChanges,
+  pendingReview,
   lunch,
   dinner,
   onGenerateAll,
@@ -237,14 +232,15 @@ function PlanSummary({
   totalCount: number
   hasSavedPlan: boolean
   hasChanges: boolean
+  pendingReview: boolean
   lunch: Dish[]
   dinner: Dish[]
   onGenerateAll: () => void
   onOpenShopping: () => void
   disabled: boolean
 }) {
-  const savedText = hasSavedPlan ? (hasChanges ? "有修改" : "已保存") : "待保存"
-  const savedTone = hasSavedPlan && !hasChanges ? "bg-mint-light text-mint" : "bg-yellow-light text-yellow"
+  const savedText = pendingReview ? "待核对" : hasSavedPlan ? (hasChanges ? "有修改" : "已保存") : "待保存"
+  const savedTone = hasSavedPlan && !hasChanges && !pendingReview ? "bg-mint-light text-mint" : "bg-yellow-light text-yellow"
   const lunchMinutes = totalCookTime(lunch)
   const dinnerMinutes = totalCookTime(dinner)
 
@@ -653,41 +649,77 @@ function LoadingState() {
 interface SavePlanPayload {
   date: string
   draft: TomorrowDraftState
-  oldRecords: MealRecord[]
-  records: Partial<MealRecord>[]
+  version: string
+  requestID: string
+  dishes: { dish_id: number; meal_type: string }[]
   wasSaved: boolean
 }
-
-class PlanChangedError extends Error {
-  records: MealRecord[]
-
-  constructor(records: MealRecord[]) {
-    super("明日菜单已更新，已载入最新菜单，请重新调整")
-    this.records = records
-  }
-}
-
-class PartialPlanSaveError extends Error {}
+type PlanSnapshot = Awaited<ReturnType<typeof recordsApi.plan>>
+type PlanConflict = { latest: PlanSnapshot | null; reason: "changed" | "unconfirmed" }
 
 export default function Tomorrow() {
+  const [date, setDate] = useState(getTomorrow)
+
+  useEffect(() => {
+    let timer: number
+    function refresh() {
+      const next = getTomorrow()
+      setDate(previous => previous.str === next.str ? previous : next)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(refresh, nextLocalMidnightDelay())
+    }
+    function onVisibility() {
+      if (document.visibilityState === "visible") refresh()
+    }
+    timer = window.setTimeout(refresh, nextLocalMidnightDelay())
+    window.addEventListener("focus", refresh)
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener("focus", refresh)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [])
+
+  // A new calendar date owns a fresh editor, including drafts, pending requests
+  // and conflict state. Failed recommendations cannot retain yesterday's dishes.
+  return <TomorrowEditor key={date.str} date={date} />
+}
+
+function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const confettiRef = useRef<HTMLDivElement>(null)
-  const { str: tomorrowStr, label: tomorrowLabel } = getTomorrow()
+  const { str: tomorrowStr, label: tomorrowLabel } = date
 
   const [profile, setProfile] = useState<PlanProfile>("balanced")
   const [targets, setTargets] = useState<Record<MealType, number>>(defaultTargets)
   const [lunch, setLunch] = useState<Dish[]>([])
   const [dinner, setDinner] = useState<Dish[]>([])
   const [originalRecords, setOriginalRecords] = useState<MealRecord[]>([])
+  const [originalVersion, setOriginalVersion] = useState("")
+  const [conflict, setConflict] = useState<PlanConflict | null>(null)
+  const [readingConflict, setReadingConflict] = useState(false)
   const [initializedFor, setInitializedFor] = useState<string | null>(null)
   const [pickerMeal, setPickerMeal] = useState<MealType | null>(null)
   const [picking, setPicking] = useState(false)
   const initStartedForRef = useRef<string | null>(null)
+  const requestGate = useRef(createTomorrowRequestGate())
+  const retryRequest = useRef<{ key: string; id: string } | null>(null)
+  const saveLock = useRef(false)
+
+  useEffect(() => {
+    const gate = requestGate.current
+    gate.activate()
+    return () => {
+      gate.dispose()
+      initStartedForRef.current = null
+    }
+  }, [tomorrowStr])
 
   const { data: tomorrowRecords, isLoading: recordsLoading, isFetchedAfterMount, isSuccess: recordsReady, isError: recordsError, refetch: reloadRecords } = useQuery({
     queryKey: ["records", "tomorrow", tomorrowStr],
-    queryFn: () => recordsApi.list({ date_from: tomorrowStr, date_to: tomorrowStr, pageSize: "100" }),
+    queryFn: () => recordsApi.plan(tomorrowStr),
     refetchOnMount: "always",
   })
 
@@ -696,25 +728,23 @@ export default function Tomorrow() {
     if (initStartedForRef.current === tomorrowStr) return
     initStartedForRef.current = tomorrowStr
 
-    const records = (tomorrowRecords?.items || []).filter(r => r.status !== "cancelled")
+    const records = tomorrowRecords?.records || []
     const stored = readTomorrowDraft(tomorrowStr, tomorrowPlanBaseline(records))
     setOriginalRecords(records)
+    setOriginalVersion(tomorrowRecords?.version || "")
 
-    if (stored.kind === "restored") {
+    if (stored.kind === "restored" || stored.kind === "conflict") {
       // Initialize once from external storage, only after checking the fresh server baseline.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setLunch(stored.draft.lunch)
       setDinner(stored.draft.dinner)
       setTargets(stored.draft.targets)
       setProfile(stored.draft.profile)
+      if (stored.kind === "conflict") setConflict({ latest: tomorrowRecords || null, reason: "changed" })
       setInitializedFor(tomorrowStr)
       return
     }
-    if (stored.kind === "conflict") {
-      toast("明日菜单已更新，已载入最新菜单", { duration: 5000 })
-    }
-
-    if (records.length > 0 || stored.kind === "conflict") {
+    if (records.length > 0) {
       const nextLunch = mealRecords(records, "lunch").map(recordToDish)
       const nextDinner = mealRecords(records, "dinner").map(recordToDish)
       // Each date initializes once; subsequent query refreshes must not overwrite edits.
@@ -728,8 +758,10 @@ export default function Tomorrow() {
       return
     }
 
+    setLunch([])
+    setDinner([])
     setTargets(defaultTargets)
-    void generateAll(profile, defaultTargets).finally(() => setInitializedFor(tomorrowStr))
+    void generateAll(profile, defaultTargets, tomorrowStr)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initializedFor, isFetchedAfterMount, recordsReady, tomorrowRecords, tomorrowStr])
 
@@ -755,16 +787,15 @@ export default function Tomorrow() {
     return map
   }, [lunch, dinner])
 
-  const recordsToSave = useMemo<Partial<MealRecord>[]>(() => {
-    const records: Partial<MealRecord>[] = []
+  const recordsToSave = useMemo(() => {
+    const records: { dish_id: number; meal_type: string }[] = []
     for (const [meal, dishes] of [["lunch", lunch], ["dinner", dinner]] as const) {
       dishes.forEach((dish) => records.push({
-        dish_id: dish.id, dish_name: dish.name, meal_type: meal, meal_date: tomorrowStr,
-        status: "planned",
+        dish_id: dish.id, meal_type: meal,
       }))
     }
     return records
-  }, [dinner, lunch, tomorrowStr])
+  }, [dinner, lunch])
 
   const hasSavedPlan = originalRecords.length > 0
   const totalCount = lunch.length + dinner.length
@@ -774,85 +805,74 @@ export default function Tomorrow() {
   const loading = recordsLoading || initializedFor !== tomorrowStr
 
   const savePlanMut = useMutation({
-    mutationFn: async ({ date, oldRecords, records }: SavePlanPayload) => {
-      // Recheck before writing too: a plan can change while this editor stays open.
-      const latest = await recordsApi.list({ date_from: date, date_to: date, pageSize: "100" })
-      if (tomorrowPlanBaseline(latest.items) !== tomorrowPlanBaseline(oldRecords)) {
-        throw new PlanChangedError(latest.items.filter(record => record.status !== "cancelled"))
-      }
-      try {
-        const key = (record: Partial<MealRecord>) => `${record.meal_type}:${record.dish_id}`
-        const existingKeys = new Set(oldRecords.map(key))
-        const desiredKeys = new Set(records.map(key))
-        const additions = records.filter(record => !existingKeys.has(key(record)))
-        // 保留没换的菜及其份量、买菜状态；新增成功后再取消移走的菜。
-        if (additions.length > 0) {
-          const result = await recordsApi.batchCreate(additions)
-          if (result.failed > 0) throw new Error(`${result.failed} 道菜保存失败，请重试`)
-        }
-        for (const record of oldRecords.filter(record => !desiredKeys.has(key(record)))) {
-          await recordsApi.update(record.id, { status: "cancelled" })
-        }
-        return await recordsApi.list({ date_from: date, date_to: date, pageSize: "100" })
-      } catch {
-        throw new PartialPlanSaveError("部分改动可能已保存，请重试")
-      }
-    },
+    mutationFn: ({ date, version, requestID, dishes }: SavePlanPayload) => recordsApi.savePlan(date, {
+      expected_version: version, request_id: requestID, dishes,
+    }),
     onSuccess: (res, variables) => {
-      const records = res.items.filter(r => r.status !== "cancelled")
-      setOriginalRecords(records)
-      // Keep even an empty snapshot, so clearing a menu does not regenerate it on return.
-      writeTomorrowDraft(variables.date, tomorrowPlanBaseline(records), variables.draft)
       qc.invalidateQueries({ queryKey: ["records"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
       qc.invalidateQueries({ queryKey: ["shopping-list"] })
       qc.invalidateQueries({ queryKey: ["record"] })
       qc.invalidateQueries({ queryKey: ["dish-records"] })
       qc.invalidateQueries({ queryKey: ["admin", "records"] })
+      if (!requestGate.current.active() || variables.date !== getTomorrow().str) return
+      setOriginalRecords(res.records)
+      setOriginalVersion(res.version)
+      setConflict(null)
+      retryRequest.current = null
+      // Keep even an empty snapshot, so clearing a menu does not regenerate it on return.
+      writeTomorrowDraft(variables.date, tomorrowPlanBaseline(res.records), variables.draft)
       launchConfetti(confettiRef.current)
-      toast.success(variables.wasSaved ? "明天菜单已更新" : "明天菜单已保存")
+      toast.success(res.replayed ? "已确认上次保存成功" : variables.wasSaved ? "明天菜单已更新" : "明天菜单已保存")
     },
     onError: async (error, variables) => {
-      if (error instanceof PlanChangedError) {
-        const nextLunch = mealRecords(error.records, "lunch").map(recordToDish)
-        const nextDinner = mealRecords(error.records, "dinner").map(recordToDish)
-        const nextTargets = {
-          lunch: Math.min(maxPerMeal, Math.max(nextLunch.length, defaultTargets.lunch)),
-          dinner: Math.min(maxPerMeal, Math.max(nextDinner.length, defaultTargets.dinner)),
-        }
-        setOriginalRecords(error.records)
-        setLunch(nextLunch)
-        setDinner(nextDinner)
-        setTargets(nextTargets)
-        writeTomorrowDraft(variables.date, tomorrowPlanBaseline(error.records), {
-          lunch: nextLunch, dinner: nextDinner, targets: nextTargets, profile: variables.draft.profile,
-        })
-        qc.invalidateQueries({ queryKey: ["records"] })
-        toast.error(error.message, { duration: 5000 })
-        return
+      if (!requestGate.current.active() || variables.date !== getTomorrow().str) return
+      // A transport failure may follow a committed save. Reconcile before any
+      // further editing, otherwise reverting to the old baseline can look saved.
+      const reason = isMealPlanConflict(error) ? "changed" : "unconfirmed"
+      setConflict({ latest: null, reason })
+      await loadConflictingPlan(variables.date)
+      if (requestGate.current.active() && variables.date === getTomorrow().str) {
+        toast.error(reason === "changed" ? "菜单已有变化，你的草稿已保留，请核对后继续" : "保存结果未确认，请核对服务器菜单后继续", { duration: 5000 })
       }
-      if (!(error instanceof PartialPlanSaveError)) {
-        toast.error("无法读取最新菜单，请检查网络后重试")
-        return
-      }
-      // 部分请求失败时重新读取实际保存结果，草稿保留以便重试。
-      try {
-        const res = await recordsApi.list({ date_from: variables.date, date_to: variables.date, pageSize: "100" })
-        const records = res.items.filter(r => r.status !== "cancelled")
-        setOriginalRecords(records)
-        writeTomorrowDraft(variables.date, tomorrowPlanBaseline(records), variables.draft)
-      } catch { /* 网络恢复后仍可重试保存 */ }
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
-      toast.error("部分改动可能已保存，请重试")
     },
+    onSettled: () => { saveLock.current = false },
   })
   const disabled = loading || picking || savePlanMut.isPending
 
   useEffect(() => {
-    if (initializedFor !== tomorrowStr || savePlanMut.isPending || tomorrowStr !== getTomorrow().str) return
+    if (initializedFor !== tomorrowStr || savePlanMut.isPending || conflict || tomorrowStr !== getTomorrow().str) return
     writeTomorrowDraft(tomorrowStr, tomorrowPlanBaseline(originalRecords), { lunch, dinner, targets, profile })
-  }, [initializedFor, tomorrowStr, savePlanMut.isPending, originalRecords, lunch, dinner, targets, profile])
+  }, [initializedFor, tomorrowStr, savePlanMut.isPending, conflict, originalRecords, lunch, dinner, targets, profile])
+
+  async function loadConflictingPlan(date = tomorrowStr) {
+    setReadingConflict(true)
+    try {
+      const latest = await recordsApi.plan(date)
+      if (requestGate.current.active() && date === getTomorrow().str) {
+        setConflict(previous => previous ? { ...previous, latest } : null)
+      }
+    } catch {
+      if (requestGate.current.active() && date === getTomorrow().str) toast.error("最新菜单读取失败，草稿仍在，请重试")
+    } finally {
+      if (requestGate.current.active() && date === getTomorrow().str) setReadingConflict(false)
+    }
+  }
+
+  function acceptLatestPlan(keepDraft: boolean) {
+    const latest = conflict?.latest
+    if (!latest) return
+    invalidateRecommendations()
+    setOriginalRecords(latest.records)
+    setOriginalVersion(latest.version)
+    setConflict(null)
+    retryRequest.current = null
+    if (!keepDraft) {
+      setLunch(mealRecords(latest.records, "lunch").map(recordToDish))
+      setDinner(mealRecords(latest.records, "dinner").map(recordToDish))
+    }
+    toast(keepDraft ? "已核对最新记录，请检查草稿后再次保存" : "已载入最新菜单")
+  }
 
   function getMeal(meal: MealType) {
     return meal === "lunch" ? lunch : dinner
@@ -868,7 +888,20 @@ export default function Tomorrow() {
     else setDinner(updater)
   }
 
+  function invalidateRecommendations() {
+    requestGate.current.invalidate()
+    setPicking(false)
+  }
+
+  function beginRecommendation() {
+    const token = requestGate.current.begin()
+    const date = tomorrowStr
+    setPicking(true)
+    return () => requestGate.current.current(token) && date === getTomorrow().str
+  }
+
   function updateTarget(meal: MealType, value: number) {
+    invalidateRecommendations()
     const next = Math.max(0, Math.min(maxPerMeal, value))
     setTargets((prev) => ({ ...prev, [meal]: next }))
     updateMeal(meal, (prev) => (prev.length > next ? prev.slice(0, next) : prev))
@@ -899,36 +932,38 @@ export default function Tomorrow() {
       ...otherMeal.map((dish) => dish.id),
       ...current.map((dish) => dish.id),
     ]
-    setPicking(true)
+    const currentRequest = beginRecommendation()
     try {
       const picks = await requestTomorrowDishes(meal, needed, profile, excludeIds)
+      if (!currentRequest()) return
       if (picks.length === 0) {
         toast.error("没有更多合适的菜了")
         return
       }
       updateMeal(meal, (prev) => uniqueById([...prev, ...picks]).slice(0, maxPerMeal))
     } catch {
-      toast.error("没有更多合适的菜了")
+      if (currentRequest()) toast.error("没有更多合适的菜了")
     } finally {
-      setPicking(false)
+      if (currentRequest()) setPicking(false)
     }
   }
 
   async function replaceMeal(meal: MealType) {
     const count = Math.max(1, targets[meal] || getMeal(meal).length || 1)
     const otherMeal = meal === "lunch" ? dinner : lunch
-    setPicking(true)
+    const currentRequest = beginRecommendation()
     try {
       const picks = await requestTomorrowDishes(meal, count, profile, otherMeal.map((dish) => dish.id))
+      if (!currentRequest()) return
       if (picks.length === 0) {
         toast.error("暂无可推荐的菜品")
         return
       }
       updateMeal(meal, () => picks)
     } catch {
-      toast.error("暂无可推荐的菜品")
+      if (currentRequest()) toast.error("暂无可推荐的菜品")
     } finally {
-      setPicking(false)
+      if (currentRequest()) setPicking(false)
     }
   }
 
@@ -937,18 +972,19 @@ export default function Tomorrow() {
     const otherMeal = meal === "lunch" ? dinner : lunch
     const keepIds = current.filter((dish) => dish.id !== dishId).map((dish) => dish.id)
     const excludeIds = [...keepIds, ...otherMeal.map((dish) => dish.id), dishId]
-    setPicking(true)
+    const currentRequest = beginRecommendation()
     try {
       const [pick] = await requestTomorrowDishes(meal, 1, profile, excludeIds)
+      if (!currentRequest()) return
       if (!pick) {
         toast.error("没有可替换的菜了")
         return
       }
       updateMeal(meal, (prev) => prev.map((dish) => (dish.id === dishId ? pick : dish)))
     } catch {
-      toast.error("没有可替换的菜了")
+      if (currentRequest()) toast.error("没有可替换的菜了")
     } finally {
-      setPicking(false)
+      if (currentRequest()) setPicking(false)
     }
   }
 
@@ -962,23 +998,27 @@ export default function Tomorrow() {
       toast.error(`每餐最多 ${maxPerMeal} 道菜`)
       return
     }
+    invalidateRecommendations()
     updateMeal(meal, (prev) => [...prev, dish])
     setTargets((prev) => ({ ...prev, [meal]: Math.max(prev[meal], getMeal(meal).length + 1) }))
   }
 
   function removeDish(meal: MealType, dishId: number) {
+    invalidateRecommendations()
     updateMeal(meal, (prev) => prev.filter((dish) => dish.id !== dishId))
   }
 
-  async function generateAll(nextProfile = profile, nextTargets = targets) {
-    setPicking(true)
+  async function generateAll(nextProfile = profile, nextTargets = targets, initializeDate?: string) {
+    const currentRequest = beginRecommendation()
     try {
       const nextLunch = nextTargets.lunch > 0
         ? await requestTomorrowDishes("lunch", nextTargets.lunch, nextProfile)
         : []
+      if (!currentRequest()) return
       const nextDinner = nextTargets.dinner > 0
         ? await requestTomorrowDishes("dinner", nextTargets.dinner, nextProfile, nextLunch.map((dish) => dish.id))
         : []
+      if (!currentRequest()) return
       if (nextLunch.length === 0 && nextDinner.length === 0) {
         toast.error("暂无可推荐的菜品")
         return
@@ -986,9 +1026,12 @@ export default function Tomorrow() {
       setLunch(nextLunch)
       setDinner(nextDinner)
     } catch {
-      toast.error("暂无可推荐的菜品")
+      if (currentRequest()) toast.error("暂无可推荐的菜品")
     } finally {
-      setPicking(false)
+      if (currentRequest()) {
+        setPicking(false)
+        if (initializeDate) setInitializedFor(initializeDate)
+      }
     }
   }
 
@@ -998,6 +1041,7 @@ export default function Tomorrow() {
   }
 
   function savePlan() {
+    if (saveLock.current || conflict) return
     if (tomorrowStr !== getTomorrow().str) {
       setInitializedFor(null)
       toast("日期已变化，正在重新读取明日菜单")
@@ -1011,9 +1055,17 @@ export default function Tomorrow() {
       toast("菜单没有变化")
       return
     }
+    invalidateRecommendations()
+    const requestKey = JSON.stringify([tomorrowStr, originalVersion, recordsToSave])
+    if (retryRequest.current?.key !== requestKey) {
+      retryRequest.current = { key: requestKey, id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}` }
+    }
+    saveLock.current = true
+    const draft = { lunch, dinner, targets, profile }
+    writeTomorrowDraft(tomorrowStr, tomorrowPlanBaseline(originalRecords), draft)
     savePlanMut.mutate({
-      date: tomorrowStr, draft: { lunch, dinner, targets, profile },
-      oldRecords: originalRecords, records: recordsToSave, wasSaved: hasSavedPlan,
+      date: tomorrowStr, draft,
+      version: originalVersion, requestID: retryRequest.current.id, dishes: recordsToSave, wasSaved: hasSavedPlan,
     })
   }
 
@@ -1037,12 +1089,28 @@ export default function Tomorrow() {
         <LoadingState />
       ) : (
         <main className="px-5 py-4">
-          <fieldset disabled={savePlanMut.isPending} className="mx-auto min-w-0 max-w-[640px] space-y-4">
+          {conflict && (
+            <section className="mx-auto mb-4 max-w-[640px] rounded-2xl border border-yellow/40 bg-yellow-light p-4" role="alert">
+              <div className="font-bold text-text">{conflict.reason === "unconfirmed" ? "保存结果未确认，草稿已保留" : "菜单已有变化，草稿已保留"}</div>
+              <p className="mt-1 text-sm text-text2">请核对最新安排，再决定继续编辑这份草稿，或载入最新菜单。</p>
+              {conflict.latest ? (
+                <>
+                  {mealOrder.map(meal => <p key={meal} className="mt-2 text-sm text-text2">最新{mealMeta[meal].shortLabel}：{mealRecords(conflict.latest!.records, meal).map(record => `${record.dish_name}${record.portion_scale !== 1 ? ` ×${record.portion_scale}` : ""}`).join("、") || "未安排"}</p>)}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button onClick={() => acceptLatestPlan(true)} className="min-h-11 rounded-full bg-primary px-4 text-sm font-semibold text-white">保留草稿继续编辑</button>
+                    <button onClick={() => acceptLatestPlan(false)} className="min-h-11 rounded-full border border-border bg-card px-4 text-sm font-semibold text-text2">载入最新菜单</button>
+                  </div>
+                </>
+              ) : <button disabled={readingConflict} onClick={() => void loadConflictingPlan()} className="mt-3 min-h-11 rounded-full bg-card px-4 text-sm font-semibold text-primary">{readingConflict ? "读取最新菜单…" : "重新读取最新菜单"}</button>}
+            </section>
+          )}
+          <fieldset disabled={savePlanMut.isPending || !!conflict} className="mx-auto min-w-0 max-w-[640px] space-y-4">
             <PlanSummary
               dateLabel={tomorrowLabel}
               totalCount={totalCount}
               hasSavedPlan={hasSavedPlan}
               hasChanges={hasChanges}
+              pendingReview={!!conflict}
               lunch={lunchView}
               dinner={dinnerView}
               onGenerateAll={() => generateAll()}
@@ -1119,16 +1187,16 @@ export default function Tomorrow() {
                 {totalCount > 0 ? `${tomorrowLabel} · ${totalCount} 道菜` : "还没有选择菜品"}
               </div>
               <div className="truncate text-[11px] font-medium text-text3">
-                {hasSavedPlan ? (hasChanges ? "保存后会覆盖原明日菜单" : "当前菜单已同步到买菜清单") : "保存后自动生成买菜清单"}
+                {conflict ? "核对最新菜单后继续" : hasSavedPlan ? (hasChanges ? "保存后会覆盖原明日菜单" : "当前菜单已同步到买菜清单") : "保存后自动生成买菜清单"}
               </div>
             </div>
             <button
               onClick={savePlan}
-              disabled={disabled || (totalCount === 0 && !hasSavedPlan) || (hasSavedPlan && !hasChanges)}
+              disabled={disabled || !!conflict || (totalCount === 0 && !hasSavedPlan) || (hasSavedPlan && !hasChanges)}
               className="flex h-12 min-w-[148px] items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-extrabold text-white transition-all hover:bg-primary-dark active:scale-95 disabled:opacity-50"
             >
               <Check size={17} strokeWidth={2.6} />
-              {savePlanMut.isPending ? "保存中" : hasSavedPlan ? (hasChanges ? "更新菜单" : "已保存") : "保存菜单"}
+              {conflict ? "待核对" : savePlanMut.isPending ? "保存中" : hasSavedPlan ? (hasChanges ? "更新菜单" : "已保存") : "保存菜单"}
             </button>
           </div>
         </div>

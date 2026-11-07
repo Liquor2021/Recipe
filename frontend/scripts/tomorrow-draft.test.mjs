@@ -60,7 +60,7 @@ test("empty unsaved and saved menus survive returning without new recommendation
   }
 })
 
-test("cancellation, rescheduling, completion, portion changes and replacement reject stale drafts", () => {
+test("cancellation, rescheduling, completion, portion changes and replacement preserve drafts for explicit reconciliation", () => {
   const changes = [
     [], [record(1, { status: "cancelled" })], [record(1, { status: "completed" })],
     [record(1, { meal_date: "2026-11-09" })], [record(1, { meal_type: "dinner" })],
@@ -69,8 +69,11 @@ test("cancellation, rescheduling, completion, portion changes and replacement re
   for (const records of changes) {
     const storage = memoryStorage()
     writeTomorrowDraft(date, tomorrowPlanBaseline([record()]), draft(), storage)
-    assert.equal(readTomorrowDraft(date, tomorrowPlanBaseline(records), storage).kind, "conflict")
-    assert.equal(storage.getItem(key), null)
+    const result = readTomorrowDraft(date, tomorrowPlanBaseline(records), storage)
+    assert.equal(result.kind, "conflict")
+    assert.deepEqual(result.draft.lunch.map(item => item.id), [2])
+    assert.deepEqual(result.draft.dinner.map(item => item.id), [3])
+    assert.notEqual(storage.getItem(key), null)
   }
 })
 

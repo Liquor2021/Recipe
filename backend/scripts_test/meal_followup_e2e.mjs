@@ -66,8 +66,8 @@ try {
   const payload = { dish_id: dish.id, dish_name: dish.name, meal_type: "lunch", meal_date: day(), status: "planned" }
   const plan = await remember({ ...payload, portion_scale: 2 })
   const id = plan.id
-  await must("POST", "/shopping-list/toggle", { item_name: itemName, meal_date: day(), checked: true })
-  await must("POST", "/shopping-list/toggle", { item_name: secondItemName, meal_date: day(), checked: true })
+  await must("POST", "/shopping-list/toggle", { item_name: itemName, meal_date: day(), checked: true, demand_version: (await shoppingItem(itemName))?.demand_version })
+  await must("POST", "/shopping-list/toggle", { item_name: secondItemName, meal_date: day(), checked: true, demand_version: (await shoppingItem(secondItemName))?.demand_version })
   await must("POST", "/shopping-list/stock-in", { items: [{ item_name: itemName, quantity: "1000克" }] })
   const originalBatch = (await get("/fridge")).find(item => item.item_name === itemName)
   if (!originalBatch) throw new Error("测试库存创建失败")
@@ -77,10 +77,12 @@ try {
   await must("PUT", `/fridge/batch/${originalBatch.id}`, { quantity: "1000克", expiry_date: originalBatch.expiry_date, expected_batch: version(originalBatch) })
   check("计划买菜状态包含已买、已入库和双倍用量", (await shoppingItem(itemName))?.checked && (await shoppingItem(itemName))?.stocked && (await shoppingItem(itemName))?.amount === "400克")
 
+  const secondItemVersion = (await shoppingItem(secondItemName))?.demand_version
   let response = await req("PUT", `/records/${id}`, { status: "cancelled" })
   check("取消计划隐藏所有关联购物需求", response.code === 0 && !(await shopping()).some(item => [itemName, secondItemName].includes(item.name)), response)
   check("取消计划不改变真实库存", (await batch(originalBatch.id))?.quantity === "1000克")
-  await must("POST", "/shopping-list/toggle", { item_name: secondItemName, meal_date: day(), checked: false })
+  response = await req("POST", "/shopping-list/toggle", { item_name: secondItemName, meal_date: day(), checked: false, demand_version: secondItemVersion })
+  check("取消后旧页面的勾选请求返回冲突", response.httpStatus === 409, response)
   response = await req("POST", "/shopping-list/stock-in", { items: [{ item_name: secondItemName, quantity: "4个" }] })
   check("取消后到达的入库请求不创建库存", response.code === 0 && response.data.added === 0 && !(await get("/fridge")).some(item => item.item_name === secondItemName), response)
   response = await req("PUT", `/records/${id}`, { status: "planned", portion_scale: 3 })

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { recordsApi } from "@/api"
+import { recordsApi, getUploadErrorMessage } from "@/api"
+import { Link } from "react-router-dom"
 import type { MealRecord } from "@/types"
 import toast from "react-hot-toast"
 import { thumbUrl } from "@/lib/dishImage"
@@ -29,15 +30,18 @@ export default function AdminRecords() {
   if (dateFrom) params.date_from = dateFrom
   if (dateTo) params.date_to = dateTo
 
-  const { data: recordsData, isLoading } = useQuery({
+  const { data: recordsData, isLoading, isSuccess } = useQuery({
     queryKey: ["admin", "records", params],
     queryFn: () => recordsApi.list(params),
   })
   const records = recordsData?.items || []
   const total = recordsData?.total || 0
   const totalPages = Math.ceil(total / pageSize)
+  // 只按成功读取的总数校正页码；删除空末页后回到仍有记录的一页。
+  if (isSuccess && page > Math.max(1, totalPages)) setPage(Math.max(1, totalPages))
 
   const deleteMut = useMutation({
+    mutationKey: ["admin", "record-delete"],
     mutationFn: (id: number) => recordsApi.delete(id),
     onSuccess: () => {
       for (const key of ["admin", "dashboard", "records", "record", "stats", "report", "favorites", "achievements", "dish-records", "shopping-list", "photo-wall"]) {
@@ -45,6 +49,7 @@ export default function AdminRecords() {
       }
       toast.success("已删除")
     },
+    onError: (error) => toast.error(getUploadErrorMessage(error, "删除失败，请重试")),
   })
 
   const pillClass = (active: boolean) =>
@@ -74,6 +79,13 @@ export default function AdminRecords() {
         </div>
       </div>
 
+      {deleteMut.isError && (
+        <div role="alert" className="mb-3 rounded-xl border border-border bg-card p-3 text-sm text-text2">
+          <p>{getUploadErrorMessage(deleteMut.error, "删除失败，请重试")}</p>
+          {getUploadErrorMessage(deleteMut.error, "").includes("库存扣减") && <Link to="/history" className="inline-block mt-2 text-primary font-semibold">去用餐记录撤销库存扣减</Link>}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="py-12 text-center text-text2">加载中...</div>
       ) : (
@@ -94,8 +106,10 @@ export default function AdminRecords() {
                 <img src={thumbUrl(r.photo)} alt="" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" loading="lazy" decoding="async" />
               )}
               <button
-                onClick={() => { if (confirm("确定删除此记录？")) deleteMut.mutate(r.id) }}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs bg-bg transition-all active:bg-red-50 active:text-red-500 flex-shrink-0"
+                onClick={() => { if (qc.isMutating({ mutationKey: ["admin", "record-delete"] }) === 0 && confirm("确定删除此记录？")) deleteMut.mutate(r.id) }}
+                disabled={deleteMut.isPending}
+                aria-label={`删除${r.dish_name}的用餐记录`}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs bg-bg transition-all active:bg-red-50 active:text-red-500 flex-shrink-0 disabled:opacity-50"
               >
                 🗑
               </button>

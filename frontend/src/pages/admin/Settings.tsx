@@ -135,6 +135,7 @@ function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMem
   setNewMemberName: (v: string) => void
 }) {
   function toggleTag(memberIdx: number, tag: string) {
+    if (saving) return
     const next = members.map((m, i) => {
       if (i !== memberIdx) return m
       const dislikes = m.dislikes.includes(tag)
@@ -146,15 +147,16 @@ function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMem
   }
 
   function removeMember(memberIdx: number) {
+    if (saving) return
     onSave(members.filter((_, i) => i !== memberIdx))
   }
 
   function addMember() {
+    if (saving) return
     const name = newMemberName.trim()
     if (!name) { toast.error("先填成员名字"); return }
     if (members.some((m) => m.name === name)) { toast.error("已经有这位成员啦"); return }
     onSave([...members, { name, dislikes: [] }])
-    setNewMemberName("")
   }
 
   return (
@@ -190,6 +192,7 @@ function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMem
               <span className="text-sm font-bold">{m.name}</span>
               <button
                 onClick={() => removeMember(mi)}
+                disabled={saving}
                 className="text-[11px] text-text3 hover:text-red transition-colors"
               >
                 移除
@@ -217,6 +220,7 @@ function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMem
       <div className="flex gap-2 mt-3">
         <input
           value={newMemberName}
+          disabled={saving}
           onChange={(e) => setNewMemberName(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") addMember() }}
           placeholder="成员名字，如：爸爸"
@@ -236,7 +240,9 @@ function FamilyMembersCard({ members, mode, onModeChange, onSave, saving, newMem
 
 export default function AdminSettings() {
   const qc = useQueryClient()
-  const { data: settings, isLoading } = useQuery({ queryKey: ["settings"], queryFn: () => settingsApi.get() })
+  const { data: settings, isPending, isSuccess, isError, isFetching, isFetchedAfterMount, refetch } = useQuery({
+    queryKey: ["settings"], queryFn: () => settingsApi.get(), refetchOnMount: "always", retry: false,
+  })
 
   const [repeatDays, setRepeatDays] = useState<string | null>(null)
   const [lunchPerDay, setLunchPerDay] = useState<string | null>(null)
@@ -249,9 +255,10 @@ export default function AdminSettings() {
   const updateAppName = useAppInfoStore((s) => s.setAppName)
 
   const updateMut = useMutation({
+    mutationKey: ["settings-edit"],
     mutationFn: (s: Record<string, string>) => settingsApi.update(s),
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["settings"] })
+    onMutate: () => qc.cancelQueries({ queryKey: ["settings"] }),
+    onSuccess: async (_data, variables) => {
       // 忌口、每餐道数等设置会改变推荐与周菜单：相关缓存一起失效，回到前台立刻按新设置展示
       for (const key of ["week-plan", "dishes", "pick", "fridge-recipes"]) {
         qc.invalidateQueries({ queryKey: [key] })
@@ -259,11 +266,23 @@ export default function AdminSettings() {
       if (variables.app_name !== undefined) {
         updateAppName(variables.app_name || "NiniMenu")
       }
+      if (variables.family_members !== undefined) {
+        const savedMembers = parseFamilyMembers(variables.family_members)
+        setNewMemberName(current => savedMembers.some(member => member.name === current.trim()) ? "" : current)
+      }
       toast.success("已保存")
+      // 最新名单读回前保持禁用，避免下一次整数组保存仍基于旧成员列表。
+      await qc.invalidateQueries({ queryKey: ["settings"] })
     },
     // 忌口模式等开关型设置失败时按钮会静默弹回，必须给用户明确反馈
     onError: () => toast.error("保存失败"),
   })
+  const canEditSettings = !!settings && isSuccess && isFetchedAfterMount && !isFetching && !updateMut.isPending
+
+  function saveSettings(values: Record<string, string>) {
+    if (!canEditSettings || qc.isMutating({ mutationKey: ["settings-edit"] }) > 0) return
+    updateMut.mutate(values)
+  }
 
   const { data: categoryOverrides = [] } = useQuery({
     queryKey: ["shopping-categories"],
@@ -300,10 +319,18 @@ export default function AdminSettings() {
     saveCategoryMut.mutate({ item_name: itemName, category: shoppingCategory })
   }
 
-  if (isLoading) return <div className="p-8 text-center text-text2">加载中...</div>
+  if (isPending) return <div role="status" className="p-8 text-center text-text2">正在读取设置…</div>
 
   return (
     <div className="px-5 py-4 max-w-[640px] mx-auto pb-20 space-y-4">
+      {(isError || !settings) && (
+        <div role="alert" className="rounded-2xl border border-border bg-card p-4">
+          <p className="text-sm font-semibold">{settings ? "设置更新失败" : "设置读取失败"}</p>
+          <p className="mt-1 text-xs text-text2">{settings ? "已保留上次读取的设置和当前输入，重新读取成功后再修改。" : "重新读取成功后才能修改，原有成员和忌口不会被清空。"}</p>
+          <button onClick={() => { void refetch() }} disabled={isFetching} className="mt-3 px-4 py-2 rounded-full bg-primary text-white text-xs font-semibold disabled:opacity-50">{isFetching ? "正在重试…" : "重新读取设置"}</button>
+        </div>
+      )}
+      {settings && <fieldset disabled={!canEditSettings} className="min-w-0 space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="text-[13px] font-semibold text-text2 mb-1">基本设置</div>
         <div className="text-[11px] text-text3 mb-2">应用名称与显示偏好</div>
@@ -318,7 +345,7 @@ export default function AdminSettings() {
               className="w-28 py-2 px-3 rounded-[10px] border-[1.5px] border-border bg-bg text-sm outline-none transition-all focus:border-primary text-right"
             />
             <button
-              onClick={() => updateMut.mutate({ app_name: (appName !== null ? appName : asString(settings?.app_name, "NiniMenu")) || "NiniMenu" })}
+              onClick={() => saveSettings({ app_name: (appName !== null ? appName : asString(settings?.app_name, "NiniMenu")) || "NiniMenu" })}
               disabled={updateMut.isPending}
               className="px-3 rounded-full text-xs font-semibold bg-primary text-white disabled:opacity-60"
             >
@@ -342,7 +369,7 @@ export default function AdminSettings() {
               onClick={() => {
                 const v = repeatDays !== null ? repeatDays : asString(settings?.repeat_days, "")
                 if (!v || Number(v) < 1) { toast.error("至少需要1天"); return }
-                updateMut.mutate({ repeat_days: v })
+                saveSettings({ repeat_days: v })
               }}
               disabled={updateMut.isPending}
               className="px-3 rounded-full text-xs font-semibold bg-primary text-white disabled:opacity-60"
@@ -355,14 +382,14 @@ export default function AdminSettings() {
         <SettingRow label="语音播报">
           <Toggle
             value={settings?.voice_enabled !== "0"}
-            onChange={() => updateMut.mutate({ voice_enabled: settings?.voice_enabled === "1" ? "0" : "1" })}
+            onChange={() => saveSettings({ voice_enabled: settings?.voice_enabled === "1" ? "0" : "1" })}
           />
         </SettingRow>
 
         <SettingRow label="盲盒功能">
           <Toggle
             value={settings?.blind_box_enabled !== "0"}
-            onChange={() => updateMut.mutate({ blind_box_enabled: settings?.blind_box_enabled === "1" ? "0" : "1" })}
+            onChange={() => saveSettings({ blind_box_enabled: settings?.blind_box_enabled === "1" ? "0" : "1" })}
           />
         </SettingRow>
       </div>
@@ -371,9 +398,9 @@ export default function AdminSettings() {
       <FamilyMembersCard
         members={parseFamilyMembers(settings?.family_members)}
         mode={parseDislikeMode(settings?.family_dislike_mode)}
-        onModeChange={(m) => updateMut.mutate({ family_dislike_mode: m })}
-        onSave={(members) => updateMut.mutate({ family_members: JSON.stringify(members) })}
-        saving={updateMut.isPending}
+        onModeChange={(m) => saveSettings({ family_dislike_mode: m })}
+        onSave={(members) => saveSettings({ family_members: JSON.stringify(members) })}
+        saving={!canEditSettings}
         newMemberName={newMemberName}
         setNewMemberName={setNewMemberName}
       />
@@ -397,7 +424,7 @@ export default function AdminSettings() {
               onClick={() => {
                 const v = lunchPerDay !== null ? lunchPerDay : asString(settings?.lunch_dishes_per_day, "")
                 if (!v || Number(v) < 1) { toast.error("至少需要1道菜"); return }
-                updateMut.mutate({ lunch_dishes_per_day: v })
+                saveSettings({ lunch_dishes_per_day: v })
               }}
               disabled={updateMut.isPending}
               className="px-3 rounded-full text-xs font-semibold bg-primary text-white disabled:opacity-60"
@@ -422,7 +449,7 @@ export default function AdminSettings() {
               onClick={() => {
                 const v = dinnerPerDay !== null ? dinnerPerDay : asString(settings?.dinner_dishes_per_day, "")
                 if (!v || Number(v) < 1) { toast.error("至少需要1道菜"); return }
-                updateMut.mutate({ dinner_dishes_per_day: v })
+                saveSettings({ dinner_dishes_per_day: v })
               }}
               disabled={updateMut.isPending}
               className="px-3 rounded-full text-xs font-semibold bg-primary text-white disabled:opacity-60"
@@ -432,6 +459,8 @@ export default function AdminSettings() {
           </div>
         </SettingRow>
       </div>
+
+      </fieldset>}
 
       <div className="rounded-2xl border border-border bg-card p-4">
         <div className="text-[13px] font-semibold text-text2 mb-1">买菜分类修正</div>

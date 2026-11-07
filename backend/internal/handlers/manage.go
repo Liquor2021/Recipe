@@ -269,14 +269,17 @@ func GetAppInfo(c *gin.Context) {
 
 func GetSettings(c *gin.Context) {
 	var settings []models.Setting
-	database.DB.Find(&settings)
+	if err := database.DB.Find(&settings).Error; err != nil {
+		utils.InternalError(c, "读取设置失败")
+		return
+	}
 
 	// 值如果是合法的 JSON 数组/对象（如 categories、tastes），内联成真正的 JSON，
 	// 避免前端拿到被转义的字符串；其余保持原字符串。
 	// week_plan_cache 是后端内部缓存（体积大、前端从 /week-plan 获取），不对外暴露。
 	m := make(map[string]any)
 	for _, s := range settings {
-		if s.Key == "admin_password" || s.Key == "app_password" || s.Key == "week_plan_cache" {
+		if s.Key == "admin_password" || s.Key == "app_password" || s.Key == "week_plan_cache" || strings.HasPrefix(s.Key, "meal_plan_save:") {
 			continue
 		}
 		v := strings.TrimSpace(s.Value)

@@ -11,7 +11,7 @@ func TestShoppingNewDemandKeepsPurchasedAndStockedQuantities(t *testing.T) {
 	today := dateFromNow(0)
 	first := models.ShoppingCheck{MealDate: today, MealType: "lunch", DishID: 1, ItemName: "番茄", ItemAmount: "2个"}
 	database.DB.Create(&first)
-	if err := ToggleShoppingCheck("番茄", true); err != nil {
+	if err := ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 		t.Fatal(err)
 	}
 	second := models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 2, ItemName: "番茄", ItemAmount: "2个"}
@@ -32,7 +32,7 @@ func TestShoppingNewDemandKeepsPurchasedAndStockedQuantities(t *testing.T) {
 	if second.Checked || second.Stocked || second.PurchasedAmount != nil {
 		t.Fatalf("unbought demand was changed by stock-in: %+v", second)
 	}
-	if err := ToggleShoppingCheck("番茄", true); err != nil {
+	if err := ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 		t.Fatal(err)
 	}
 	item = shoppingItemsByName(t, today)["番茄"]
@@ -58,7 +58,7 @@ func TestShoppingUncheckPreservesAlreadyStockedPart(t *testing.T) {
 	bought, stocked := "6个", "2个"
 	row := models.ShoppingCheck{MealDate: today, MealType: "dinner", DishID: 1, ItemName: "番茄", ItemAmount: "6个", Checked: true, Stocked: true, PurchasedAmount: &bought, StockedAmount: &stocked}
 	database.DB.Create(&row)
-	if err := ToggleShoppingCheck("番茄", false); err != nil {
+	if err := ToggleShoppingCheck("番茄", false, currentShoppingDemandVersion(t, "番茄")); err != nil {
 		t.Fatal(err)
 	}
 	item := shoppingItemsByName(t, today)["番茄"]
@@ -84,7 +84,7 @@ func TestShoppingExtraPurchaseCoversOnlyOneLinkedMeal(t *testing.T) {
 	if item.Amount != "1000g" || item.PendingAmount != "500g" || item.StockInAmount != "" {
 		t.Fatalf("one extra purchase cannot cover both lunch and dinner: %+v", item)
 	}
-	if err := ToggleShoppingCheck("牛肉", true); err != nil {
+	if err := ToggleShoppingCheck("牛肉", true, currentShoppingDemandVersion(t, "牛肉")); err != nil {
 		t.Fatal(err)
 	}
 	if added, err := StockInShoppingItems([]StockInItem{{ItemName: "牛肉", Quantity: "1000g"}}); err != nil || added != 1 {

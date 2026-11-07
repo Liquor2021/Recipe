@@ -67,3 +67,23 @@ foreach ($suite in $suites) {
 - 旧库迁移与事务回滚由 Go 测试覆盖：在 `backend` 目录运行 `go test ./...`。
 - 编辑单批库存 `PUT /fridge/batch/:id` 必须携带 `expected_batch`（`batch_id / quantity / updated_at`）；旧批量入口 `/fridge/consume` 同样必须携带 `expected_batches`。缺少或过期的版本返回 409，不会覆盖最新库存。
 - 清理过期使用 `POST /fridge/clear-expired`，提交 `{batch_ids: [...]}`（最多 100 批）。服务端重新核对当前日期，返回实际 `removed` 和跳过的 `skipped`，不会删除用户选中范围之外的批次。
+- 勾选或取消已买使用 `POST /shopping-list/toggle`，除原有字段外必须携带当前 `GET /shopping-list` 对应食材的 `demand_version`。数量、来源记录或采购状态已变化，以及缺少版本的旧客户端均返回 409；重新读取清单并核对后再提交，不要直接重放旧版本。本目录涉及勾选的通用回归脚本会先取当前版本。
+- 明日菜单通过 `GET /meal-plans/:date` 取得完整 `records` 和 `version`，再向 `PUT /meal-plans/:date` 提交 `{expected_version, request_id, dishes: [{dish_id, meal_type}]}`。保存只接受明天的日期；每餐最多 5 道，清空菜单显式传空数组。基线不一致返回 409，应保留草稿供用户核对。请求结果未确认时，重试同一请求应沿用原 `request_id`、版本和菜品列表。
+- 周菜单重新生成和单道替换只有落库成功才返回新菜单；数据库读取或保存失败返回 500。真正没有可用菜品仍是成功的空菜单，不应与读取失败混淆。
+
+## Go 与前端逻辑测试的范围
+
+本轮新增的数据库故障、旧版本拒绝和事务回滚检查使用临时测试库，不要求先启动 HTTP 服务。在 `backend` 目录执行：
+
+```sh
+go test ./internal/services ./internal/handlers -count=1
+```
+
+| Go 测试文件 | 验证范围 |
+| --- | --- |
+| `internal/handlers/meal_plan_test.go` | 明日菜单保存基线、保留和恢复记录、购物联动回滚、响应丢失后的重复请求与并发保存 |
+| `internal/services/week_plan_failure_test.go`、`internal/handlers/week_plan_test.go` | 周菜单读写失败、保留旧缓存、恢复后重试、清空内存后从数据库读回及接口错误 |
+| `internal/services/shopping_expectation_test.go`、`internal/handlers/shopping_expectation_test.go` | 购物需求版本、旧勾选或取消勾选被拒绝、刷新版本后重试 |
+| `internal/handlers/settings_read_test.go` | 设置读取错误返回失败，不返回空设置冒充成功 |
+
+前端 `scripts/*.test.mjs` 是直接测试状态处理函数的 Node.js 脚本，不通过后端 HTTP，也不检查布局；运行方式和各脚本范围见 `frontend/scripts/README.md`。其中 `tomorrow-draft.test.mjs` 检查草稿保留与版本冲突，`tomorrow-requests.test.mjs` 检查推荐请求乱序及离页隔离。后台删除后的错误提示、末页回退、设置读取失败后的按钮禁用等页面行为仍需浏览器验证。

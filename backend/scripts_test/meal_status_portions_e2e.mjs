@@ -60,7 +60,7 @@ try {
   check("后台吃过次数排除计划", (await get("/admin/dashboard", AH)).total_records === beforeDashboard.total_records)
   check("菜品详情吃过次数排除计划", (await get("/dishes/" + dish.id + "/records")).stats.total_count === 0)
 
-  await req("POST", "/shopping-list/toggle", { item_name: numericItem, meal_date: day(), checked: true })
+  await req("POST", "/shopping-list/toggle", { item_name: numericItem, meal_date: day(), checked: true, demand_version: items.find(i => i.name === numericItem)?.demand_version })
   let r = await req("PUT", "/records/" + id, { portion_scale: 2.5 })
   check("可修改计划份量", r.code === 0 && r.data.portion_scale === 2.5, r)
   items = await shopping()

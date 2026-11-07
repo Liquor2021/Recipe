@@ -12,7 +12,9 @@ node --test scripts/*.test.*
 
 | 脚本 | 验证内容 |
 | --- | --- |
-| `tomorrow-draft.test.mjs` | 明日菜单草稿往返、空菜单、保存基线、取消/改期/份量变化、跨日与异常存储 |
+| `tomorrow-draft.test.mjs` | 明日菜单草稿往返、空菜单、保存基线、取消/改期/份量变化时保留冲突草稿、跨日与异常存储 |
+| `tomorrow-requests.test.mjs` | 推荐请求乱序、手动选菜或修改数量后丢弃旧响应、离页隔离、重新挂载与冲突响应识别 |
+| `tomorrow-date.test.mjs` | 本地午夜切换、跨月/跨年/闰日，以及夏令时 23/25 小时日期的刷新时间 |
 | `home-mood.test.mjs` | 心情异步恢复、快速点选、失败回退与跨日隔离 |
 | `fridge-filters.test.mjs` | 同名多批筛选、名称搜索、临期边界、无效日期与跨日更新 |
 | `auth-regression.test.cjs` | 管理员与应用认证分离、状态同步、登录失败和迟到的旧请求 |
@@ -21,3 +23,11 @@ node --test scripts/*.test.*
 | `meal-selection.test.mjs` | 点菜请求互斥、跨页面等待、不同菜独立更新、失败恢复与并发刷新交接 |
 
 逻辑测试直接导入 TypeScript helper；认证测试使用项目已安装的 TypeScript 编译并加载实际客户端源码，模拟网络和存储。所有测试均不读写真实用户数据。
+
+只检查明日菜单的草稿与请求状态时，在 `frontend` 目录运行：
+
+```sh
+node --test scripts/tomorrow-draft.test.mjs scripts/tomorrow-requests.test.mjs scripts/tomorrow-date.test.mjs
+```
+
+这些测试覆盖状态逻辑，不会打开页面。明日菜单的数据库版本核对、事务回滚和重复请求处理由后端 Go 测试覆盖；提示内容、重试按钮和跨日页面切换仍需浏览器验证。后端接口脚本的启动方式见 `backend/scripts_test/README.md`。

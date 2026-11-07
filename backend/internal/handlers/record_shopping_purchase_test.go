@@ -57,7 +57,7 @@ func TestShoppingPurchaseSnapshotsSurvivePlanChanges(t *testing.T) {
 	if item := getItem(); item.PendingAmount != "2个" || !item.NeedsBuy {
 		t.Fatalf("resized plan must compare original bought amount: %+v", item)
 	}
-	if err := services.ToggleShoppingCheck("番茄", true); err != nil {
+	if err := services.ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 		t.Fatal(err)
 	}
 	update(map[string]any{"meal_date": tomorrow, "meal_type": "dinner"})
@@ -102,7 +102,7 @@ func TestShoppingExtraPurchaseFollowsRescheduledPlanOnce(t *testing.T) {
 				addExtra()
 			}
 			if mode == "buy-before-plan" {
-				if err := services.ToggleShoppingCheck("番茄", true); err != nil {
+				if err := services.ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -111,7 +111,7 @@ func TestShoppingExtraPurchaseFollowsRescheduledPlanOnce(t *testing.T) {
 				// 模拟升级前补料和计划尚未归并，采购只记在补料行。
 				db.Create(&models.ShoppingCheck{MealDate: today, MealType: "extra", DishID: dish.ID, ItemName: "番茄", ItemAmount: "2个", Checked: true, Stocked: mode == "legacy-stocked"})
 			} else if mode == "buy-after-plan" {
-				if err := services.ToggleShoppingCheck("番茄", true); err != nil {
+				if err := services.ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -163,7 +163,7 @@ func TestShoppingExtraDoesNotMovePurchaseToAnotherMealOnCancel(t *testing.T) {
 	if _, err := services.AddShoppingListItems([]services.ShoppingItem{{Name: "番茄", Amount: "2个"}}, dish.ID, dish.Name, today); err != nil {
 		t.Fatal(err)
 	}
-	if err := services.ToggleShoppingCheck("番茄", true); err != nil {
+	if err := services.ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 		t.Fatal(err)
 	}
 	lunch := testCreateMeal(t, CreateRecordRequest{DishID: dish.ID, DishName: dish.Name, MealType: "lunch", MealDate: today})
@@ -175,7 +175,7 @@ func TestShoppingExtraDoesNotMovePurchaseToAnotherMealOnCancel(t *testing.T) {
 	if added, err := services.StockInShoppingItems([]services.StockInItem{{ItemName: "番茄", Quantity: "2个"}}); err != nil || added != 0 {
 		t.Fatalf("cancelled lunch purchase was wrongly assigned to dinner: %d %v", added, err)
 	}
-	if err := services.ToggleShoppingCheck("番茄", true); err != nil {
+	if err := services.ToggleShoppingCheck("番茄", true, currentShoppingDemandVersion(t, "番茄")); err != nil {
 		t.Fatal(err)
 	}
 	if added, err := services.StockInShoppingItems([]services.StockInItem{{ItemName: "番茄", Quantity: "2个"}}); err != nil || added != 1 {

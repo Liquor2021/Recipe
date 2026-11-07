@@ -12,6 +12,7 @@ import { cardShadow } from "@/components/Card"
 import type { Achievement, WeekDayPlan, ShoppingCategory, ShoppingItem, MealRecord } from "@/types"
 import toast from "react-hot-toast"
 import { Menu } from "lucide-react"
+import { isAxiosError } from "axios"
 
 function getTodayStr() {
   const d = new Date()
@@ -76,17 +77,18 @@ const MEAL_SECTIONS: { key: MealKey; label: string; titleClass: string; rowClass
 ]
 
 // 某一天的菜单：每道菜都能单独换；今天、明天还能一键加入计划和买菜清单
-function WeekDaySheet({ day, dateLabel, canRecord, swappingKey, recording, onSwap, onConfirm, onClose }: {
+function WeekDaySheet({ day, dateLabel, canRecord, swappingKey, editing, recording, onSwap, onConfirm, onClose }: {
   day: WeekDayPlan
   dateLabel: string
   canRecord: boolean
   swappingKey: string | null // 正在换的那道菜 `${meal}-${dishId}`，换菜进行中时其余按钮也禁用
+  editing: boolean
   recording: boolean
   onSwap: (meal: MealKey, dishId: number) => void
   onConfirm: () => void
   onClose: () => void
 }) {
-  const busy = swappingKey !== null
+  const busy = editing || swappingKey !== null
   return (
     <AnimatedBottomSheet onClose={onClose} className="flex max-h-[calc(100dvh-1rem)] flex-col overflow-hidden rounded-t-3xl p-5 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
       {({ close }) => (
@@ -219,7 +221,10 @@ export default function More() {
 
   const { data: rawAchievements } = useQuery({ queryKey: ["achievements"], queryFn: () => achievementsApi.list() })
   const achievements = Array.isArray(rawAchievements) ? rawAchievements : []
-  const { data: weekPlan } = useQuery({ queryKey: ["week-plan"], queryFn: () => weekPlanApi.get() })
+  const weekPlanEdits = useMutationState({ filters: { mutationKey: ["week-plan-edit"], status: "pending" } }).length
+  const { data: weekPlan, isPending: weekPlanLoading, isError: weekPlanError, isFetching: weekPlanFetching, refetch: reloadWeekPlan } = useQuery({
+    queryKey: ["week-plan"], queryFn: () => weekPlanApi.get(), enabled: weekPlanEdits === 0,
+  })
   const { data: rawShoppingList, isPending: shoppingLoading, isError: shoppingError, isFetching: shoppingFetching, refetch: reloadShopping } = useQuery({
     queryKey: ["shopping-list"], queryFn: () => shoppingListApi.get(), staleTime: 0,
     // 写入时保留已确认的采购数量；最后一个请求结束后读取新的待买/待入库差额。
@@ -271,27 +276,40 @@ export default function More() {
   const { contextSafe } = useGSAP(() => undefined, { scope: weekListRef })
 
   const regenerateMut = useMutation({
+    mutationKey: ["week-plan-edit", "regenerate"],
     mutationFn: () => weekPlanApi.regenerate(),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["week-plan"] })
+    onMutate: () => qc.cancelQueries({ queryKey: ["week-plan"] }),
+    onSuccess: async (plan) => {
+      await qc.cancelQueries({ queryKey: ["week-plan"] })
+      qc.setQueryData(["week-plan"], plan)
       qc.invalidateQueries({ queryKey: ["achievements"] })
-      toast.success("已重新生成")
+      if (plan.days?.length) toast.success("已重新生成并保存")
+      else toast("暂时没有可用的菜品", { icon: "ℹ️" })
     },
-    onError: () => toast.error("重新生成失败"),
+    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "重新生成未保存，请重试")),
   })
 
   const swapMut = useMutation({
+    mutationKey: ["week-plan-edit", "swap"],
     mutationFn: (v: { date: string; meal_type: MealKey; dish_id: number }) => weekPlanApi.swap(v),
-    onSuccess: ({ plan, dish }) => {
+    onMutate: () => qc.cancelQueries({ queryKey: ["week-plan"] }),
+    onSuccess: async ({ plan, dish }) => {
+      await qc.cancelQueries({ queryKey: ["week-plan"] })
       qc.setQueryData(["week-plan"], plan)
       toast.success(`换成了「${dish.name}」`)
     },
     onError: (err: unknown) => {
       // 菜单在别处变过（重新生成、停用了菜……）：刷新成最新的再换
-      qc.invalidateQueries({ queryKey: ["week-plan"] })
+      if (isAxiosError(err) && err.response?.status === 409) {
+        qc.invalidateQueries({ queryKey: ["week-plan"] })
+      }
       toast.error(getUploadErrorMessage(err, "换菜失败，稍后再试"))
     },
   })
+  function startWeekPlanEdit(action: () => void) {
+    if (qc.isMutating({ mutationKey: ["week-plan-edit"] }) > 0) return
+    action()
+  }
   const swappingKey = swapMut.isPending && swapMut.variables ? `${swapMut.variables.meal_type}-${swapMut.variables.dish_id}` : null
 
   const recordMut = useMutation({
@@ -320,14 +338,15 @@ export default function More() {
 
   const checkMut = useMutation({
     mutationKey: ["shopping-edit", "check"],
-    mutationFn: (data: { item_name: string; meal_date: string; checked: boolean }) =>
+    mutationFn: (data: { item_name: string; meal_date: string; checked: boolean; demand_version: string }) =>
       shoppingListApi.toggle(data),
+    retry: false,
     onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["achievements"] })
     },
-    onError: () => {
-      toast.error("勾选未保存，请重试")
+    onError: (err: unknown) => {
+      toast.error(getUploadErrorMessage(err, "勾选未保存，请重试"))
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
   })
@@ -376,6 +395,7 @@ export default function More() {
   }
 
   function handleConfirmRecord(day: WeekDayPlan) {
+    if (qc.isMutating({ mutationKey: ["week-plan-edit"] }) > 0) return
     const data: Partial<MealRecord>[] = []
     day.lunch.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "lunch", meal_date: day.date, status: "planned" }))
     day.dinner.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "dinner", meal_date: day.date, status: "planned" }))
@@ -402,7 +422,7 @@ export default function More() {
   const renderShoppingRow = (item: ShoppingItem) => (
     <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock && !needsShopping(item) ? "opacity-70" : ""}`}>
       <button
-        onClick={() => startShoppingEdit(item.name, () => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked }))}
+        onClick={() => startShoppingEdit(item.name, () => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked, demand_version: item.demand_version }))}
         disabled={(item.in_stock && !needsShopping(item)) || pendingShopping.has(item.name)}
         aria-label={`${item.checked ? "取消已买" : "标记已买"}${item.name}`}
         aria-pressed={item.checked}
@@ -621,13 +641,27 @@ export default function More() {
             {days.length > 0 && <div className="text-xs text-text3 mt-0.5">点开某一天，可以只换其中一道</div>}
           </div>
           <button
-            onClick={() => regenerateMut.mutate()}
-            disabled={regenerateMut.isPending}
-            className={`text-sm font-semibold text-text2 hover:text-primary hover:bg-primary-light px-3 py-1.5 rounded-full transition-all ${regenerateMut.isPending ? "opacity-50 pointer-events-none" : ""}`}
+            onClick={() => startWeekPlanEdit(() => regenerateMut.mutate())}
+            disabled={weekPlanEdits > 0}
+            className={`text-sm font-semibold text-text2 hover:text-primary hover:bg-primary-light px-3 py-1.5 rounded-full transition-all ${weekPlanEdits > 0 ? "opacity-50 pointer-events-none" : ""}`}
           >
             {regenerateMut.isPending ? "生成中..." : "🔄 重新生成"}
           </button>
         </div>
+        {weekPlanLoading && (
+          <div role="status" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center text-sm text-text3 mb-2`}>
+            正在读取一周菜单…
+          </div>
+        )}
+        {weekPlanError && (
+          <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center mb-2`}>
+            <div className="text-sm font-semibold">{weekPlan ? "周菜单暂时无法更新" : "周菜单加载失败"}</div>
+            <div className="text-xs text-text2 mt-1">{weekPlan ? "下方保留上次读取的菜单，可以重试更新。" : "请检查网络后重试。"}</div>
+            <button type="button" onClick={() => { void reloadWeekPlan() }} disabled={weekPlanFetching || weekPlanEdits > 0} className="text-sm font-bold text-primary mt-3 disabled:opacity-50">
+              {weekPlanFetching ? "正在重试…" : "重新加载菜单"}
+            </button>
+          </div>
+        )}
         {weekPlan && days.length === 0 && (
           <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center text-sm text-text3 mb-2`}>
             暂时排不出一周菜单：没有可用的菜品，或全部被「严格过滤」忌口排除了
@@ -728,8 +762,9 @@ export default function More() {
           dateLabel={sheetDay.date === todayStr ? "今天" : sheetDay.date === tomorrowStr ? "明天" : sheetDay.day_name}
           canRecord={sheetDay.date === todayStr || sheetDay.date === tomorrowStr}
           swappingKey={swappingKey}
+          editing={weekPlanEdits > 0}
           recording={recordMut.isPending}
-          onSwap={(meal, dishId) => swapMut.mutate({ date: sheetDay.date, meal_type: meal, dish_id: dishId })}
+          onSwap={(meal, dishId) => startWeekPlanEdit(() => swapMut.mutate({ date: sheetDay.date, meal_type: meal, dish_id: dishId }))}
           onConfirm={() => handleConfirmRecord(sheetDay)}
           onClose={() => setSheetDate(null)}
         />

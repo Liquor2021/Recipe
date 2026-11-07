@@ -82,7 +82,7 @@ export function readTomorrowDraft(
   date: string,
   baseline: string,
   storage: DraftStorage | null = sessionStorageOrNull(),
-): { kind: "missing" | "expired" | "conflict" } | { kind: "restored"; draft: TomorrowDraftState } {
+): { kind: "missing" | "expired" } | { kind: "restored" | "conflict"; draft: TomorrowDraftState } {
   try {
     const raw = storage?.getItem(storageKey)
     if (!raw) return { kind: "missing" }
@@ -99,12 +99,10 @@ export function readTomorrowDraft(
       clearTomorrowDraft(storage)
       return { kind: "expired" }
     }
-    if (value.baseline !== baseline) {
-      clearTomorrowDraft(storage)
-      return { kind: "conflict" }
-    }
     return {
-      kind: "restored",
+      // Keep the target draft when another device changes the baseline. The
+      // editor must ask the user to reconcile it instead of discarding their work.
+      kind: value.baseline === baseline ? "restored" : "conflict",
       draft: {
         lunch: value.lunch.map(dish => restoreDish(dish, "lunch")),
         dinner: value.dinner.map(dish => restoreDish(dish, "dinner")),

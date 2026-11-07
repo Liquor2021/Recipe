@@ -13,7 +13,11 @@ import (
 )
 
 func GetWeekPlan(c *gin.Context) {
-	plan := services.GetCachedWeekPlan()
+	plan, err := services.GetCachedWeekPlan()
+	if err != nil {
+		utils.InternalError(c, "读取周菜单失败")
+		return
+	}
 	if plan != nil && len(plan.Days) > 0 {
 		services.RecordUniqueAchievementEvent("week_plan", plan.Days[0].Date)
 	}
@@ -21,8 +25,14 @@ func GetWeekPlan(c *gin.Context) {
 }
 
 func RegenerateWeekPlanHandler(c *gin.Context) {
-	plan := services.RegenerateWeekPlan()
-	services.RecordAchievementEvent("week_plan", "")
+	plan, err := services.RegenerateWeekPlan()
+	if err != nil {
+		utils.InternalError(c, "重新生成失败，周菜单未保存")
+		return
+	}
+	if plan != nil && len(plan.Days) > 0 {
+		services.RecordAchievementEvent("week_plan", "")
+	}
 	utils.Success(c, plan)
 }
 
@@ -66,9 +76,10 @@ func GetShoppingList(c *gin.Context) {
 }
 
 type ToggleShoppingCheckRequest struct {
-	ItemName string `json:"item_name" binding:"required"`
-	MealDate string `json:"meal_date" binding:"required"`
-	Checked  bool   `json:"checked"`
+	ItemName      string `json:"item_name" binding:"required"`
+	MealDate      string `json:"meal_date" binding:"required"`
+	Checked       bool   `json:"checked"`
+	DemandVersion string `json:"demand_version"`
 }
 
 func ToggleShoppingCheckHandler(c *gin.Context) {
@@ -77,7 +88,11 @@ func ToggleShoppingCheckHandler(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	if err := services.ToggleShoppingCheck(req.ItemName, req.Checked); err != nil {
+	if err := services.ToggleShoppingCheck(req.ItemName, req.Checked, req.DemandVersion); err != nil {
+		if errors.Is(err, services.ErrShoppingDemandChanged) {
+			utils.Conflict(c, "买菜清单已变化，请刷新后确认采购数量")
+			return
+		}
 		utils.InternalError(c, "更新失败")
 		return
 	}

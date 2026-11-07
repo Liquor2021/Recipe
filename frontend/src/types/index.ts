@@ -149,6 +149,7 @@ export interface ShoppingCategory {
 export interface ShoppingItem {
   name: string
   amount: string
+  demand_version: string // 勾选时核对读取到的采购需求，防止旧页面误标后来新增的量
   checked: boolean
   in_stock: boolean
   stock_batches: number // 冰箱里未过期的批次数；取消"家中有"会一并移出
