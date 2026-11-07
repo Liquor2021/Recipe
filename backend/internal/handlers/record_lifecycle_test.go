@@ -110,7 +110,7 @@ func TestCancelRestorePlanAndRollback(t *testing.T) {
 	req := CreateRecordRequest{DishID: dish.ID, DishName: dish.Name, MealType: "dinner", MealDate: services.TodayDate(), PortionScale: &scale}
 	r := testCreateMeal(t, req)
 	params := []gin.Param{{Key: "id", Value: fmt.Sprint(r.ID)}}
-	if err := db.Exec("CREATE TRIGGER block_shopping_delete BEFORE DELETE ON shopping_checks BEGIN SELECT RAISE(ABORT, 'blocked'); END").Error; err != nil {
+	if err := db.Exec("CREATE TRIGGER block_shopping_delete BEFORE UPDATE OF deleted_at ON shopping_checks BEGIN SELECT RAISE(ABORT, 'blocked'); END").Error; err != nil {
 		t.Fatal(err)
 	}
 	w := serveJSON(t, UpdateRecord, "PUT", "/api/records/1", map[string]any{"status": "cancelled"}, params...)

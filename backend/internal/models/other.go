@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type Favorite struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
@@ -93,6 +97,8 @@ type ShoppingCheck struct {
 	Stocked   bool      `json:"stocked" gorm:"default:false"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// 取消计划仅隐藏需求，恢复时沿用原购物状态和用量快照。
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // InventoryBatch 冰箱里的一个食材批次：同一种食材可以有多批

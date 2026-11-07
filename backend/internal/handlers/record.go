@@ -59,25 +59,26 @@ func addShoppingItems(db *gorm.DB, dishID uint, dishName string, mealType string
 }
 
 func removeShoppingItems(db *gorm.DB, dishID uint, mealType string, mealDate string) error {
-	return db.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
+	return db.Unscoped().Where("dish_id = ? AND meal_type = ? AND meal_date = ?", dishID, mealType, mealDate).
 		Delete(&models.ShoppingCheck{}).Error
 }
 
 type MealRecordResponse struct {
-	ID           uint      `json:"id"`
-	DishID       uint      `json:"dish_id"`
-	DishName     string    `json:"dish_name"`
-	DishImageURL string    `json:"dish_image_url"`
-	DishEmoji    string    `json:"dish_emoji"`
-	MealType     string    `json:"meal_type"`
-	MealDate     string    `json:"meal_date"`
-	Status       string    `json:"status"`
-	PortionScale float64   `json:"portion_scale"`
-	Rating       int       `json:"rating"`
-	Remark       string    `json:"remark"`
-	Mood         string    `json:"mood"`
-	Photo        string    `json:"photo"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               uint      `json:"id"`
+	DishID           uint      `json:"dish_id"`
+	DishName         string    `json:"dish_name"`
+	DishImageURL     string    `json:"dish_image_url"`
+	DishEmoji        string    `json:"dish_emoji"`
+	MealType         string    `json:"meal_type"`
+	MealDate         string    `json:"meal_date"`
+	Status           string    `json:"status"`
+	PortionScale     float64   `json:"portion_scale"`
+	InventoryApplied bool      `json:"inventory_applied"`
+	Rating           int       `json:"rating"`
+	Remark           string    `json:"remark"`
+	Mood             string    `json:"mood"`
+	Photo            string    `json:"photo"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 var categoryEmojis = map[string]string{
@@ -184,18 +185,19 @@ func GetRecords(c *gin.Context) {
 	responses := make([]MealRecordResponse, len(records))
 	for i, r := range records {
 		responses[i] = MealRecordResponse{
-			ID:           r.ID,
-			DishID:       r.DishID,
-			DishName:     r.DishName,
-			MealType:     r.MealType,
-			MealDate:     r.MealDate,
-			Status:       r.Status,
-			PortionScale: r.PortionScale,
-			Rating:       r.Rating,
-			Remark:       r.Remark,
-			Mood:         r.Mood,
-			Photo:        r.Photo,
-			CreatedAt:    r.CreatedAt,
+			ID:               r.ID,
+			DishID:           r.DishID,
+			DishName:         r.DishName,
+			MealType:         r.MealType,
+			MealDate:         r.MealDate,
+			Status:           r.Status,
+			PortionScale:     r.PortionScale,
+			InventoryApplied: r.InventoryApplied,
+			Rating:           r.Rating,
+			Remark:           r.Remark,
+			Mood:             r.Mood,
+			Photo:            r.Photo,
+			CreatedAt:        r.CreatedAt,
 		}
 		if dish, ok := dishInfoMap[r.DishID]; ok {
 			responses[i].DishImageURL = getEffectiveDishImageURL(dish)
@@ -255,33 +257,39 @@ func validateCreateRecord(req *CreateRecordRequest) error {
 	return nil
 }
 
-// syncRecordShopping 取消/恢复和份量修改与记录写入共用一个事务。
-// 修改份量只调整已有行用量，保留已买、已入库的标记。
+// syncRecordShopping 与记录写入共用一个事务，取消只隐藏需求。
+// 恢复、改期和调整份量沿用已有行，保留已买/已入库标记及原量快照。
 func syncRecordShopping(tx *gorm.DB, before, after models.MealRecord) error {
-	if after.Status == models.MealCancelled {
-		return removeShoppingItems(tx, after.DishID, after.MealType, after.MealDate)
-	}
-	if before.Status == models.MealCancelled {
-		return addShoppingItems(tx, after.DishID, after.DishName, after.MealType, after.MealDate, after.PortionScale)
-	}
-	if before.PortionScale == after.PortionScale {
+	if before.Status == after.Status && before.PortionScale == after.PortionScale && before.MealDate == after.MealDate && before.MealType == after.MealType {
 		return nil
 	}
 	var items []models.ShoppingCheck
-	if err := tx.Where("dish_id = ? AND meal_type = ? AND meal_date = ?", after.DishID, after.MealType, after.MealDate).Find(&items).Error; err != nil {
+	if err := tx.Unscoped().Where("dish_id = ? AND meal_type = ? AND meal_date = ?", before.DishID, before.MealType, before.MealDate).Find(&items).Error; err != nil {
 		return err
+	}
+	// 兼容升级前已取消、购物行已被物理删除的计划，以及直接创建的取消记录。
+	if len(items) == 0 && before.Status == models.MealCancelled && after.Status != models.MealCancelled {
+		return addShoppingItems(tx, after.DishID, after.DishName, after.MealType, after.MealDate, after.PortionScale)
 	}
 	oldScale := before.PortionScale
 	if oldScale <= 0 {
 		oldScale = 1
 	}
+	var deletedAt any
+	if after.Status == models.MealCancelled {
+		deletedAt = time.Now()
+	}
 	for _, item := range items {
-		base := item.BaseAmount
-		if base == "" {
-			base = services.ScaleIngredientAmount(item.ItemAmount, 1/oldScale)
+		updates := map[string]any{"meal_date": after.MealDate, "meal_type": after.MealType, "deleted_at": deletedAt}
+		if before.PortionScale != after.PortionScale {
+			base := item.BaseAmount
+			if base == "" {
+				base = services.ScaleIngredientAmount(item.ItemAmount, 1/oldScale)
+			}
+			updates["item_amount"] = services.ScaleIngredientAmount(base, after.PortionScale)
+			updates["base_amount"] = base
 		}
-		amount := services.ScaleIngredientAmount(base, after.PortionScale)
-		if err := tx.Model(&item).Updates(map[string]any{"item_amount": amount, "base_amount": base}).Error; err != nil {
+		if err := tx.Unscoped().Model(&item).Updates(updates).Error; err != nil {
 			return err
 		}
 	}
@@ -437,6 +445,8 @@ type UpdateRecordRequest struct {
 	Photo        *string  `json:"photo"`
 	Status       *string  `json:"status"`
 	PortionScale *float64 `json:"portion_scale"`
+	MealDate     *string  `json:"meal_date"`
+	MealType     *string  `json:"meal_type"`
 }
 
 // validRating 评分 1-5 星，0 表示未评分（报告平均分、评分趋势只统计 > 0 的记录）
@@ -464,6 +474,12 @@ func applyRecordUpdate(record *models.MealRecord, req UpdateRecordRequest) {
 	if req.PortionScale != nil {
 		record.PortionScale = *req.PortionScale
 	}
+	if req.MealDate != nil {
+		record.MealDate = *req.MealDate
+	}
+	if req.MealType != nil {
+		record.MealType = *req.MealType
+	}
 }
 
 func UpdateRecord(c *gin.Context) {
@@ -487,6 +503,16 @@ func UpdateRecord(c *gin.Context) {
 		utils.BadRequest(c, "份量应为原量的 0.5–8 倍")
 		return
 	}
+	if req.MealDate != nil {
+		if date, err := time.Parse("2006-01-02", *req.MealDate); err != nil || date.Format("2006-01-02") != *req.MealDate {
+			utils.BadRequest(c, "日期格式应为 YYYY-MM-DD")
+			return
+		}
+	}
+	if req.MealType != nil && *req.MealType != "lunch" && *req.MealType != "dinner" {
+		utils.BadRequest(c, "请选择有效的餐次")
+		return
+	}
 	var transitionError string
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&record, id).Error; err != nil {
@@ -494,8 +520,15 @@ func UpdateRecord(c *gin.Context) {
 		}
 		before := record
 		applyRecordUpdate(&record, req)
+		rescheduled := before.MealDate != record.MealDate || before.MealType != record.MealType
 		if before.Status == models.MealCompleted && record.Status != models.MealCompleted {
-			transitionError = "已吃的记录不能改回计划，请在记录页删除误记"
+			transitionError = "请使用撤销已吃，将误记恢复为计划"
+		} else if rescheduled && (before.Status != models.MealPlanned || record.Status != models.MealPlanned) {
+			transitionError = "只有待完成的计划可以改期或更换餐次"
+		} else if rescheduled && record.MealDate < services.TodayDate() {
+			transitionError = "请将计划改到今天或未来日期"
+		} else if before.InventoryApplied && before.PortionScale != record.PortionScale {
+			transitionError = "请先撤销库存扣减，再调整份量"
 		} else if record.Status == models.MealCompleted && record.MealDate > services.TodayDate() {
 			transitionError = "未来的用餐计划不能标记为已吃"
 		} else if record.Status != models.MealCompleted && ((req.Rating != nil && *req.Rating != 0) || (req.Mood != nil && *req.Mood != "") || (req.Photo != nil && *req.Photo != "")) {
@@ -503,6 +536,16 @@ func UpdateRecord(c *gin.Context) {
 		}
 		if transitionError != "" {
 			return errors.New(transitionError)
+		}
+		if rescheduled {
+			var existing int64
+			if err := tx.Model(&models.MealRecord{}).Where("id <> ? AND dish_id = ? AND meal_date = ? AND meal_type = ?", record.ID, record.DishID, record.MealDate, record.MealType).Count(&existing).Error; err != nil {
+				return err
+			}
+			if existing > 0 {
+				transitionError = "这道菜已在目标日期的该餐次中，请先处理已有记录"
+				return errors.New(transitionError)
+			}
 		}
 		if err := tx.Save(&record).Error; err != nil {
 			return err
@@ -526,18 +569,27 @@ func UpdateRecord(c *gin.Context) {
 func DeleteRecord(c *gin.Context) {
 	id := c.Param("id")
 	var record models.MealRecord
-	if err := database.DB.First(&record, id).Error; err != nil {
-		utils.NotFound(c, "记录不存在")
-		return
-	}
+	errInventoryApplied := errors.New("请先撤销这顿的库存扣减，再删除记录")
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&record, id).Error; err != nil {
+			return err
+		}
+		if record.InventoryApplied {
+			return errInventoryApplied
+		}
 		if err := tx.Delete(&record).Error; err != nil {
 			return err
 		}
 		return removeShoppingItems(tx, record.DishID, record.MealType, record.MealDate)
 	})
 	if err != nil {
-		utils.InternalError(c, "删除记录失败")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.NotFound(c, "记录不存在")
+		} else if errors.Is(err, errInventoryApplied) {
+			utils.BadRequest(c, err.Error())
+		} else {
+			utils.InternalError(c, "删除记录失败")
+		}
 		return
 	}
 

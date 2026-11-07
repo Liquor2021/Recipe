@@ -40,6 +40,7 @@ func Init() error {
 	if err := DB.AutoMigrate(
 		&models.Dish{},
 		&models.MealRecord{},
+		&models.RecordConsumption{},
 		&models.Favorite{},
 		&models.Quote{},
 		&models.Achievement{},

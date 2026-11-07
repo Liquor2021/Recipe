@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { recordsApi, statsApi, dayRatingApi, dishesApi, uploadApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import type { MealRecord, DayRating, Dish } from "@/types"
@@ -12,6 +12,8 @@ import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import PhotoViewer from "@/components/PhotoViewer"
 import SwipeDeleteRow from "@/components/SwipeDeleteRow"
 import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
+import InventoryHistorySheet from "@/components/InventoryHistorySheet"
+import ReschedulePlanSheet from "@/components/ReschedulePlanSheet"
 import { cardShadow } from "@/components/Card"
 import toast from "react-hot-toast"
 import { CalendarDays, Star } from "lucide-react"
@@ -39,12 +41,15 @@ const todayStr = () => `${new Date().getFullYear()}-${String(new Date().getMonth
 
 const statusLabels = { planned: "计划", completed: "已吃", cancelled: "已取消" }
 
-function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRating }: {
+function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRating, onReschedule, onInventory, onUndo }: {
   record: MealRecord
   showDate?: boolean
   pending: boolean
   onStatus: (record: MealRecord, status: MealRecord["status"]) => void
   onRating: (record: MealRecord) => void
+  onReschedule: (record: MealRecord) => void
+  onInventory: (record: MealRecord) => void
+  onUndo: (record: MealRecord) => void
 }) {
   const navigate = useNavigate()
   const completed = record.status === "completed"
@@ -64,6 +69,7 @@ function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRatin
             <span className="block text-[11px] text-text2">
               {showDate ? `${record.meal_date} · ` : ""}{record.meal_type === "lunch" ? "午餐" : "晚餐"} · 原量 × {record.portion_scale || 1}
             </span>
+            {record.status === "planned" && record.meal_date < todayStr() && <span className="block mt-1 text-[11px] text-primary">已过计划日期，仍待完成</span>}
             {completed && record.remark && <span className="block mt-1 text-[11px] text-text2 truncate">{record.remark}</span>}
           </span>
         </button>
@@ -88,6 +94,7 @@ function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRatin
           ) : (
             <>
               <button disabled={pending} onClick={() => onStatus(record, "cancelled")} className="min-h-11 px-3 rounded-xl text-text3 text-xs font-medium disabled:opacity-50 active:bg-bg">取消计划</button>
+              <button disabled={pending} onClick={() => onReschedule(record)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">改期</button>
               {canComplete && (
                 <>
                   <button disabled={pending} onClick={() => navigate(`/dishes/${record.dish_id}/cook?record_id=${record.id}`)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">开始做菜</button>
@@ -96,6 +103,12 @@ function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRatin
               )}
             </>
           )}
+        </div>
+      )}
+      {completed && (
+        <div className="mt-2 flex flex-wrap justify-end gap-2">
+          <button disabled={pending} onClick={() => onUndo(record)} className="min-h-11 px-3 rounded-xl text-text3 text-xs font-medium disabled:opacity-50 active:bg-bg">撤销已吃</button>
+          <button disabled={pending} onClick={() => onInventory(record)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">{record.inventory_applied ? "库存记录" : "补扣库存"}</button>
         </div>
       )}
     </div>
@@ -118,6 +131,65 @@ function SwipeRowCard({ children, onDelete }: { children: React.ReactNode; onDel
   )
 }
 
+function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
+  record: MealRecord
+  pending: boolean
+  error?: string
+  onClose: () => void
+  onConfirm: (entryId: number | null) => void
+}) {
+  const history = useQuery({
+    queryKey: ["record-consumption", record.id],
+    queryFn: () => recordsApi.consumption(record.id),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  })
+  const activeEntry = history.data?.entries.find((entry) => entry.status === "applied")
+  const fetched = history.isFetchedAfterMount && history.isSuccess && !history.isFetching
+  const consistent = history.data?.applied === !!activeEntry
+  const canConfirm = fetched && consistent && !pending
+
+  return createPortal(
+    <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => !pending && onClose()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="undo-completion-title" className="bg-card w-full max-w-[640px] rounded-t-2xl p-5 max-h-[90dvh] overflow-y-auto animate-slide-in-up" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !pending) onClose() }}>
+        <h2 id="undo-completion-title" className="text-base font-bold">撤销「{record.dish_name}」已吃记录？</h2>
+        <p className="mt-3 text-sm text-text2 leading-relaxed">这道菜会恢复为待完成计划，本条记录的评分、心情和成品照会清空。</p>
+        {history.isError ? (
+          <div className="mt-3">
+            <p role="alert" className="text-sm text-red">读取最新库存记录失败，请重试后再确认。</p>
+            <button disabled={history.isFetching || pending} onClick={() => void history.refetch()} className="min-h-11 px-3 rounded-xl text-sm text-primary disabled:opacity-50">重新读取库存记录</button>
+          </div>
+        ) : !fetched ? (
+          <p role="status" className="mt-3 text-sm text-text3">正在确认这顿的最新库存扣减…</p>
+        ) : !consistent ? (
+          <div className="mt-3">
+            <p role="alert" className="text-sm text-red">库存记录暂不一致，请刷新后再确认。</p>
+            <button disabled={pending} onClick={() => void history.refetch()} className="min-h-11 px-3 rounded-xl text-sm text-primary disabled:opacity-50">重新读取库存记录</button>
+          </div>
+        ) : activeEntry ? (
+          <div className="mt-3 rounded-xl bg-bg p-3">
+            <p className="text-sm text-text2 leading-relaxed">同时撤销以下库存扣减。如果相关批次后来有变动，将保留当前状态并提示你处理。</p>
+            <time dateTime={activeEntry.created_at} className="block mt-2 text-xs text-text3">{new Date(activeEntry.created_at).toLocaleString("zh-CN")}</time>
+            <ul className="mt-2 space-y-1 text-xs text-text2">
+              {activeEntry.items.map((item) => <li key={item.batch_id} className="flex flex-wrap justify-between gap-x-3 gap-y-1"><span>{item.item_name}</span><span>{item.removed ? "已用完" : item.after_quantity || "未记数量"} → {item.before_quantity || "恢复原批次"}</span></li>)}
+            </ul>
+          </div>
+        ) : <p className="mt-3 text-sm text-text2 leading-relaxed">当前没有需要撤销的库存扣减，只恢复这条用餐计划。</p>}
+        {error && <div className="mt-3">
+          <p role="alert" className="text-sm text-red">{error}</p>
+          <button disabled={pending || history.isFetching} onClick={() => void history.refetch()} className="min-h-11 px-3 rounded-xl text-sm text-primary disabled:opacity-50">重新读取库存记录</button>
+        </div>}
+        <div className="grid grid-cols-2 gap-3 mt-5 mb-3">
+          <button autoFocus disabled={pending} onClick={onClose} className="min-h-11 rounded-xl bg-bg text-sm font-semibold disabled:opacity-50">保留记录</button>
+          <button disabled={!canConfirm} onClick={() => { if (canConfirm) onConfirm(activeEntry?.id ?? null) }} className="min-h-11 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-50">{pending ? "正在撤销…" : "确认撤销"}</button>
+        </div>
+      </div>
+    </div>, document.body,
+  )
+}
+
 export default function History() {
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -125,6 +197,10 @@ export default function History() {
   const [calYear, setCalYear] = useState(new Date().getFullYear())
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate())
+  const [view, setView] = useState<"calendar" | "pending">("calendar")
+  const [rescheduleRecord, setRescheduleRecord] = useState<MealRecord | null>(null)
+  const [inventoryRecord, setInventoryRecord] = useState<MealRecord | null>(null)
+  const [undoRecord, setUndoRecord] = useState<MealRecord | null>(null)
   const [ratingRecord, setRatingRecord] = useState<MealRecord | null>(null)
   const [ratingMood, setRatingMood] = useState<string>("")
   // 1-5 星，0 = 未打分（报告的平均评分、菜品详情的评分趋势用它）
@@ -138,12 +214,13 @@ export default function History() {
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
   const [viewerIdx, setViewerIdx] = useState(0)
   const [showViewer, setShowViewer] = useState(false)
-  const [consumption, setConsumption] = useState<{ dish: Dish; portionScale: number } | null>(null)
+  const [consumption, setConsumption] = useState<{ dish: Dish; portionScale: number; recordId: number } | null>(null)
 
   function refreshMealQueries() {
     return Promise.all([
       ["records"], ["record"], ["stats"], ["report"], ["achievements"], ["favorites"],
       ["dish-records"], ["shopping-list"], ["photo-wall"], ["admin", "records"], ["admin", "dashboard"],
+      ["fridge"], ["fridge-recipes"], ["fridge-urgent"], ["fridge-consumption"], ["record-consumption"],
     ].map((queryKey) => qc.invalidateQueries({ queryKey })))
   }
 
@@ -152,15 +229,16 @@ export default function History() {
       recordsApi.update(record.id, { status }),
     onSuccess: async (saved, { record, status }) => {
       toast.success(status === "completed" ? "已记为吃过" : status === "cancelled" ? "已取消计划，购物清单已同步" : "已恢复计划")
-      await refreshMealQueries()
+      const refreshing = refreshMealQueries()
       if (status === "completed") {
         try {
           const dish = await qc.fetchQuery({ queryKey: ["dish", record.dish_id], queryFn: () => dishesApi.get(record.dish_id) })
-          setConsumption({ dish, portionScale: saved.portion_scale || record.portion_scale || 1 })
+          setConsumption({ dish, portionScale: saved.portion_scale || record.portion_scale || 1, recordId: saved.id })
         } catch {
-          toast.error("已记为吃过，暂时无法读取菜谱用量，请在冰箱中更新库存")
+          toast.error("已记为吃过，暂时无法读取菜谱用量，可稍后点击补扣库存")
         }
       }
+      await refreshing
     },
     onError: (err) => toast.error(getUploadErrorMessage(err, "更新计划失败，请稍后重试")),
   })
@@ -182,11 +260,67 @@ export default function History() {
       void refreshMealQueries()
       toast.success("已删除")
     },
-    onError: (_err, _id, context) => {
+    onError: (err, _id, context) => {
       if (context?.prev) qc.setQueryData(["records"], context.prev)
-      toast.error("删除失败")
+      toast.error(getUploadErrorMessage(err, "删除失败"))
     },
   })
+
+  const rescheduleMut = useMutation({
+    mutationFn: ({ record, meal_date, meal_type }: { record: MealRecord; meal_date: string; meal_type: string }) =>
+      recordsApi.update(record.id, { meal_date, meal_type }),
+    onSuccess: async () => {
+      setRescheduleRecord(null)
+      toast.success("计划已改期，份量和购物状态已保留")
+      await refreshMealQueries()
+    },
+  })
+
+  const undoMut = useMutation({
+    mutationFn: ({ record, entryId }: { record: MealRecord; entryId: number | null }) => recordsApi.undoCompletion(record.id, entryId),
+    onSuccess: async (_, { entryId }) => {
+      setUndoRecord(null)
+      toast.success(entryId !== null ? "已恢复为计划，库存扣减已撤销" : "已恢复为待完成计划")
+      await refreshMealQueries()
+    },
+  })
+
+  const supplementMut = useMutation({
+    mutationFn: async (record: MealRecord) => {
+      const [current, dish] = await Promise.all([
+        recordsApi.get(record.id),
+        qc.fetchQuery({ queryKey: ["dish", record.dish_id], queryFn: () => dishesApi.get(record.dish_id) }),
+      ])
+      if (current.status !== "completed") throw new Error("这条记录已不再是已吃状态，请刷新后重试")
+      if (current.inventory_applied) throw new Error("这顿已经扣过库存，可在库存记录中查看")
+      return { dish, portionScale: current.portion_scale || 1, recordId: current.id }
+    },
+    onSuccess: (next) => {
+      setInventoryRecord(null)
+      setConsumption(next)
+    },
+    onError: (err) => toast.error(getUploadErrorMessage(err, "读取库存用量失败，请稍后重试")),
+  })
+
+  function requestDelete(record: MealRecord) {
+    if (recordActionPending) return
+    if (record.inventory_applied) {
+      toast.error("请先在库存记录中撤销扣减，再删除这条记录")
+      setInventoryRecord(record)
+      return
+    }
+    deleteMut.mutate(record.id)
+  }
+
+  function openReschedule(record: MealRecord) {
+    rescheduleMut.reset()
+    setRescheduleRecord(record)
+  }
+
+  function openUndo(record: MealRecord) {
+    undoMut.reset()
+    setUndoRecord(record)
+  }
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<MealRecord> }) => recordsApi.update(id, data),
@@ -249,6 +383,24 @@ export default function History() {
     queryKey: ["records"],
     queryFn: () => recordsApi.list({ pageSize: "100" }),
   })
+  const pendingQuery = useInfiniteQuery({
+    queryKey: ["records", "pending"],
+    queryFn: ({ pageParam }) => recordsApi.list({ status: "planned", page: String(pageParam), pageSize: "20" }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, pages) => pages.length * 20 < lastPage.total ? pages.length + 1 : undefined,
+    enabled: view === "pending",
+  })
+  const pendingRecords = pendingQuery.data?.pages.flatMap((page) => page.items || []) || []
+  const recordActionPending = statusMut.isPending || rescheduleMut.isPending || undoMut.isPending || supplementMut.isPending || deleteMut.isPending
+
+  const rowActions = {
+    pending: recordActionPending,
+    onStatus: (record: MealRecord, status: MealRecord["status"]) => statusMut.mutate({ record, status }),
+    onRating: openRating,
+    onReschedule: openReschedule,
+    onInventory: setInventoryRecord,
+    onUndo: openUndo,
+  }
 
   const selectedDateKey = selectedDay !== null ? `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}` : ""
   const selectedIsFuture = selectedDateKey > todayStr()
@@ -494,8 +646,37 @@ export default function History() {
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto">
-        
-
+        <div className="grid grid-cols-2 gap-1 p-1 mb-4 rounded-2xl bg-bg border border-border" role="group" aria-label="记录视图">
+          <button onClick={() => setView("calendar")} aria-pressed={view === "calendar"} className={`min-h-11 rounded-xl text-sm font-semibold transition-colors ${view === "calendar" ? "bg-card text-primary shadow-sm" : "text-text2"}`}>日历记录</button>
+          <button onClick={() => setView("pending")} aria-pressed={view === "pending"} className={`min-h-11 rounded-xl text-sm font-semibold transition-colors ${view === "pending" ? "bg-card text-primary shadow-sm" : "text-text2"}`}>待完成</button>
+        </div>
+        {view === "pending" ? (
+          <div>
+            <div className="mb-4 text-[13px] text-text2">过去没做的和未来安排的计划都在这里，可直接改期或取消。</div>
+            {pendingQuery.isPending ? (
+              <div className="py-8 text-center text-sm text-text3" role="status">正在读取待完成计划…</div>
+            ) : pendingQuery.isError && !pendingQuery.data ? (
+              <button onClick={() => void pendingQuery.refetch()} className="w-full min-h-11 px-4 py-3 text-sm text-primary">计划读取失败，点此重试</button>
+            ) : pendingRecords.length === 0 ? (
+              <div className="py-12 text-center bg-card rounded-2xl border border-border">
+                <span className="block text-4xl mb-3">🍽</span>
+                <div className="text-base font-semibold">没有待完成的计划</div>
+                <div className="mt-1 text-[13px] text-text2">安排好想吃的菜后，会显示在这里。</div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                <div className="text-xs text-text3">共 {pendingQuery.data?.pages[0].total || pendingRecords.length} 道待完成</div>
+                {pendingRecords.map((record) => (
+                  <SwipeRowCard key={record.id} onDelete={() => requestDelete(record)}>
+                    <HistoryRecordRow record={record} showDate {...rowActions} />
+                  </SwipeRowCard>
+                ))}
+                {pendingQuery.hasNextPage && <button disabled={pendingQuery.isFetching || recordActionPending} onClick={() => { if (!pendingQuery.isFetching && !recordActionPending) void pendingQuery.fetchNextPage() }} className="min-h-11 mt-2 rounded-xl bg-card border border-border text-sm text-primary disabled:opacity-50">{pendingQuery.isFetching ? "正在读取…" : pendingQuery.isFetchNextPageError ? "读取失败，重试" : "加载更多计划"}</button>}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
         <div className={`bg-card rounded-2xl p-3.5 mb-5 ${cardShadow} border border-border`}>
           <div className="flex items-center justify-between mb-2.5">
             <div className="text-base font-bold">{calYear} 年 {calMonth + 1} 月</div>
@@ -566,8 +747,8 @@ export default function History() {
               </div>
             ) : (
               selectedRecords.map((r) => (
-                <SwipeRowBg key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
-                  <HistoryRecordRow record={r} pending={statusMut.isPending} onStatus={(record, status) => statusMut.mutate({ record, status })} onRating={openRating} />
+                <SwipeRowBg key={r.id} onDelete={() => requestDelete(r)}>
+                  <HistoryRecordRow record={r} {...rowActions} />
                 </SwipeRowBg>
               ))
             )}
@@ -629,8 +810,8 @@ export default function History() {
         <SectionHeader title="最近记录" />
         <div className="flex flex-col gap-2.5">
           {records.slice(0, 5).map((r) => (
-            <SwipeRowCard key={r.id} onDelete={() => deleteMut.mutate(r.id)}>
-              <HistoryRecordRow record={r} showDate pending={statusMut.isPending} onStatus={(record, status) => statusMut.mutate({ record, status })} onRating={openRating} />
+            <SwipeRowCard key={r.id} onDelete={() => requestDelete(r)}>
+              <HistoryRecordRow record={r} showDate {...rowActions} />
             </SwipeRowCard>
           ))}
           {records.length === 0 && (
@@ -641,9 +822,14 @@ export default function History() {
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
-      <ConsumeInventorySheet dish={consumption?.dish || null} portionScale={consumption?.portionScale || 1} onClose={() => setConsumption(null)} />
+      <ConsumeInventorySheet dish={consumption?.dish || null} portionScale={consumption?.portionScale || 1} recordId={consumption?.recordId || 0} onClose={() => setConsumption(null)} />
+      <InventoryHistorySheet record={inventoryRecord} onClose={() => setInventoryRecord(null)} onSupplement={(record) => { if (!supplementMut.isPending) supplementMut.mutate(record) }} />
+      {rescheduleRecord && <ReschedulePlanSheet key={rescheduleRecord.id} record={rescheduleRecord} pending={rescheduleMut.isPending} error={rescheduleMut.isError ? getUploadErrorMessage(rescheduleMut.error, "改期失败，请稍后重试") : undefined} onClose={() => setRescheduleRecord(null)} onSubmit={(data) => rescheduleMut.mutate({ record: rescheduleRecord, ...data })} />}
+      {undoRecord && <UndoCompletionDialog key={undoRecord.id} record={undoRecord} pending={undoMut.isPending} error={undoMut.isError ? getUploadErrorMessage(undoMut.error, "撤销失败，请稍后重试") : undefined} onClose={() => setUndoRecord(null)} onConfirm={(entryId) => undoMut.mutate({ record: undoRecord, entryId })} />}
 
       {ratingRecord && createPortal(
         <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => setRatingRecord(null)}>

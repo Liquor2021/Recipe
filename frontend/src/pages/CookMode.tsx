@@ -86,6 +86,7 @@ function CookModeContent() {
   const [finished, setFinished] = useState(false)
   const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
   const [consumedScale, setConsumedScale] = useState(1)
+  const [consumedRecordId, setConsumedRecordId] = useState(0)
   const qc = useQueryClient()
   const recordMut = useMutation({
     mutationFn: (mealType: "lunch" | "dinner") =>
@@ -99,6 +100,7 @@ function CookModeContent() {
       }
       qc.setQueryData(["record", record.id], record)
       setConsumedScale(record.portion_scale)
+      setConsumedRecordId(record.id)
       if (dish) setConsumeDish(dish)
     },
     onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "记录失败")),
@@ -276,7 +278,7 @@ function CookModeContent() {
         </div>
       )}
       {/* 做菜模式是 z-[300] 的全屏层，扣库存弹层要盖在它上面；关掉后回到菜品详情 */}
-      <ConsumeInventorySheet dish={consumeDish} portionScale={consumedScale} onClose={() => navigate(-1)} zIndexClass="z-[320]" />
+      <ConsumeInventorySheet dish={consumeDish} recordId={consumedRecordId} portionScale={consumedScale} onClose={() => navigate(-1)} zIndexClass="z-[320]" />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { api, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
-import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, ConsumptionMatch, DietReport } from "@/types"
+import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, ConsumptionMatch, DietReport, ConsumptionExpectation, RecordConsumptionHistory } from "@/types"
 
 export const dishesApi = {
   list: (params?: Record<string, string>) =>
@@ -36,6 +36,11 @@ export const recordsApi = {
   update: (id: number, data: Partial<MealRecord>) =>
     api<MealRecord>("PUT", `/records/${id}`, data),
   delete: (id: number) => api<null>("DELETE", `/records/${id}`),
+  consumption: (id: number) => api<RecordConsumptionHistory>("GET", `/records/${id}/consumption`),
+  consume: (id: number, batchIds: number[], remaining: { batch_id: number; quantity: string }[], expected: ConsumptionExpectation[]) =>
+    api<{ removed: number; updated: number; applied: boolean }>("POST", `/records/${id}/consumption`, { batch_ids: batchIds, remaining, expected_batches: expected }),
+  undoConsumption: (id: number, entryId: number) => api<null>("POST", `/records/${id}/consumption/undo`, { entry_id: entryId }),
+  undoCompletion: (id: number, entryId: number | null) => api<MealRecord>("POST", `/records/${id}/undo-completion`, { entry_id: entryId }),
 }
 
 export const favoritesApi = {

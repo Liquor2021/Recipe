@@ -63,6 +63,7 @@ export interface MealRecord {
   meal_type: string
   meal_date: string
   status: MealRecordStatus
+  inventory_applied: boolean
   portion_scale: number // 相对菜谱原量的倍数，不代表人数
   rating: number
   remark: string
@@ -328,6 +329,7 @@ export interface ConsumptionBatch {
   batch_id: number
   stock_name: string
   quantity: string
+  updated_at: string
   expiry_date: string
   days_left: number // 999 = 未设置保质期
   kind: ConsumptionKind
@@ -344,6 +346,34 @@ export interface ConsumptionSlot {
 export interface ConsumptionMatch {
   dish_id: number
   slots: ConsumptionSlot[]
+}
+
+export interface ConsumptionExpectation {
+  batch_id: number
+  quantity: string
+  updated_at: string
+}
+
+export interface RecordConsumptionItem {
+  batch_id: number
+  item_name: string
+  before_quantity: string
+  after_quantity: string
+  removed: boolean
+}
+
+export interface RecordConsumptionEntry {
+  id: number
+  record_id: number
+  status: "applied" | "reverted"
+  created_at: string
+  reverted_at?: string | null
+  items: RecordConsumptionItem[]
+}
+
+export interface RecordConsumptionHistory {
+  applied: boolean
+  entries: RecordConsumptionEntry[]
 }
 
 export interface ReportShare {

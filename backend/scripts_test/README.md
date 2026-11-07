@@ -13,6 +13,7 @@
 | `verify_review_fixes.mjs` | 精确扣减、补料、评分、严格忌口与菜单缓存 |
 | `features3_e2e.mjs` | 单道换菜、真实库存名、荤素统计及相关修复 |
 | `meal_status_portions_e2e.mjs` | 计划完成/取消/恢复、份量、买菜数量、库存建议及统计联动 |
+| `meal_followup_e2e.mjs` | 购物状态保留、计划改期与分页、扣减日志、补扣/撤销及并发版本保护 |
 
 其余 `verify_*.mjs` 是专项诊断脚本，部分包含当时的数据或日期，不应把它们的结果直接当成通用回归结论。
 
@@ -43,7 +44,7 @@ $env:JWT_SECRET = 'ninimenu-secret-key'
 上面的默认口令仅供本机测试，备份/默认口令检查也以此为前提。第二个窗口从项目根目录执行：
 
 ```powershell
-$suites = 'fridge_e2e', 'features_e2e', 'features2_e2e', 'verify_batches', 'verify_review_fixes', 'features3_e2e', 'meal_status_portions_e2e'
+$suites = 'fridge_e2e', 'features_e2e', 'features2_e2e', 'verify_batches', 'verify_review_fixes', 'features3_e2e', 'meal_status_portions_e2e', 'meal_followup_e2e'
 foreach ($suite in $suites) {
     node "backend/scripts_test/$suite.mjs"
     if ($LASTEXITCODE -ne 0) { throw "$suite 验证失败" }
@@ -57,5 +58,9 @@ foreach ($suite in $suites) {
 - `status`：`planned` 计划、`completed` 已吃、`cancelled` 已取消。新建省略时为计划，日期过去不会自动完成；测试已吃统计时必须显式传 `completed`。
 - `portion_scale`：相对菜谱原量的倍数，默认 1，允许 0.5–8；不是人数。省略时新记录用 1，完成或恢复已有记录时沿用已保存份量。
 - 数字用量按倍数缩放；“适量”、范围、分数和组合用量保留原文。库存单位相同时才计算剩余量建议。
-- 同菜、同餐、同日只保留一条记录。完成已有计划沿用其 ID；取消会移除对应买菜项，实际库存不变。
+- 同菜、同餐、同日只保留一条记录。完成已有计划沿用其 ID；取消只软隐藏对应买菜项，恢复沿用原量快照和采购状态，实际库存不变。
+- 计划改期使用 `PUT /records/:id` 的 `meal_date` 和 `meal_type`；只有待完成计划可以改到今天或未来，目标槽位冲突时整体回滚。
+- 用餐扣减使用 `POST /records/:id/consumption`，携带 `batch_ids`、`remaining` 与每个批次的 `expected_batches`（`batch_id / quantity / updated_at`）。先通过库存候选或列表获取版本，旧页面提交不会覆盖新库存。
+- 扣减日志通过 `GET /records/:id/consumption` 读取。撤销扣减向 `/records/:id/consumption/undo` 提交 `{entry_id: 活动日志ID}`；撤销已吃向 `/records/:id/undo-completion` 提交同样字段，无活动日志时显式传 `null`。旧日志不能撤销新的扣减。
+- `inventory_applied` 仅代表此记录存在当前有效的新扣减日志。升级前的手动扣库存无法追溯，不自动补扣或还原。
 - 旧库迁移与事务回滚由 Go 测试覆盖：在 `backend` 目录运行 `go test ./...`。

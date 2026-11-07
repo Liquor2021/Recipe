@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { fridgeApi } from "@/api"
+import { fridgeApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { parsePortionScale, portionLabel } from "@/lib/portions"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import type { ConsumptionBatch, ConsumptionSlot, Dish } from "@/types"
@@ -19,12 +19,12 @@ function expiryText(daysLeft: number): string {
 // 默认只勾选每项主料里最早到期的未过期批次；同类不同部位（菜要排骨、冰箱是五花肉）
 // 只列出供参考、不默认勾选，避免扣错食材。
 // zIndexClass：在全屏层（如做菜模式 z-[300]）上打开时需要更高的层级
-export default function ConsumeInventorySheet({ dish, portionScale = 1, onClose, zIndexClass }: { dish: Dish | null; portionScale?: number; onClose: () => void; zIndexClass?: string }) {
+export default function ConsumeInventorySheet({ dish, recordId, portionScale = 1, onClose, zIndexClass }: { dish: Dish | null; recordId: number; portionScale?: number; onClose: () => void; zIndexClass?: string }) {
   const scale = parsePortionScale(portionScale)
-  const { data, isError } = useQuery({
-    queryKey: ["fridge-consumption", dish?.id, scale],
+  const { data, isError, isFetching, refetch } = useQuery({
+    queryKey: ["fridge-consumption", recordId, dish?.id, scale],
     queryFn: () => fridgeApi.consumption(dish!.id, scale),
-    enabled: !!dish,
+    enabled: !!dish && recordId > 0,
     // 候选是"做完这道菜那一刻"的快照：每次打开都重新取，打开期间不因切回页面/重连而刷新
     staleTime: 0,
     gcTime: 0,
@@ -32,19 +32,26 @@ export default function ConsumeInventorySheet({ dish, portionScale = 1, onClose,
     refetchOnReconnect: false,
   })
 
-  // 冰箱里没有这道菜能扣的批次（或读取失败）就直接结束这次提示：
-  // 否则 dish 一直挂着，之后别人往冰箱加了食材，切回页面时弹层会突然冒出来且已默认勾选
-  const settledEmpty = !!dish && (isError || (data?.dish_id === dish.id && data.slots.length === 0))
-  useEffect(() => {
-    if (settledEmpty) onClose()
-  }, [settledEmpty, onClose])
-
-  if (!dish || !data || data.dish_id !== dish.id || data.slots.length === 0) return null
+  if (!dish || recordId <= 0) return null
+  if (isError || !data || data.dish_id !== dish.id || data.slots.length === 0) {
+    return (
+      <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5" zIndexClass={zIndexClass}>
+        {({ close }) => <>
+          <div className="text-lg font-bold mb-2">更新冰箱</div>
+          <p className="text-sm text-text2 mb-4" role="status">{isError ? "暂时无法读取库存，可以重试，或稍后从记录页补扣。" : !data ? "正在读取库存…" : "冰箱里没有匹配这道菜的食材。这顿已记为吃过，之后可从记录页补扣库存。"}</p>
+          <div className="flex gap-2">
+            <button className="flex-1 min-h-11 rounded-full border border-border text-sm" onClick={close}>关闭</button>
+            {isError && <button disabled={isFetching} className="flex-1 min-h-11 rounded-full bg-primary text-white text-sm disabled:opacity-50" onClick={() => void refetch()}>重新读取</button>}
+          </div>
+        </>}
+      </AnimatedBottomSheet>
+    )
+  }
   // 菜品或份量改变时重置勾选状态及剩余数量，不能沿用上一次的扣减建议。
-  return <ConsumeSheetBody key={`${dish.id}:${scale}`} dish={dish} portionScale={scale} slots={data.slots} onClose={onClose} zIndexClass={zIndexClass} />
+  return <ConsumeSheetBody key={`${recordId}:${dish.id}:${scale}:${data.slots.map(s => s.batches.map(b => b.updated_at).join()).join()}`} dish={dish} recordId={recordId} portionScale={scale} slots={data.slots} onClose={onClose} onRefresh={() => void refetch()} refreshing={isFetching} zIndexClass={zIndexClass} />
 }
 
-function ConsumeSheetBody({ dish, portionScale, slots, onClose, zIndexClass }: { dish: Dish; portionScale: number; slots: ConsumptionSlot[]; onClose: () => void; zIndexClass?: string }) {
+function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefresh, refreshing, zIndexClass }: { dish: Dish; recordId: number; portionScale: number; slots: ConsumptionSlot[]; onClose: () => void; onRefresh: () => void; refreshing: boolean; zIndexClass?: string }) {
   const qc = useQueryClient()
   const batchById = new Map(slots.flatMap((s) => s.batches.map((b) => [b.batch_id, b] as const)))
   const [selected, setSelected] = useState<number[]>(() =>
@@ -68,17 +75,20 @@ function ConsumeSheetBody({ dish, portionScale, slots, onClose, zIndexClass }: {
 
   const consumeMut = useMutation({
     mutationFn: (p: { removeIds: number[]; remaining: { batch_id: number; quantity: string }[] }) =>
-      fridgeApi.consume(p.removeIds, p.remaining),
+      recordsApi.consume(recordId, p.removeIds, p.remaining, [...p.removeIds, ...p.remaining.map(r => r.batch_id)].map(id => ({ batch_id: id, quantity: batchById.get(id)!.quantity, updated_at: batchById.get(id)!.updated_at }))),
     onSuccess: ({ removed, updated }) => {
       qc.invalidateQueries({ queryKey: ["fridge"] })
       qc.invalidateQueries({ queryKey: ["fridge-recipes"] })
       qc.invalidateQueries({ queryKey: ["fridge-urgent"] })
       qc.invalidateQueries({ queryKey: ["shopping-list"] })
+      for (const key of ["record-consumption", "records", "record", "fridge-consumption"]) {
+        void qc.invalidateQueries({ queryKey: [key] })
+      }
       const parts = [removed > 0 ? `移出 ${removed} 批` : "", updated > 0 ? `更新 ${updated} 批剩余量` : ""].filter(Boolean)
       toast.success(parts.length > 0 ? `🧊 冰箱已${parts.join("，")}` : "这些批次已经不在冰箱里了")
       onClose()
     },
-    onError: () => toast.error("更新冰箱失败，稍后再试"),
+    onError: (err) => toast.error(getUploadErrorMessage(err, "更新冰箱失败，稍后再试")),
   })
 
   const toggle = (id: number) => {
@@ -124,7 +134,7 @@ function ConsumeSheetBody({ dish, portionScale, slots, onClose, zIndexClass }: {
         <>
           <div className="text-lg font-extrabold mb-0.5">🧊 做完{dish.name}，更新一下冰箱？</div>
           <div className="text-sm font-semibold text-primary mb-1">本次做菜 {portionLabel(portionScale)}</div>
-          <div className="text-xs text-text3 mb-4">勾选用到的批次：用完的移出冰箱，还剩的改成剩余量；默认勾同名食材里最早到期的一批</div>
+          <div className="text-xs text-text3 mb-4">勾选用到的批次：用完的移出冰箱，还剩的填写剩余量。扣减明细会保存在这顿的记录中。</div>
           <div className="flex flex-col gap-3.5 mb-4 max-h-[50vh] overflow-y-auto">
             {slots.map((slot) => (
               <div key={slot.requested_name}>
@@ -154,17 +164,21 @@ function ConsumeSheetBody({ dish, portionScale, slots, onClose, zIndexClass }: {
           {hasSimilar && (
             <div className="text-[11px] text-text3 mb-4">「相近」是同类的其他部位（如菜要排骨、冰箱里是五花肉），确实用了再勾选</div>
           )}
+          {consumeMut.isError && <div className="mb-3 text-sm text-red" role="alert">
+            {getUploadErrorMessage(consumeMut.error, "更新失败")}
+            <button type="button" disabled={refreshing} onClick={onRefresh} className="block min-h-11 text-primary underline">刷新库存后重试</button>
+          </div>}
           <div className="flex gap-2.5">
             <button
               type="button"
               onClick={close}
               className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border2 text-text2 active:scale-96 transition-all"
             >
-              留着
+              稍后再扣
             </button>
             <button
               type="button"
-              disabled={chosen.length === 0 || blankPartial || consumeMut.isPending}
+              disabled={chosen.length === 0 || blankPartial || consumeMut.isPending || refreshing}
               onClick={submit}
               className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white transition-all active:scale-96 disabled:opacity-50"
             >

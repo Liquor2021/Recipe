@@ -1041,34 +1041,53 @@ type StockInItem struct {
 	Quantity string
 }
 
-// StockInShoppingItems 把买菜清单里已买的食材放进冰箱：每样新建一批（保质期按食材字典），
-// 并把清单里对应条目（今天+明天）标记为已放入；同一事务，要么全部生效要么都不生效。
+// StockInShoppingItems 仅处理当前清单已买且未入库的食材，每样新建一批。
+// 取消后到达的旧请求和重复入库请求跳过，隐藏的需求不被标记；读写共用事务。
 func StockInShoppingItems(items []StockInItem) (int, error) {
-	batches := make([]models.InventoryBatch, 0, len(items))
-	names := make([]string, 0, len(items))
+	unique := make([]StockInItem, 0, len(items))
+	seen := make(map[string]bool, len(items))
 	for _, it := range items {
 		name := strings.TrimSpace(it.ItemName)
 		if name == "" {
 			return 0, ErrEmptyItemName
 		}
-		batches = append(batches, newInventoryBatch(name, it.Quantity, ""))
-		names = append(names, name)
+		if !seen[name] {
+			seen[name] = true
+			unique = append(unique, StockInItem{ItemName: name, Quantity: it.Quantity})
+		}
 	}
-	if len(batches) == 0 {
+	if len(unique) == 0 {
 		return 0, nil
 	}
+	added := 0
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&batches).Error; err != nil {
-			return err
+		for _, it := range unique {
+			var eligible []models.ShoppingCheck
+			if err := tx.Where("item_name = ? AND meal_date IN ? AND checked = ? AND stocked = ?", it.ItemName, ShoppingListDates(), true, false).Find(&eligible).Error; err != nil {
+				return err
+			}
+			if len(eligible) == 0 {
+				continue
+			}
+			batch := newInventoryBatch(it.ItemName, it.Quantity, "")
+			if err := tx.Create(&batch).Error; err != nil {
+				return err
+			}
+			ids := make([]uint, len(eligible))
+			for i, item := range eligible {
+				ids[i] = item.ID
+			}
+			if err := tx.Model(&models.ShoppingCheck{}).Where("id IN ?", ids).Update("stocked", true).Error; err != nil {
+				return err
+			}
+			added++
 		}
-		return tx.Model(&models.ShoppingCheck{}).
-			Where("item_name IN ? AND meal_date IN ?", names, ShoppingListDates()).
-			Update("stocked", true).Error
+		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
-	return len(batches), nil
+	return added, nil
 }
 
 // RemoveShoppingExtraItem 从买菜清单删掉某食材的补料条目（今天+明天），返回删除条数。
@@ -1078,7 +1097,7 @@ func RemoveShoppingExtraItem(itemName string) (int64, error) {
 	if itemName == "" {
 		return 0, ErrEmptyItemName
 	}
-	res := database.DB.Where("item_name = ? AND meal_type = ? AND meal_date IN ?", itemName, "extra", ShoppingListDates()).
+	res := database.DB.Unscoped().Where("item_name = ? AND meal_type = ? AND meal_date IN ?", itemName, "extra", ShoppingListDates()).
 		Delete(&models.ShoppingCheck{})
 	return res.RowsAffected, res.Error
 }

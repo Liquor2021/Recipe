@@ -254,16 +254,11 @@ func CreateInventoryBatch(itemName string, quantity string, expiryDate string) e
 
 // UpdateInventoryBatch 更新某批次的质量字段（数量/保质期）；批次不存在返回 found=false
 func UpdateInventoryBatch(id uint, quantity string, expiryDate string) (bool, error) {
-	var batch models.InventoryBatch
-	if err := database.DB.First(&batch, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	batch.Quantity = strings.TrimSpace(quantity)
-	batch.ExpiryDate = strings.TrimSpace(expiryDate)
-	return true, database.DB.Save(&batch).Error
+	// 只更新现存行；Save 在读后被另一请求删除时会回退 INSERT，复活已用完的批次。
+	res := database.DB.Model(&models.InventoryBatch{}).Where("id = ?", id).Updates(map[string]any{
+		"quantity": strings.TrimSpace(quantity), "expiry_date": strings.TrimSpace(expiryDate),
+	})
+	return res.RowsAffected > 0, res.Error
 }
 
 // RemoveInventoryBatch 移出单批食材；批次不存在返回 removed=false
@@ -390,12 +385,13 @@ const (
 
 // ConsumptionBatch 做完菜后可扣减的一个库存批次
 type ConsumptionBatch struct {
-	BatchID    uint   `json:"batch_id"`
-	StockName  string `json:"stock_name"`
-	Quantity   string `json:"quantity"`
-	ExpiryDate string `json:"expiry_date"`
-	DaysLeft   int    `json:"days_left"` // noExpiryDays 表示未设置保质期
-	Kind       string `json:"kind"`
+	BatchID    uint      `json:"batch_id"`
+	StockName  string    `json:"stock_name"`
+	Quantity   string    `json:"quantity"`
+	ExpiryDate string    `json:"expiry_date"`
+	DaysLeft   int       `json:"days_left"` // noExpiryDays 表示未设置保质期
+	UpdatedAt  time.Time `json:"updated_at"`
+	Kind       string    `json:"kind"`
 	// RemainingHint 按菜谱用量（1 份）算出的剩余量，如库存"6个"、菜谱"3个" → "3个"；
 	// 单位对不上、无法解析或会用完时为空。只是建议值，用户在弹层里可以改
 	RemainingHint string    `json:"remaining_hint"`
@@ -509,6 +505,7 @@ func matchDishConsumption(dish models.Dish, batches []models.InventoryBatch, tod
 			BatchID:    b.ID,
 			StockName:  b.ItemName,
 			Quantity:   b.Quantity,
+			UpdatedAt:  b.UpdatedAt,
 			ExpiryDate: b.ExpiryDate,
 			DaysLeft:   daysLeftFor(b.ExpiryDate, today),
 			Kind:       kind,
