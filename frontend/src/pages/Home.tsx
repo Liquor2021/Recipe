@@ -12,12 +12,14 @@ import { cardShadow } from "@/components/Card"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
+import { isCurrentMoodChoice, savedHomeMood, selectedHomeMood } from "@/lib/homeMood"
+import type { HomeMood, HomeMoodChoice } from "@/lib/homeMood"
 import { gsap, motionDuration, scrollToElement, useGSAP } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import toast from "react-hot-toast"
 import { Home as HomeIcon, Settings } from "lucide-react"
 
-const moods = [
+const moods: Array<{ key: HomeMood; emoji: string; label: string }> = [
   { key: "happy", emoji: "😊", label: "开心" },
   { key: "tired", emoji: "😫", label: "疲惫" },
   { key: "lazy", emoji: "😌", label: "想偷懒" },
@@ -42,7 +44,7 @@ function dateKey(d = new Date()) {
 export default function Home() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const todayKey = dateKey()
+  const [todayKey, setTodayKey] = useState(dateKey)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const appName = useAppInfoStore((s) => s.appName)
 
@@ -72,14 +74,18 @@ export default function Home() {
   const [pickedRec, setPickedRec] = useState<Dish | null>(null)
   const [recQuote, setRecQuote] = useState<string>("")
   const [recMeal, setRecMeal] = useState<"lunch" | "dinner" | null>(null)
-  const [selectedMood, setSelectedMood] = useState<string | null>(todayRating?.home_mood || null)
+  const [moodChoice, setMoodChoice] = useState<HomeMoodChoice | null>(null)
+  const latestMoodChoice = useRef<HomeMoodChoice | null>(null)
+  const moodRequestId = useRef(0)
+  const selectedMood = selectedHomeMood(moodChoice, todayKey, todayRating?.home_mood)
   const [blindRevealed, setBlindRevealed] = useState(false)
   const [spinning, setSpinning] = useState(false)
   const [wheelResult, setWheelResult] = useState<Dish | null>(null)
   // 临期提醒关闭状态按天持久化：当天关过就不再打扰，第二天重新出现
-  const [urgentDismissed, setUrgentDismissed] = useState(() => {
-    try { return localStorage.getItem("urgent_dismissed_date") === dateKey() } catch { return false }
+  const [urgentDismissedDate, setUrgentDismissedDate] = useState(() => {
+    try { return localStorage.getItem("urgent_dismissed_date") } catch { return null }
   })
+  const urgentDismissed = urgentDismissedDate === todayKey
   const wheelDegRef = useRef(0)
   const wheelHighlightRef = useRef(-1)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -87,6 +93,25 @@ export default function Home() {
   const blindBoxRef = useRef<HTMLDivElement>(null)
   const confettiRef = useRef<HTMLDivElement>(null)
   const recCardRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    const refreshDate = () => {
+      setTodayKey(dateKey())
+      window.clearTimeout(timer)
+      const now = new Date()
+      const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+      timer = window.setTimeout(refreshDate, midnight.getTime() - now.getTime() + 50)
+    }
+    refreshDate()
+    window.addEventListener("focus", refreshDate)
+    document.addEventListener("visibilitychange", refreshDate)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener("focus", refreshDate)
+      document.removeEventListener("visibilitychange", refreshDate)
+    }
+  }, [])
 
   const dishes = dishesData?.items || []
   const wheelDishes = useMemo(() => wheelData?.items || [], [wheelData])
@@ -104,6 +129,7 @@ export default function Home() {
     return {
       title: `冰箱里 ${parts.join("、")}${expired.length > 0 ? "，尽快处理" : ""}`,
       names: names.slice(0, 3).join("、") + (names.length > 3 ? " 等" : ""),
+      filter: expired.length > 0 ? "expired" : "soon",
     }
   }, [urgentItems, todayKey])
   const todayRecords = recordsData?.items || []
@@ -165,14 +191,44 @@ export default function Home() {
   })
 
   const homeMoodMut = useMutation({
-    mutationFn: (mood: string) => dayRatingApi.updateHomeMood({ meal_date: todayKey, home_mood: mood }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["day-rating", todayKey] })
+    // Serial writes ensure a slower earlier click cannot overwrite the last choice on the server.
+    scope: { id: "home-mood-save" },
+    mutationFn: (request: HomeMoodChoice) => dayRatingApi.updateHomeMood({ meal_date: request.date, home_mood: request.mood }),
+    onMutate: (request) => qc.cancelQueries({ queryKey: ["day-rating", request.date], exact: true }),
+    onSuccess: async (saved, request) => {
+      await qc.cancelQueries({ queryKey: ["day-rating", request.date], exact: true })
+      qc.setQueryData(["day-rating", request.date], saved)
       qc.invalidateQueries({ queryKey: ["day-ratings"] })
       qc.invalidateQueries({ queryKey: ["photo-wall"] })
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      if (!isCurrentMoodChoice(latestMoodChoice.current, request, dateKey())) return
+      latestMoodChoice.current = null
+      setMoodChoice(null)
+      const label = moods.find(mood => mood.key === request.mood)?.label || request.mood
+      toast.success(`心情：${label}，已保存`)
     },
-    onError: () => toast.error("心情保存失败"),
+    onError: async (_error, request) => {
+      // A timed-out response may still have saved. Read back before rolling the selection back.
+      let confirmedMood: HomeMood | null = null
+      try {
+        await qc.cancelQueries({ queryKey: ["day-rating", request.date], exact: true })
+        const saved = await qc.fetchQuery({
+          queryKey: ["day-rating", request.date], queryFn: () => dayRatingApi.get(request.date), staleTime: 0, retry: false,
+        })
+        confirmedMood = savedHomeMood(saved.home_mood)
+      } catch { /* Retain the last known server snapshot when the network is unavailable. */ }
+      if (!isCurrentMoodChoice(latestMoodChoice.current, request, dateKey())) return
+      latestMoodChoice.current = null
+      setMoodChoice(null)
+      if (confirmedMood === request.mood) {
+        qc.invalidateQueries({ queryKey: ["day-ratings"] })
+        qc.invalidateQueries({ queryKey: ["photo-wall"] })
+        qc.invalidateQueries({ queryKey: ["achievements"] })
+        toast.success(`心情：${moods.find(mood => mood.key === request.mood)?.label || request.mood}，已保存`)
+      } else {
+        toast.error("心情保存失败，请重试")
+      }
+    },
   })
 
   const drawWheel = useCallback(() => {
@@ -325,11 +381,14 @@ export default function Home() {
     recordForDish(currentRec, mealType)
   }
 
-  function handleMoodPick(mood: string) {
-    setSelectedMood(mood)
-    homeMoodMut.mutate(mood)
-    const label = moods.find(m => m.key === mood)?.label || mood
-    toast.success(`心情：${label}，已保存并调整推荐~`)
+  function handleMoodPick(mood: HomeMood) {
+    const date = dateKey()
+    setTodayKey(date)
+    if (latestMoodChoice.current?.date === date && latestMoodChoice.current.mood === mood) return
+    const request = { id: ++moodRequestId.current, date, mood }
+    latestMoodChoice.current = request
+    setMoodChoice(request)
+    homeMoodMut.mutate(request)
   }
 
   function handleBlindBox() {
@@ -379,14 +438,14 @@ export default function Home() {
         {/* 临期提醒：冰箱里有快过期/已过期食材时出现，点关闭后当天不再打扰 */}
         {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
           <button
-            onClick={() => navigate("/fridge")}
+            onClick={() => navigate(`/fridge?filter=${urgentSummary.filter}`)}
             className={`w-full mb-4 rounded-2xl border border-red/15 bg-red-light/60 px-4 py-3 flex items-center gap-3 text-left transition-all active:scale-98`}
           >
             <span className="text-xl flex-shrink-0">⚠️</span>
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-bold text-red">{urgentSummary.title}</div>
               <div className="text-[11px] text-text2 truncate">
-                {urgentSummary.names}，看看能做什么消耗掉
+                {urgentSummary.names}，{urgentSummary.filter === "expired" ? "先检查并处理已过期批次" : "看看能做什么消耗掉"}
               </div>
             </div>
             <span
@@ -394,7 +453,7 @@ export default function Home() {
               aria-label="关闭提醒"
               onClick={(e) => {
                 e.stopPropagation()
-                setUrgentDismissed(true)
+                setUrgentDismissedDate(todayKey)
                 try { localStorage.setItem("urgent_dismissed_date", todayKey) } catch { /* 隐私模式忽略 */ }
               }}
               className="w-6 h-6 rounded-full flex items-center justify-center text-text3 hover:bg-black/5 flex-shrink-0"
@@ -476,6 +535,7 @@ export default function Home() {
             <button
               key={m.key}
               onClick={() => handleMoodPick(m.key)}
+              aria-pressed={selectedMood === m.key}
               className={`flex-shrink-0 p-3 px-4 rounded-2xl border-2 text-center transition-all active:scale-95 min-w-[80px] ${selectedMood === m.key ? "border-primary bg-primary-light" : "border-border bg-card"}`}
             >
               <span className="text-[28px] block mb-1">{m.emoji}</span>

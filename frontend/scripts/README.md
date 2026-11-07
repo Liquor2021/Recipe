@@ -1,13 +1,20 @@
 # 前端逻辑回归
 
-`.mjs` 是由 Node.js 执行的 JavaScript 模块。这些脚本用于检查功能，不会打进网页资源，也不需要浏览器或数据库。
+`.mjs` 和 `.cjs` 都是由 Node.js 执行的 JavaScript 文件，分别使用 ES 模块和 CommonJS 模块格式。这些脚本用于检查功能，不会打进网页资源，也不需要浏览器或数据库。
 
 在 `frontend` 目录运行：
 
 ```sh
-node --test scripts/tomorrow-draft.test.mjs
+node --test scripts/*.test.*
 ```
 
-测试直接导入 TypeScript helper，使用支持原生 TypeScript 类型移除的 Node.js（本项目验证环境为 Node.js 24）。
+使用支持原生 TypeScript 类型移除的 Node.js（本项目验证环境为 Node.js 24），并先安装前端项目依赖。
 
-`tomorrow-draft.test.mjs` 覆盖明日菜单草稿的详情往返、空菜单、保存基线、取消/改期/份量变化冲突、日期失效以及存储损坏或不可用。它使用内存模拟存储，不读写真实用户数据。
+| 脚本 | 验证内容 |
+| --- | --- |
+| `tomorrow-draft.test.mjs` | 明日菜单草稿往返、空菜单、保存基线、取消/改期/份量变化、跨日与异常存储 |
+| `home-mood.test.mjs` | 心情异步恢复、快速点选、失败回退与跨日隔离 |
+| `fridge-filters.test.mjs` | 同名多批筛选、名称搜索、临期边界、无效日期与跨日更新 |
+| `auth-regression.test.cjs` | 管理员与应用认证分离、状态同步、登录失败和迟到的旧请求 |
+
+前三类直接导入 TypeScript helper；认证测试使用项目已安装的 TypeScript 编译并加载实际客户端源码，模拟网络和存储。所有测试均不读写真实用户数据。

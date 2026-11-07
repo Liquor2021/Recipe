@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { fridgeApi, shoppingListApi } from "@/api"
 import PageHeader from "@/components/PageHeader"
@@ -7,6 +7,8 @@ import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import DishImage from "@/components/DishImage"
 import { cardShadow } from "@/components/Card"
 import type { FridgeMatch, InventoryBatch } from "@/types"
+import { fridgeDaysLeft, matchesFridgeFilter, parseFridgeFilter, searchFridge, type FridgeFilter } from "@/lib/fridgeFilters"
+import { Search, X } from "lucide-react"
 import toast from "react-hot-toast"
 
 const QUICK_ITEMS = ["鸡蛋", "番茄", "土豆", "青椒", "洋葱", "豆腐", "猪肉", "鸡翅", "虾仁", "白菜", "面条", "玉米"]
@@ -17,18 +19,9 @@ function todayStr(offset = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-// daysLeft 距过期天数；null 表示未设置保质期
-function daysLeft(expiry: string): number | null {
-  if (!expiry) return null
-  const d = new Date(expiry + "T00:00:00")
-  if (Number.isNaN(d.getTime())) return null
-  const today = new Date(todayStr() + "T00:00:00")
-  return Math.round((d.getTime() - today.getTime()) / 86400000)
-}
-
 // expiryBadge 保质期徽章：level 用于逻辑判断（urgent=临期/过期），cls 只管样式
-function expiryBadge(expiry: string): { text: string; cls: string; level: "expired" | "urgent" | "soon" | "ok" } | null {
-  const left = daysLeft(expiry)
+function expiryBadge(expiry: string, today: string): { text: string; cls: string; level: "expired" | "urgent" | "soon" | "ok" } | null {
+  const left = fridgeDaysLeft(expiry, today)
   if (left === null) return null
   if (left < 0) return { text: `已过期 ${-left} 天`, cls: "bg-red-light text-red", level: "expired" }
   if (left === 0) return { text: "今天到期", cls: "bg-red-light text-red", level: "urgent" }
@@ -108,6 +101,10 @@ const EXPIRY_PRESETS = [
 
 export default function Fridge() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const search = searchParams.get("q") || ""
+  const filter = parseFridgeFilter(searchParams.get("filter"))
+  const [today, setToday] = useState(() => todayStr())
   const qc = useQueryClient()
   const [input, setInput] = useState("")
   const [quantityInput, setQuantityInput] = useState("")
@@ -118,6 +115,47 @@ export default function Fridge() {
   const [editing, setEditing] = useState<InventoryBatch | null>(null)
   const [editQuantity, setEditQuantity] = useState("")
   const [editDate, setEditDate] = useState("")
+
+  useEffect(() => {
+    const checkDate = () => setToday(todayStr())
+    const midnight = new Date()
+    midnight.setHours(24, 0, 0, 50)
+    const timer = window.setTimeout(checkDate, midnight.getTime() - Date.now())
+    window.addEventListener("focus", checkDate)
+    document.addEventListener("visibilitychange", checkDate)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener("focus", checkDate)
+      document.removeEventListener("visibilitychange", checkDate)
+    }
+  }, [today])
+
+  function updateSearch(value: string) {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      if (value) next.set("q", value)
+      else next.delete("q")
+      return next
+    }, { replace: true })
+  }
+
+  function updateFilter(value: FridgeFilter) {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      if (value === "all") next.delete("filter")
+      else next.set("filter", value)
+      return next
+    }, { replace: true })
+  }
+
+  function resetFilters() {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      next.delete("q")
+      next.delete("filter")
+      return next
+    }, { replace: true })
+  }
 
   const { data: items = [], isPending: itemsLoading, isError: itemsError, isFetching: itemsFetching, refetch: reloadItems } = useQuery({ queryKey: ["fridge"], queryFn: () => fridgeApi.list() })
   const { data: matches, isPending: matchesLoading, isError: matchesError, isFetching: matchesFetching, refetch: reloadMatches } = useQuery({
@@ -190,29 +228,30 @@ export default function Fridge() {
     onError: () => toast.error("加入失败，稍后再试"),
   })
 
-  // 按食材名分组：组 = 一种食材，组内可能多批次
+  const matchingNames = useMemo(() => searchFridge(items, search), [items, search])
+  const visibleItems = useMemo(() => matchingNames.filter((item) => matchesFridgeFilter(item, filter, today)), [matchingNames, filter, today])
+  const filterCounts = {
+    all: matchingNames.length,
+    soon: matchingNames.filter((item) => matchesFridgeFilter(item, "soon", today)).length,
+    expired: matchingNames.filter((item) => matchesFridgeFilter(item, "expired", today)).length,
+  }
+  // 先筛批次再分组：同一食材的新鲜批次不混进临期或过期结果。
   const groups = useMemo(() => {
     const m = new Map<string, InventoryBatch[]>()
-    for (const b of items) {
+    for (const b of visibleItems) {
       const arr = m.get(b.item_name) || []
       arr.push(b)
       m.set(b.item_name, arr)
     }
     return [...m.entries()]
-  }, [items])
+  }, [visibleItems])
 
   const stocked = useMemo(() => new Set(items.map((i) => i.item_name)), [items])
   const quickLeft = QUICK_ITEMS.filter((n) => !stocked.has(n))
-  const urgentCount = items.filter((i) => {
-    const left = daysLeft(i.expiry_date)
-    return left !== null && left <= 2
-  }).length
-  const expiredIds = items
-    .filter((i) => {
-      const left = daysLeft(i.expiry_date)
-      return left !== null && left < 0
-    })
-    .map((i) => i.id)
+  const soonCount = items.filter((item) => matchesFridgeFilter(item, "soon", today)).length
+  const expiredCount = items.filter((item) => matchesFridgeFilter(item, "expired", today)).length
+  const expiredIds = visibleItems.filter((item) => matchesFridgeFilter(item, "expired", today)).map((item) => item.id)
+  const hasFilters = search.trim() !== "" || filter !== "all"
 
   function handleAdd(raw: string, fromForm = false) {
     const name = raw.trim()
@@ -250,7 +289,7 @@ export default function Fridge() {
   }
 
   function clearExpired() {
-    if (batchWriteInFlight.current || !confirm(`确定把 ${expiredIds.length} 批过期食材移出冰箱吗？`)) return
+    if (batchWriteInFlight.current || expiredIds.length === 0 || !confirm(`确定把当前${hasFilters ? "筛选" : "列表"}中的 ${expiredIds.length} 批过期食材移出冰箱吗？`)) return
     batchWriteInFlight.current = true
     clearExpiredMut.mutate(expiredIds)
   }
@@ -261,7 +300,7 @@ export default function Fridge() {
         title="冰箱库存"
         subtitle="记下家里有什么，帮你清冰箱"
         onBack={() => navigate(-1)}
-        meta={urgentCount > 0 ? `${urgentCount} 批临期` : items.length > 0 ? `${items.length} 批` : undefined}
+        meta={expiredCount + soonCount > 0 ? [expiredCount > 0 ? `${expiredCount} 批过期` : "", soonCount > 0 ? `${soonCount} 批临期` : ""].filter(Boolean).join(" · ") : items.length > 0 ? `${items.length} 批` : undefined}
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
@@ -271,7 +310,7 @@ export default function Fridge() {
             value={input}
             onChange={(e) => { draftRevision.current++; setInput(e.target.value) }}
             placeholder="冰箱里有什么？如：鸡蛋、番茄…"
-            className="flex-1 h-11 rounded-2xl border-[1.5px] border-border bg-card px-4 text-sm font-medium outline-none transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.12)]"
+            className="min-w-0 flex-1 h-11 rounded-2xl border-[1.5px] border-border bg-card px-4 text-sm font-medium outline-none transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.12)]"
           />
           <button
             type="submit"
@@ -305,16 +344,44 @@ export default function Fridge() {
           </div>
         )}
 
+        {(items.length > 0 || hasFilters) && (
+          <section aria-label="筛选冰箱库存" className="mb-4">
+            <div className="relative mb-2.5">
+              <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text3" />
+              <input
+                type="search"
+                aria-label="搜索库存食材"
+                placeholder="搜索库存食材"
+                value={search}
+                onChange={(event) => updateSearch(event.target.value)}
+                className="w-full h-11 rounded-xl border border-border bg-card pl-10 pr-11 text-sm outline-none transition-all focus:border-primary [&::-webkit-search-cancel-button]:appearance-none"
+              />
+              {search && <button type="button" aria-label="清空库存搜索" onClick={() => updateSearch("")} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-text3 active:text-text"><X size={16} /></button>}
+            </div>
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label="按保质期筛选">
+              {([{ key: "all", label: "全部" }, { key: "soon", label: "临期" }, { key: "expired", label: "已过期" }] as const).map(({ key, label }) => (
+                <button key={key} type="button" onClick={() => updateFilter(key)} aria-pressed={filter === key}
+                  className={`min-h-11 rounded-xl border text-[13px] font-semibold transition-all active:scale-95 ${filter === key ? "border-primary/30 bg-primary-light text-primary" : "border-border bg-card text-text2"}`}
+                >{label} <span className="ml-1 text-xs tabular-nums">{filterCounts[key]}</span></button>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 mt-2 text-[11px] text-text2">
+              <span role="status" aria-live="polite">{groups.length} 种食材 · {visibleItems.length} 批</span>
+              <span>临期：今天至 2 天后到期</span>
+            </div>
+          </section>
+        )}
+
         {expiredIds.length > 0 && (
           <div className="flex items-center justify-between gap-3 mb-3 px-3.5 py-2.5 rounded-2xl bg-red-light text-red">
-            <span className="text-xs font-semibold">有 {expiredIds.length} 批食材已过期</span>
+            <span className="text-xs font-semibold">{hasFilters ? "当前结果" : "有"} {expiredIds.length} 批食材已过期</span>
             <button
               type="button"
               disabled={batchBusy}
               onClick={clearExpired}
               className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold bg-red text-white transition-all active:scale-95 disabled:opacity-50"
             >
-              一键清理
+              清理这 {expiredIds.length} 批
             </button>
           </div>
         )}
@@ -334,10 +401,10 @@ export default function Fridge() {
             <div className="text-sm text-text3">正在读取冰箱库存…</div>
           </div>
         ) : groups.length > 0 ? (
-          <div className="flex flex-col gap-2.5 mb-6">
+          <div aria-label="库存批次" className="flex flex-col gap-2.5 mb-6">
             {groups.map(([name, batches]) => {
               const hasUrgent = batches.some((b) => {
-                const l = daysLeft(b.expiry_date)
+                const l = fridgeDaysLeft(b.expiry_date, today)
                 return l !== null && l <= 2
               })
               return (
@@ -353,7 +420,7 @@ export default function Fridge() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {batches.map((b) => {
-                      const badge = expiryBadge(b.expiry_date)
+                      const badge = expiryBadge(b.expiry_date, today)
                       return (
                         <div
                           key={b.id}
@@ -365,9 +432,9 @@ export default function Fridge() {
                           }`}
                         >
                           {b.quantity && <span className="font-semibold">{b.quantity}</span>}
-                          {badge && (
+                          {badge ? (
                             <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${badge.cls}`}>{badge.text}</span>
-                          )}
+                          ) : <span className="text-[11px] text-text3">未设保质期</span>}
                           <button
                             type="button"
                             disabled={batchBusy}
@@ -385,6 +452,12 @@ export default function Fridge() {
                 </div>
               )
             })}
+          </div>
+        ) : !itemsError && items.length > 0 ? (
+          <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-6`}>
+            <div className="text-[15px] font-bold mb-1">{search.trim() ? "没有符合条件的库存" : filter === "soon" ? "没有临期食材" : "没有已过期食材"}</div>
+            <div className="text-xs text-text2">{search.trim() ? "换个名字试试，或清除筛选查看全部。" : "可以查看全部库存，继续安排做饭。"}</div>
+            <button type="button" onClick={resetFilters} className="mt-3 min-h-10 px-4 text-sm font-semibold text-primary">查看全部库存</button>
           </div>
         ) : !itemsError ? (
           <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-6`}>
@@ -404,6 +477,7 @@ export default function Fridge() {
               <div className="text-lg font-bold">🍳 清冰箱推荐</div>
               <span className="text-[11px] text-text3">临期批次会优先用掉</span>
             </div>
+            {hasFilters && <div className="-mt-1 mb-3 text-xs text-text2">推荐基于全部可用库存</div>}
             {matchesError && (
               <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-3`}>
                 <div className="text-sm font-bold mb-1">清冰箱推荐加载失败</div>

@@ -51,7 +51,7 @@ export default function Favorites() {
   const [sortBy, setSortBy] = useState<SortKey>("favorite")
   const [search, setSearch] = useState("")
 
-  const { data: overview, isLoading } = useQuery({
+  const { data: overview, isPending, isError, isFetching, refetch } = useQuery({
     queryKey: ["favorites", "overview"],
     queryFn: () => favoritesApi.overview(),
   })
@@ -99,9 +99,19 @@ export default function Favorites() {
       <PageHeader title="收藏" subtitle="按自己的口味重新整理菜单" icon={Heart} />
 
       <div className="mx-auto max-w-[640px] px-4 py-4">
-        {isLoading ? (
+        {isError && (
+          <div role="alert" className="mb-4 rounded-[18px] border border-border bg-card p-6 text-center shadow-[0_1px_3px_rgba(26,26,46,.04)]">
+            <div className="text-sm font-bold text-text">{overview ? "收藏暂时无法更新" : "收藏加载失败"}</div>
+            <div className="mt-1 text-xs text-text2">{overview ? "下方保留上次读取的收藏，可以重试更新。" : "请检查网络后重试，已有收藏不会丢失。"}</div>
+            <button disabled={isFetching} onClick={() => { void refetch() }} className="mt-3 min-h-11 rounded-full px-4 text-sm font-bold text-primary disabled:opacity-50">
+              {isFetching ? "正在重试…" : "重新加载"}
+            </button>
+          </div>
+        )}
+        {isPending ? (
           <FavoritesSkeleton />
-        ) : items.length === 0 || !stats ? (
+        ) : isError && !overview ? null
+        : items.length === 0 || !stats ? (
           <EmptyFavorites onBrowse={() => navigate("/dishes")} />
         ) : (
           <>
