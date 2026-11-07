@@ -11,14 +11,36 @@ interface PhotoViewerProps {
 export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewerProps) {
   const layerRef = useRef<HTMLDivElement>(null)
   const stripRef = useRef<HTMLDivElement>(null)
-  const startX = useRef(0)
+  const startX = useRef<number | null>(null)
   const animating = useRef(false)
   const idxRef = useRef(idx)
+  const targetIdxRef = useRef(idx)
 
   useEffect(() => {
     idxRef.current = idx
+    targetIdxRef.current = idx
     gsap.set(stripRef.current, { x: -idx * window.innerWidth })
   }, [idx])
+
+  useEffect(() => {
+    const strip = stripRef.current
+    function alignAfterResize() {
+      if (!strip) return
+      // 横竖屏切换会改变每页宽度；中断旧宽度下的动画和手势，再对齐目标照片。
+      startX.current = null
+      animating.current = false
+      gsap.killTweensOf(strip)
+      const target = targetIdxRef.current
+      idxRef.current = target
+      gsap.set(strip, { x: -target * window.innerWidth })
+      setIdx(target)
+    }
+    window.addEventListener("resize", alignAfterResize)
+    return () => {
+      window.removeEventListener("resize", alignAfterResize)
+      if (strip) gsap.killTweensOf(strip)
+    }
+  }, [setIdx])
 
   const { contextSafe } = useGSAP(() => {
     gsap.set(stripRef.current, { x: -idxRef.current * window.innerWidth })
@@ -40,6 +62,8 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   // eslint-disable-next-line react-hooks/refs -- 同上，contextSafe 回调在事件里执行
   const snapTo = contextSafe((newIdx: number, animate: boolean) => {
     if (!stripRef.current) return
+    startX.current = null
+    targetIdxRef.current = newIdx
     animating.current = true
     gsap.to(stripRef.current, {
       x: -newIdx * window.innerWidth,
@@ -63,23 +87,27 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   }
 
   function onTouchStart(e: React.TouchEvent) {
-    if (animating.current) return
+    if (animating.current || e.touches.length !== 1) return
     startX.current = e.touches[0].clientX
   }
 
   function onTouchMove(e: React.TouchEvent) {
-    if (animating.current) return
+    if (animating.current || startX.current === null || e.touches.length !== 1) return
     const diff = e.touches[0].clientX - startX.current
     const damping = photos.length <= 1 ? 0.2 : 1
     applyTransform(diff * damping)
   }
 
   function onTouchEnd(e: React.TouchEvent) {
-    if (animating.current) return
+    if (animating.current || startX.current === null || e.changedTouches.length === 0) return
     const diff = e.changedTouches[0].clientX - startX.current
     if (diff < -80 && photos.length > 1) snapTo((idxRef.current + 1) % photos.length, true)
     else if (diff > 80 && photos.length > 1) snapTo((idxRef.current - 1 + photos.length) % photos.length, true)
     else snapTo(idxRef.current, true)
+  }
+
+  function onTouchCancel() {
+    if (startX.current !== null) snapTo(idxRef.current, false)
   }
 
   function prev() {
@@ -104,6 +132,7 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchCancel}
         style={{ touchAction: "pan-y" }}
       >
         <div

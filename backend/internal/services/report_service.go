@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"math"
 	"ninimenu/internal/database"
 	"ninimenu/internal/ingredients"
@@ -372,7 +373,7 @@ func previousPeriod(rng string, start, today time.Time) (time.Time, time.Time) {
 }
 
 // GetDietReport 生成周/月饮食报告
-func GetDietReport(rng string) *DietReport {
+func GetDietReport(rng string) (*DietReport, error) {
 	if rng != "month" {
 		rng = "week"
 	}
@@ -391,11 +392,15 @@ func GetDietReport(rng string) *DietReport {
 	}
 	end := today
 	var records []models.MealRecord
-	database.DB.Scopes(EatenRecords).Where("meal_date >= ? AND meal_date <= ?", start.Format("2006-01-02"), end.Format("2006-01-02")).
-		Order("meal_date ASC, created_at ASC").Find(&records)
+	if err := database.DB.Scopes(EatenRecords).Where("meal_date >= ? AND meal_date <= ?", start.Format("2006-01-02"), end.Format("2006-01-02")).
+		Order("meal_date ASC, created_at ASC").Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("read report meal records: %w", err)
+	}
 
 	var dishes []models.Dish
-	database.DB.Find(&dishes)
+	if err := database.DB.Find(&dishes).Error; err != nil {
+		return nil, fmt.Errorf("read report dishes: %w", err)
+	}
 	dishByID := make(map[uint]models.Dish, len(dishes))
 	for _, d := range dishes {
 		dishByID[d.ID] = d
@@ -406,9 +411,11 @@ func GetDietReport(rng string) *DietReport {
 		FirstAt string
 	}
 	var firstRows []firstRow
-	database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).
+	if err := database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).
 		Select("dish_id, min(meal_date) as first_at").
-		Group("dish_id").Scan(&firstRows)
+		Group("dish_id").Scan(&firstRows).Error; err != nil {
+		return nil, fmt.Errorf("read report first cooked dates: %w", err)
+	}
 	firstCookedAt := make(map[uint]string, len(firstRows))
 	for _, row := range firstRows {
 		firstCookedAt[row.DishID] = row.FirstAt
@@ -416,20 +423,28 @@ func GetDietReport(rng string) *DietReport {
 
 	var prevCookDays int64
 	prevStart, prevEnd := previousPeriod(rng, start, today)
-	database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).
+	if err := database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).
 		Where("meal_date >= ? AND meal_date <= ?", prevStart.Format("2006-01-02"), prevEnd.Format("2006-01-02")).
-		Distinct("meal_date").Count(&prevCookDays)
+		Distinct("meal_date").Count(&prevCookDays).Error; err != nil {
+		return nil, fmt.Errorf("read report previous cook days: %w", err)
+	}
 
 	var dayRatings []models.DayRating
-	database.DB.Where("meal_date >= ? AND meal_date <= ? AND mood != ''",
+	if err := database.DB.Where("meal_date >= ? AND meal_date <= ? AND mood != ''",
 		start.Format("2006-01-02"), end.Format("2006-01-02")).
-		Where("meal_date IN (?)", database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).Select("meal_date")).Find(&dayRatings)
+		Where("meal_date IN (?)", database.DB.Model(&models.MealRecord{}).Scopes(EatenRecords).Select("meal_date")).Find(&dayRatings).Error; err != nil {
+		return nil, fmt.Errorf("read report day ratings: %w", err)
+	}
 	moodTokens := make([]string, 0, len(dayRatings))
 	for _, dr := range dayRatings {
 		moodTokens = append(moodTokens, dr.Mood)
 	}
 
+	categoryByName, err := getShoppingCategoryOverrideMap()
+	if err != nil {
+		return nil, fmt.Errorf("read report ingredient categories: %w", err)
+	}
 	report := buildDietReport(rng, start, end, records, dishByID, firstCookedAt, int(prevCookDays), moodTokens)
-	report.Balance = buildDietBalance(records, dishByID, getShoppingCategoryOverrideMap())
-	return report
+	report.Balance = buildDietBalance(records, dishByID, categoryByName)
+	return report, nil
 }

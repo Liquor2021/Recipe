@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"mime"
 	"ninimenu/internal/config"
@@ -70,6 +71,13 @@ func UploadImage(c *gin.Context) {
 	}
 
 	backupPath := filepath.Join(backupSubDir, baseName+ext)
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			// 包括保存中断的半文件、无法解码的输入和原图兜底失败。
+			_ = os.Remove(backupPath)
+		}
+	}()
 	if err := c.SaveUploadedFile(file, backupPath); err != nil {
 		utils.InternalError(c, "保存原始图片失败")
 		return
@@ -80,16 +88,32 @@ func UploadImage(c *gin.Context) {
 		config.C.CompressMaxDim, config.C.JpegQuality,
 	)
 	if err != nil {
+		if errors.Is(err, imgproc.ErrInvalidImage) {
+			utils.BadRequest(c, "图片内容损坏或无法读取，请重新选择 jpg/png/webp 图片")
+			return
+		}
+		if !errors.Is(err, imgproc.ErrImageProcessing) {
+			utils.InternalError(c, "图片处理失败")
+			return
+		}
+		// 只有完整解码过且仍然存在的非空原图，才允许作为压缩失败的兜底。
+		info, statErr := os.Stat(backupPath)
+		if statErr != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			utils.InternalError(c, "图片处理失败")
+			return
+		}
 		fallbackPath := filepath.Join(uploadSubDir, baseName+ext)
 		if renameErr := os.Rename(backupPath, fallbackPath); renameErr != nil {
 			utils.InternalError(c, "图片处理失败")
 			return
 		}
+		keepBackup = true // 上传和备份目录相同时，原图已在最终位置，不能再清理。
 		url := "/uploads/" + dateDir + "/" + baseName + ext
 		utils.Success(c, gin.H{"url": url, "filename": baseName + ext})
 		return
 	}
 
+	keepBackup = true
 	filename := filepath.Base(compressedPath)
 	url := "/uploads/" + dateDir + "/" + filename
 	utils.Success(c, gin.H{"url": url, "filename": filename})

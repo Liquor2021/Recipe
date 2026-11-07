@@ -2,6 +2,7 @@ package imaging
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/draw"
 	"image/jpeg"
@@ -13,20 +14,41 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+// ErrInvalidImage 表示输入无法完整解码，不能作为原图发布。
+var ErrInvalidImage = errors.New("图片内容损坏或格式不受支持")
+
+// ErrImageProcessing 只用于已成功解码的图片，调用方可在压缩失败时保留原图。
+var ErrImageProcessing = errors.New("图片处理失败")
+
 func ProcessUpload(srcPath, dstDir, baseName string, maxDim, quality int) (string, error) {
-	img, err := imgproc.Open(srcPath, imgproc.AutoOrientation(true))
+	src, err := os.Open(srcPath)
 	if err != nil {
 		return "", err
 	}
+	img, err := imgproc.Decode(src, imgproc.AutoOrientation(true))
+	// 上传与备份共用目录时 JPG 输出会覆盖源文件；写入前先释放 Windows 文件句柄。
+	closeErr := src.Close()
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidImage, err)
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
 
 	b := img.Bounds()
+	if b.Empty() {
+		return "", ErrInvalidImage
+	}
+	if maxDim <= 0 {
+		return "", fmt.Errorf("%w: 压缩尺寸必须大于零", ErrImageProcessing)
+	}
 	if b.Dx() > maxDim || b.Dy() > maxDim {
 		img = imgproc.Fit(img, maxDim, maxDim, imgproc.Lanczos)
 	}
 
 	dstPath := filepath.Join(dstDir, baseName+".jpg")
 	if err := writeJPEG(dstPath, img, quality); err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %w", ErrImageProcessing, err)
 	}
 	return dstPath, nil
 }

@@ -163,7 +163,10 @@ func TestGetDietReportCountsMealSlotsAndKeepsDishHistory(t *testing.T) {
 		}
 	}
 	for _, period := range []string{"week", "month"} {
-		report := GetDietReport(period)
+		report, err := GetDietReport(period)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if report.TotalMeals != 2 || report.LunchCount != 1 || report.DinnerCount != 1 || report.CookDays != 1 {
 			t.Fatalf("%s: 应统计今日已吃的午餐和晚餐各一顿: %+v", period, report)
 		}

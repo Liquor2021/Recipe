@@ -32,7 +32,10 @@ func TestDietReportAndAchievementsUseOnlyCompletedMeals(t *testing.T) {
 	db.Create(&models.DayRating{MealDate: today, HomeMood: "happy", Mood: "yum", Photos: `["/uploads/done.jpg"]`})
 	db.Create(&models.DayRating{MealDate: old, HomeMood: "happy", Mood: "no", Photos: `["/uploads/plan.jpg"]`})
 	db.Create(&models.DayRating{MealDate: tomorrow, HomeMood: "happy", Mood: "yum", Photos: `["/uploads/future.jpg"]`})
-	report := GetDietReport("month")
+	report, err := GetDietReport("month")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if report.TotalMeals != 1 || report.CookDays != 1 || report.NewDishRate != 100 || report.DistinctDishes != 1 {
 		t.Fatalf("计划/取消/未来记录混入了报告或首次吃统计: %+v", report)
 	}

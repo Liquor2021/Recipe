@@ -8,5 +8,10 @@ import (
 )
 
 func GetReport(c *gin.Context) {
-	utils.Success(c, services.GetDietReport(c.DefaultQuery("range", "week")))
+	report, err := services.GetDietReport(c.DefaultQuery("range", "week"))
+	if err != nil {
+		utils.InternalError(c, "读取饮食报告失败")
+		return
+	}
+	utils.Success(c, report)
 }

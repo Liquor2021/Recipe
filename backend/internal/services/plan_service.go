@@ -871,7 +871,10 @@ func BuildShoppingList(dates []string) ([]ShoppingCategory, error) {
 		return nil, err
 	}
 
-	categoryByName := getShoppingCategoryOverrideMap()
+	categoryByName, err := getShoppingCategoryOverrideMap()
+	if err != nil {
+		return nil, err
+	}
 
 	grouped := map[string][]ShoppingItem{
 		"蔬菜": {},
@@ -974,9 +977,11 @@ func classifyShoppingItem(name string, overrides map[string]string) string {
 	return "其他"
 }
 
-func getShoppingCategoryOverrideMap() map[string]string {
+func getShoppingCategoryOverrideMap() (map[string]string, error) {
 	var overrides []models.ShoppingItemCategory
-	database.DB.Order("item_name ASC").Find(&overrides)
+	if err := database.DB.Order("item_name ASC").Find(&overrides).Error; err != nil {
+		return nil, err
+	}
 
 	result := make(map[string]string, len(overrides))
 	for _, override := range overrides {
@@ -984,7 +989,7 @@ func getShoppingCategoryOverrideMap() map[string]string {
 			result[override.ItemName] = override.Category
 		}
 	}
-	return result
+	return result, nil
 }
 
 func isValidShoppingCategory(category string) bool {
