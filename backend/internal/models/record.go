@@ -18,6 +18,7 @@ type MealRecord struct {
 	MealType         string    `json:"meal_type" gorm:"not null;index;index:idx_meal_records_unique_day,priority:2;index:idx_meal_records_date_type,priority:2"`
 	MealDate         string    `json:"meal_date" gorm:"not null;index;index:idx_meal_records_unique_day,priority:3;index:idx_meal_records_date_type,priority:1"`
 	Status           string    `json:"status" gorm:"not null;default:planned;index"`
+	PlanPinned       bool      `json:"plan_pinned" gorm:"not null;default:false"`
 	InventoryApplied bool      `json:"inventory_applied" gorm:"not null;default:false"`
 	PortionScale     float64   `json:"portion_scale" gorm:"not null;default:1"`
 	Rating           int       `json:"rating" gorm:"default:0"`

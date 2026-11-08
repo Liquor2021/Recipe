@@ -151,7 +151,7 @@ async function main() {
   check("无计划时可重新添加独立补料", r.code === 0 && r.data?.added === 1, JSON.stringify(r))
   const leftover = await shoppingItem("E2E测试食材")
   check("独立补料保留用量并标记为可删除", leftover && leftover.amount === "3份" && leftover.removable === true, JSON.stringify(leftover))
-  r = await req("DELETE", `/shopping-list/items/${encodeURIComponent("E2E测试食材")}`)
+  r = await req("DELETE", `/shopping-list/items/${encodeURIComponent("E2E测试食材")}?demand_version=${encodeURIComponent(leftover?.demand_version || "")}`)
   check("删掉补料条目", r.code === 0 && r.data?.removed === 1 && !(await shoppingItem("E2E测试食材")), JSON.stringify(r))
   if (dishID) await req("DELETE", `/dishes/${dishID}`, undefined, AH)
   for (const name of new Set(((await req("GET", "/fridge")).data || []).map((b) => b.item_name))) await req("DELETE", `/fridge/${encodeURIComponent(name)}`)

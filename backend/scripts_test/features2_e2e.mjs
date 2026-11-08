@@ -43,7 +43,7 @@ async function main() {
   await req("POST", "/shopping-list/toggle", { item_name: "E2E入库食材", meal_date: dayFromNow(0), checked: true, demand_version: (await shoppingItem("E2E入库食材"))?.demand_version })
   let item = await shoppingItem("E2E入库食材")
   check("勾选已买后还没放进冰箱", item && item.checked && !item.stocked && !item.in_stock, JSON.stringify(item))
-  let r = await req("POST", "/shopping-list/stock-in", { items: [{ item_name: "E2E入库食材", quantity: "2个" }] })
+  let r = await req("POST", "/shopping-list/stock-in", { items: [{ item_name: "E2E入库食材", quantity: "2个", demand_version: item?.demand_version }] })
   check("放进冰箱 1 样", r.code === 0 && r.data?.added === 1, JSON.stringify(r))
   const batch = ((await req("GET", "/fridge")).data || []).find((b) => b.item_name === "E2E入库食材")
   check("冰箱里有这一批（数量取清单、自动设保质期）", batch && batch.quantity === "2个" && /^\d{4}-\d{2}-\d{2}$/.test(batch.expiry_date), JSON.stringify(batch))

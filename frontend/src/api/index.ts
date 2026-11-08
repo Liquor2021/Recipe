@@ -29,8 +29,8 @@ export const pickApi = {
 }
 
 export const recordsApi = {
-  plan: (date: string) => api<{ records: MealRecord[]; version: string; replayed?: boolean }>("GET", `/meal-plans/${date}`),
-  savePlan: (date: string, data: { expected_version: string; request_id: string; dishes: { dish_id: number; meal_type: string }[] }) =>
+  plan: (date: string) => apiFresh<{ records: MealRecord[]; version: string; replayed?: boolean }>("GET", `/meal-plans/${date}`),
+  savePlan: (date: string, data: { expected_version: string; request_id: string; dishes: { dish_id: number; meal_type: string; pinned?: boolean }[] }) =>
     api<{ records: MealRecord[]; version: string; replayed?: boolean }>("PUT", `/meal-plans/${date}`, data),
   get: (id: number) => api<MealRecord>("GET", `/records/${id}`),
   list: (params?: Record<string, string>) =>
@@ -109,7 +109,9 @@ export const weekPlanApi = {
 }
 
 export const shoppingListApi = {
-  get: () => api<ShoppingCategory[]>("GET", "/shopping-list"),
+  get: () => apiFresh<ShoppingCategory[]>("GET", "/shopping-list"),
+  settings: () => apiFresh<{ days: 2 | 7 }>("GET", "/shopping-list/settings"),
+  setDays: (days: 2 | 7) => api<{ days: 2 | 7 }>("PUT", "/shopping-list/settings", { days }),
   toggle: (data: import("@/lib/ledger").ShoppingPurchase) =>
     api<null>("POST", "/shopping-list/toggle", data),
   setInventory: (data: { item_name: string; in_stock: boolean; inventory_version?: string }) =>
@@ -118,10 +120,10 @@ export const shoppingListApi = {
   addItems: (p: { dish_id?: number; dish_name?: string; items: { name: string; amount?: string }[] }) =>
     api<{ added: number }>("POST", "/shopping-list/items", p),
   // 删掉补料条目（菜品联动的条目跟着用餐记录走，不受影响）
-  removeItem: (itemName: string) =>
-    api<{ removed: number }>("DELETE", `/shopping-list/items/${encodeURIComponent(itemName)}`),
+  removeItem: (itemName: string, version: string) =>
+    api<{ removed: number }>("DELETE", `/shopping-list/items/${encodeURIComponent(itemName)}?demand_version=${encodeURIComponent(version)}`),
   // 已买的放进冰箱：每样建一批，保质期按食材字典自动设置
-  stockIn: (items: { item_name: string; quantity: string }[]) =>
+  stockIn: (items: { item_name: string; quantity: string; demand_version: string }[]) =>
     api<{ added: number }>("POST", "/shopping-list/stock-in", { items }),
 }
 

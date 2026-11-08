@@ -65,7 +65,7 @@ try {
   check("可修改计划份量", r.code === 0 && r.data.portion_scale === 2.5, r)
   items = await shopping()
   check("增加份量保留旧采购400克且新增100克待买", items.find(i => i.name === numericItem)?.amount === "500克" && !items.find(i => i.name === numericItem)?.checked && items.find(i => i.name === numericItem)?.pending_amount === "100克" && items.find(i => i.name === numericItem)?.stock_in_amount === "400克", items)
-  await req("POST", "/shopping-list/stock-in", { items: [{ item_name: numericItem, quantity: "1000克" }] })
+  await req("POST", "/shopping-list/stock-in", { items: [{ item_name: numericItem, quantity: "1000克", demand_version: items.find(i => i.name === numericItem)?.demand_version }] })
   const batch = (await get("/fridge")).find(b => b.item_name === numericItem)
   if (batch) batches.push(batch.id)
   check("旧页面入库总量不能超过尚未入库的400克采购", batch?.quantity === "400克", batch)

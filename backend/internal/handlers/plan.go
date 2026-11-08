@@ -67,7 +67,12 @@ func SwapWeekPlanDishHandler(c *gin.Context) {
 }
 
 func GetShoppingList(c *gin.Context) {
-	list, err := services.BuildShoppingList(services.ShoppingListDates())
+	dates, err := services.ShoppingPlanDates(database.DB)
+	if err != nil {
+		utils.InternalError(c, "读取采购范围失败")
+		return
+	}
+	list, err := services.BuildShoppingList(dates)
 	if err != nil {
 		utils.InternalError(c, "加载买菜清单失败")
 		return
@@ -177,8 +182,12 @@ func AddShoppingItemsHandler(c *gin.Context) {
 
 // RemoveShoppingItemHandler 从买菜清单删掉补料条目（误点补料的撤销入口）
 func RemoveShoppingItemHandler(c *gin.Context) {
-	removed, err := services.RemoveShoppingExtraItem(c.Param("itemName"))
+	removed, err := services.RemoveShoppingExtraItem(c.Param("itemName"), c.Query("demand_version"))
 	if err != nil {
+		if errors.Is(err, services.ErrShoppingDemandChanged) {
+			utils.Conflict(c, "采购范围或清单已变化，请刷新后再移除")
+			return
+		}
 		if errors.Is(err, services.ErrEmptyItemName) {
 			utils.BadRequest(c, "参数无效")
 			return
@@ -191,8 +200,9 @@ func RemoveShoppingItemHandler(c *gin.Context) {
 
 type StockInRequest struct {
 	Items []struct {
-		ItemName string `json:"item_name"`
-		Quantity string `json:"quantity"`
+		ItemName      string `json:"item_name"`
+		Quantity      string `json:"quantity"`
+		DemandVersion string `json:"demand_version"`
 	} `json:"items"`
 }
 
@@ -215,10 +225,18 @@ func StockInShoppingItemsHandler(c *gin.Context) {
 			utils.BadRequest(c, "食材名称或数量无效")
 			return
 		}
-		items = append(items, services.StockInItem{ItemName: name, Quantity: qty})
+		if len(it.DemandVersion) != 64 {
+			utils.Conflict(c, "请重新读取采购清单后再入库")
+			return
+		}
+		items = append(items, services.StockInItem{ItemName: name, Quantity: qty, DemandVersion: it.DemandVersion})
 	}
 	added, err := services.StockInShoppingItems(items)
 	if err != nil {
+		if errors.Is(err, services.ErrShoppingDemandChanged) {
+			utils.Conflict(c, "采购范围或清单已变化，请刷新后再入库")
+			return
+		}
 		utils.InternalError(c, "放进冰箱失败")
 		return
 	}

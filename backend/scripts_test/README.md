@@ -70,8 +70,10 @@ foreach ($suite in $suites) {
 - 勾选或取消已买使用 `POST /shopping-list/toggle`，除原有字段外必须携带当前 `GET /shopping-list` 对应食材的 `demand_version`。数量、来源记录或采购状态已变化，以及缺少版本的旧客户端均返回 409；重新读取清单并核对后再提交，不要直接重放旧版本。本目录涉及勾选的通用回归脚本会先取当前版本。
 - 取消“家中有”使用 `POST /shopping-list/inventory`，提交 `{item_name, in_stock: false, inventory_version}`；版本与当前清单展示的可用批次数来自同一次读取，真别名共享版本。新增或移除批次、数量或保质期变化、跨日，以及未带版本的旧客户端均返回 409，原库存保持不变。重新读取并核对后才可再次提交；已过期批次不在移出范围内。标记 `in_stock: true` 沿用原有约定，无需库存版本。
 - 补料 `POST /shopping-list/items` 会按 `dish_id` 补齐未填的菜谱用量；菜谱查询故障返回 500，本次新增项全部不写入，恢复后可重试。未指定菜品或菜品不存在时仍允许手动补料，不把正常缺失误判成数据库故障。
-- 明日菜单通过 `GET /meal-plans/:date` 取得完整 `records` 和 `version`，再向 `PUT /meal-plans/:date` 提交 `{expected_version, request_id, dishes: [{dish_id, meal_type}]}`。保存只接受明天的日期；每餐最多 5 道，清空菜单显式传空数组。基线不一致返回 409，应保留草稿供用户核对。请求结果未确认时，重试同一请求应沿用原 `request_id`、版本和菜品列表。
-- 周菜单重新生成和单道替换只有落库成功才返回新菜单；数据库读取或保存失败返回 500。真正没有可用菜品仍是成功的空菜单，不应与读取失败混淆。
+- 采购范围通过 `GET /shopping-list/settings` 读取，`PUT /shopping-list/settings` 提交 `{days: 2}` 或 `{days: 7}`；范围从今天算起，默认今天加明天。切换不删除原采购或库存。展示、勾选、入库、补料移除使用同一范围，切换前的需求版本失效。
+- 入库 `POST /shopping-list/stock-in` 的每一项都必须携带当前 `demand_version`；删除补料 `DELETE /shopping-list/items/:name` 同样必须在查询参数里带 `demand_version`。缺失、范围或需求变化均返回 409，批量入库整体回滚。先重读清单、核对再提交；不能直接重放旧版本。
+- 每日菜单通过 `GET /meal-plans/:date` 取得完整 `records` 和 `version`，再向 `PUT /meal-plans/:date` 提交 `{expected_version, request_id, dishes: [{dish_id, meal_type, pinned?}]}`。可保存今天及未来日期，每餐最多 5 道，清空菜单显式传空数组。必须保留已吃记录，可继续加菜；省略 `pinned` 保留原钉住状态。基线不一致或删除已吃记录返回 409。请求结果未确认时先重读核对；原样重试应沿用原 `request_id`、版本和菜品列表。
+- 一周菜单通过 `GET /meal-plan-weeks/:date` 读取该日期所在周的真实用餐记录和每日/整周版本。`POST /meal-plan-weeks/:date/regenerate` 提交 `{expected_version, request_id}`，保留过去日期、已吃记录及钉住的菜；其余按家庭忌口与餐别重排并全周去重。已有餐次保留道数，空餐使用家庭设置。候选不足返回 400、版本过期返回 409、数据库故障返回 500，均整周回滚。旧 `/week-plan` 仍提供独立推荐缓存，不代表已保存的真实周计划。
 
 ## Go 与前端逻辑测试的范围
 
@@ -84,6 +86,8 @@ go test ./internal/services ./internal/handlers -count=1
 | Go 测试文件 | 验证范围 |
 | --- | --- |
 | `internal/handlers/meal_plan_test.go` | 明日菜单保存基线、保留和恢复记录、购物联动回滚、响应丢失后的重复请求与并发保存 |
+| `internal/handlers/meal_plan_week_test.go` | 今日已吃保护、钉住保留、整周重排与去重、幂等回执、候选不足及并发冲突整体回滚 |
+| `internal/services/shopping_scope_test.go` | 2/7 天采购边界、勾选/入库/移除范围一致、旧范围版本拒绝及读取失败 |
 | `internal/services/week_plan_failure_test.go`、`internal/handlers/week_plan_test.go` | 周菜单读写失败、保留旧缓存、恢复后重试、清空内存后从数据库读回及接口错误 |
 | `internal/services/shopping_expectation_test.go`、`internal/handlers/shopping_expectation_test.go` | 购物需求版本、旧勾选或取消勾选被拒绝、刷新版本后重试 |
 | `internal/services/inventory_expectation_test.go`、`internal/handlers/inventory_expectation_test.go` | 取消“家中有”的别名和版本核对、旧批次确认拒绝、并发删除与回滚，以及补料菜谱读取失败零写入和恢复重试 |

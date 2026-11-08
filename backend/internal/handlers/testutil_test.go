@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http/httptest"
 	"ninimenu/internal/database"
+	dbmodels "ninimenu/internal/models"
 	"path/filepath"
 	"testing"
 
@@ -24,7 +25,7 @@ func setupHandlerTestDB(t *testing.T, models ...any) *gorm.DB {
 	if err != nil {
 		t.Fatalf("打开测试数据库失败: %v", err)
 	}
-	if err := db.AutoMigrate(models...); err != nil {
+	if err := db.AutoMigrate(append(models, &dbmodels.Setting{})...); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
 	database.DB = db

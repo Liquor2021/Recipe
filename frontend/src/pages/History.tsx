@@ -12,6 +12,8 @@ import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import InventoryHistorySheet from "@/components/InventoryHistorySheet"
 import ReschedulePlanSheet from "@/components/ReschedulePlanSheet"
 import KitchenSheet from "@/components/KitchenSheet"
+import DayPlanEditor from "@/components/DayPlanEditor"
+import { planDateShortcuts } from "@/lib/planDate"
 import toast from "react-hot-toast"
 import { BarChart3, Camera, ChevronLeft, ChevronRight, Ellipsis, NotebookPen, Star, Undo2 } from "lucide-react"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
@@ -1049,7 +1051,15 @@ export default function History() {
                 </button>
               ) : null}
             </div>
-            {monthPending ? (
+            {selectedDateKey >= today ? (
+              <div className="history-plan-tools">
+                <div className="planner-shortcuts" aria-label="快捷安排日期">
+                  {planDateShortcuts(new Date()).map(shortcut => <button key={shortcut.label} onClick={() => navigate(`/history?date=${shortcut.date}`)}>{shortcut.label}</button>)}
+                </div>
+                <DayPlanEditor key={selectedDateKey} date={selectedDateKey} renderRecord={record => <HistoryRecordRow record={record} {...rowActions} />} />
+                <button type="button" className="history-plan-link" onClick={() => navigate(`/more?date=${selectedDateKey}#week`)}>去这一周看看 ›</button>
+              </div>
+            ) : monthPending ? (
               <div className="py-5 px-4 text-center text-[13px] text-text3">正在读取记录…</div>
             ) : monthError ? (
               <button onClick={() => void refetchMonth()} className="w-full min-h-11 px-4 py-3 text-[13px] text-primary">记录读取失败，点此重试</button>

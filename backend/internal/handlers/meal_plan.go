@@ -26,6 +26,7 @@ type MealPlanSnapshot struct {
 type MealPlanDish struct {
 	DishID   uint   `json:"dish_id"`
 	MealType string `json:"meal_type"`
+	Pinned   *bool  `json:"pinned,omitempty"`
 }
 
 type SaveMealPlanRequest struct {
@@ -40,7 +41,7 @@ type mealPlanReceipt struct {
 	ResultVersion string `json:"result_version"`
 }
 
-var errMealPlanChanged = errors.New("明日菜单已变化，请核对最新菜单后再保存；你的草稿已保留")
+var errMealPlanChanged = errors.New("菜单已变化，请核对最新菜单后再保存")
 var mealPlanRequestID = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,80}$`)
 
 func mealPlanDate(c *gin.Context) (string, bool) {
@@ -79,7 +80,7 @@ func GetMealPlan(c *gin.Context) {
 	}
 	snapshot, _, err := readMealPlanSnapshot(database.DB, date)
 	if err != nil {
-		utils.InternalError(c, "读取明日菜单失败")
+		utils.InternalError(c, "读取菜单失败")
 		return
 	}
 	utils.Success(c, snapshot)
@@ -88,10 +89,20 @@ func GetMealPlan(c *gin.Context) {
 // saveMealPlan 核对基线、改菜单和购物联动共用事务，避免客户端预读后的竞态窗口。
 func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error) {
 	var result MealPlanSnapshot
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = saveMealPlanTx(tx, date, req)
+		return err
+	})
+	return result, err
+}
+
+func saveMealPlanTx(tx *gorm.DB, date string, req SaveMealPlanRequest) (MealPlanSnapshot, error) {
+	var result MealPlanSnapshot
 	requestBytes, _ := json.Marshal(req)
 	requestDigest := sha256.Sum256(requestBytes)
 	requestHash := hex.EncodeToString(requestDigest[:])
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
+	err := func() error {
 		// 首条语句是写操作（即使该日期尚无记录），先取得 SQLite 写锁再读基线。
 		if err := tx.Model(&models.MealRecord{}).Where("meal_date = ?", date).UpdateColumn("id", gorm.Expr("id")).Error; err != nil {
 			return err
@@ -120,9 +131,6 @@ func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error
 		}
 		byKey := make(map[string]models.MealRecord, len(rows))
 		for _, row := range rows {
-			if row.Status != models.MealCancelled && row.Status != models.MealPlanned {
-				return errMealPlanChanged
-			}
 			byKey[fmt.Sprintf("%s:%d", row.MealType, row.DishID)] = row
 		}
 		desired := make(map[string]bool, len(req.Dishes))
@@ -130,7 +138,12 @@ func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error
 			entryKey := fmt.Sprintf("%s:%d", selected.MealType, selected.DishID)
 			desired[entryKey] = true
 			existing, exists := byKey[entryKey]
-			if exists && existing.Status == models.MealPlanned {
+			if exists && existing.Status != models.MealCancelled {
+				if existing.Status == models.MealPlanned && selected.Pinned != nil && existing.PlanPinned != *selected.Pinned {
+					if err := tx.Model(&existing).Update("plan_pinned", *selected.Pinned).Error; err != nil {
+						return err
+					}
+				}
 				continue
 			}
 			// 保留原菜单不受菜谱下架影响；新增或恢复则必须仍能点这道菜。
@@ -144,6 +157,7 @@ func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error
 			if exists {
 				before := existing
 				existing.Status = models.MealPlanned
+				existing.PlanPinned = selected.Pinned != nil && *selected.Pinned
 				if err := tx.Save(&existing).Error; err != nil {
 					return err
 				}
@@ -152,7 +166,7 @@ func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error
 				}
 				continue
 			}
-			record := models.MealRecord{DishID: dish.ID, DishName: dish.Name, MealType: selected.MealType, MealDate: date, Status: models.MealPlanned, PortionScale: 1}
+			record := models.MealRecord{DishID: dish.ID, DishName: dish.Name, MealType: selected.MealType, MealDate: date, Status: models.MealPlanned, PortionScale: 1, PlanPinned: selected.Pinned != nil && *selected.Pinned}
 			if err := tx.Create(&record).Error; err != nil {
 				return err
 			}
@@ -163,6 +177,10 @@ func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error
 		for entryKey, record := range byKey {
 			if desired[entryKey] || record.Status == models.MealCancelled {
 				continue
+			}
+			// 今天可以继续加菜，但已吃记录及其评价、库存处理绝不能被排菜覆盖。
+			if record.Status != models.MealPlanned {
+				return errMealPlanChanged
 			}
 			before := record
 			record.Status = models.MealCancelled
@@ -183,7 +201,7 @@ func saveMealPlan(date string, req SaveMealPlanRequest) (MealPlanSnapshot, error
 		}
 		// 每个日期仅保留最近一次成功保存的回执，供响应丢失后的安全重试。
 		return tx.Where("`key` = ?", key).Assign(models.Setting{Key: key, Value: string(encoded)}).FirstOrCreate(&models.Setting{}).Error
-	})
+	}()
 	return result, err
 }
 
@@ -192,8 +210,8 @@ func SaveMealPlan(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if date != time.Now().AddDate(0, 0, 1).Format("2006-01-02") {
-		utils.Conflict(c, "日期已变化，请重新打开明日菜单")
+	if date < time.Now().Format("2006-01-02") {
+		utils.Conflict(c, "只能安排今天或未来的菜单，请重新选择日期")
 		return
 	}
 	var req SaveMealPlanRequest

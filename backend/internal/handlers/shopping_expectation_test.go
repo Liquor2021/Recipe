@@ -2,12 +2,50 @@ package handlers
 
 import (
 	"fmt"
+	"net/url"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestShoppingStockInAndRemoveRejectMissingOrOldScope(t *testing.T) {
+	db := setupRecordLifecycleDB(t)
+	if err := db.AutoMigrate(&models.ShoppingItemCategory{}); err != nil {
+		t.Fatal(err)
+	}
+	amount := "2个"
+	row := models.ShoppingCheck{ItemName: "番茄", ItemAmount: amount, MealDate: services.TodayDate(), MealType: "extra", Checked: true, PurchasedAmount: &amount}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	version := currentShoppingDemandVersion(t, row.ItemName)
+	for _, oldVersion := range []string{"", version} {
+		if oldVersion != "" {
+			w := serveJSON(t, UpdateShoppingPlanSettings, "PUT", "/shopping-list/settings", map[string]int{"days": 7})
+			if w.Code != 200 {
+				t.Fatalf("change scope: %d %s", w.Code, w.Body.String())
+			}
+		}
+		w := serveJSON(t, StockInShoppingItemsHandler, "POST", "/shopping-list/stock-in", map[string]any{"items": []map[string]string{{"item_name": row.ItemName, "quantity": amount, "demand_version": oldVersion}}})
+		if w.Code != 409 {
+			t.Fatalf("missing/old stock-in version: %d %s", w.Code, w.Body.String())
+		}
+		w = serveJSON(t, RemoveShoppingItemHandler, "DELETE", "/shopping-list/items/test?demand_version="+url.QueryEscape(oldVersion), nil, gin.Param{Key: "itemName", Value: row.ItemName})
+		if w.Code != 409 {
+			t.Fatalf("missing/old removal version: %d %s", w.Code, w.Body.String())
+		}
+	}
+	var batches int64
+	if err := db.Model(&models.InventoryBatch{}).Count(&batches).Error; err != nil || batches != 0 {
+		t.Fatal("stale request created stock", batches, err)
+	}
+	var after models.ShoppingCheck
+	if err := db.First(&after, row.ID).Error; err != nil || !after.Checked || after.Stocked || after.ItemAmount != amount {
+		t.Fatal("stale request changed demand", after, err)
+	}
+}
 
 func currentShoppingDemandVersion(t *testing.T, name string) string {
 	t.Helper()

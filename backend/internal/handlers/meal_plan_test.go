@@ -64,7 +64,7 @@ func TestAtomicMealPlanPreservesKeptAndRestoredShopping(t *testing.T) {
 	if err := syncRecordShopping(db, before, restore); err != nil {
 		t.Fatal(err)
 	}
-	req := planTestRequest(t, db, date, "request_preserve_0001", MealPlanDish{keep.DishID, "lunch"}, MealPlanDish{restore.DishID, "dinner"}, MealPlanDish{dishes[3].ID, "dinner"})
+	req := planTestRequest(t, db, date, "request_preserve_0001", MealPlanDish{keep.DishID, "lunch", nil}, MealPlanDish{restore.DishID, "dinner", nil}, MealPlanDish{dishes[3].ID, "dinner", nil})
 	result, err := saveMealPlan(date, req)
 	if err != nil || len(result.Records) != 3 {
 		t.Fatalf("save: %+v %v", result, err)
@@ -92,7 +92,7 @@ func TestAtomicMealPlanRejectsChangedBaselines(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			db, date, dishes := setupMealPlanTest(t)
 			record := testCreateMeal(t, CreateRecordRequest{DishID: dishes[0].ID, DishName: dishes[0].Name, MealDate: date, MealType: "lunch"})
-			req := planTestRequest(t, db, date, "request_stale_0001", MealPlanDish{dishes[1].ID, "dinner"})
+			req := planTestRequest(t, db, date, "request_stale_0001", MealPlanDish{dishes[1].ID, "dinner", nil})
 			switch change {
 			case "rescheduled":
 				db.Model(&record).Update("meal_date", time.Now().AddDate(0, 0, 7).Format("2006-01-02"))
@@ -125,7 +125,7 @@ func TestAtomicMealPlanRejectsChangedBaselines(t *testing.T) {
 func TestAtomicMealPlanRollbackAndSafeResponseRetry(t *testing.T) {
 	db, date, dishes := setupMealPlanTest(t)
 	original := testCreateMeal(t, CreateRecordRequest{DishID: dishes[0].ID, DishName: dishes[0].Name, MealDate: date, MealType: "lunch"})
-	req := planTestRequest(t, db, date, "request_retry_0001", MealPlanDish{dishes[1].ID, "dinner"})
+	req := planTestRequest(t, db, date, "request_retry_0001", MealPlanDish{dishes[1].ID, "dinner", nil})
 	before := planTestSnapshot(t, db, date)
 	// Fail after the new dish and shopping rows have already been inserted.
 	db.Exec("CREATE TRIGGER fail_plan_cancel BEFORE UPDATE OF status ON meal_records WHEN NEW.status = 'cancelled' BEGIN SELECT RAISE(ABORT, 'blocked'); END")
@@ -150,7 +150,7 @@ func TestAtomicMealPlanRollbackAndSafeResponseRetry(t *testing.T) {
 		t.Fatalf("lost response retry: %+v %v", second, err)
 	}
 	reused := req
-	reused.Dishes = []MealPlanDish{{dishes[2].ID, "lunch"}}
+	reused.Dishes = []MealPlanDish{{dishes[2].ID, "lunch", nil}}
 	if _, err := saveMealPlan(date, reused); !errors.Is(err, errMealPlanChanged) {
 		t.Fatal("same request id accepted different intent")
 	}
@@ -166,7 +166,7 @@ func TestAtomicMealPlanRollbackAndSafeResponseRetry(t *testing.T) {
 
 func TestAtomicMealPlanReceiptFailureRollsBackAndSnapshotIsComplete(t *testing.T) {
 	db, date, dishes := setupMealPlanTest(t)
-	req := planTestRequest(t, db, date, "request_receipt_0001", MealPlanDish{dishes[0].ID, "lunch"})
+	req := planTestRequest(t, db, date, "request_receipt_0001", MealPlanDish{dishes[0].ID, "lunch", nil})
 	db.Exec("CREATE TRIGGER fail_plan_receipt BEFORE INSERT ON settings BEGIN SELECT RAISE(ABORT, 'blocked'); END")
 	if _, err := saveMealPlan(date, req); err == nil {
 		t.Fatal("expected receipt failure")
@@ -191,12 +191,12 @@ func TestAtomicMealPlanReceiptFailureRollsBackAndSnapshotIsComplete(t *testing.T
 func TestAtomicMealPlanHTTPValidationAndConflict(t *testing.T) {
 	db, date, dishes := setupMealPlanTest(t)
 	params := []gin.Param{{Key: "date", Value: date}}
-	req := planTestRequest(t, db, date, "request_http_0001", MealPlanDish{dishes[0].ID, "lunch"})
+	req := planTestRequest(t, db, date, "request_http_0001", MealPlanDish{dishes[0].ID, "lunch", nil})
 	for _, invalid := range []any{
 		map[string]any{"expected_version": req.ExpectedVersion, "request_id": req.RequestID},
 		SaveMealPlanRequest{ExpectedVersion: req.ExpectedVersion, RequestID: "short", Dishes: []MealPlanDish{}},
-		SaveMealPlanRequest{ExpectedVersion: req.ExpectedVersion, RequestID: req.RequestID, Dishes: []MealPlanDish{{dishes[0].ID, "lunch"}, {dishes[0].ID, "lunch"}}},
-		SaveMealPlanRequest{ExpectedVersion: req.ExpectedVersion, RequestID: req.RequestID, Dishes: []MealPlanDish{{dishes[0].ID, "breakfast"}}},
+		SaveMealPlanRequest{ExpectedVersion: req.ExpectedVersion, RequestID: req.RequestID, Dishes: []MealPlanDish{{dishes[0].ID, "lunch", nil}, {dishes[0].ID, "lunch", nil}}},
+		SaveMealPlanRequest{ExpectedVersion: req.ExpectedVersion, RequestID: req.RequestID, Dishes: []MealPlanDish{{dishes[0].ID, "breakfast", nil}}},
 	} {
 		w := serveJSON(t, SaveMealPlan, "PUT", "/meal-plans/"+date, invalid, params...)
 		if w.Code != 400 {
@@ -228,8 +228,8 @@ func TestAtomicMealPlanConcurrentSavesCannotMergeDifferentIntents(t *testing.T) 
 	db, date, dishes := setupMealPlanTest(t)
 	db.Exec("PRAGMA journal_mode = WAL")
 	db.Exec("PRAGMA busy_timeout = 5000")
-	first := planTestRequest(t, db, date, "concurrent_save_0001", MealPlanDish{dishes[0].ID, "lunch"})
-	second := planTestRequest(t, db, date, "concurrent_save_0002", MealPlanDish{dishes[1].ID, "dinner"})
+	first := planTestRequest(t, db, date, "concurrent_save_0001", MealPlanDish{dishes[0].ID, "lunch", nil})
+	second := planTestRequest(t, db, date, "concurrent_save_0002", MealPlanDish{dishes[1].ID, "dinner", nil})
 	start := make(chan struct{})
 	errorsCh := make(chan error, 2)
 	var wg sync.WaitGroup
@@ -277,7 +277,7 @@ func TestAtomicMealPlanValidatesRestoredDishesButPreservesExistingPlans(t *testi
 					t.Fatal(err)
 				}
 				before := planTestSnapshot(t, db, date)
-				req := planTestRequest(t, db, date, "request_unavailable_0001", MealPlanDish{dishes[0].ID, "lunch"})
+				req := planTestRequest(t, db, date, "request_unavailable_0001", MealPlanDish{dishes[0].ID, "lunch", nil})
 				result, err := saveMealPlan(date, req)
 				if status == models.MealCancelled {
 					if !errors.Is(err, errMealPlanChanged) || planTestSnapshot(t, db, date).Version != before.Version {
@@ -293,7 +293,7 @@ func TestAtomicMealPlanValidatesRestoredDishesButPreservesExistingPlans(t *testi
 
 func TestAtomicMealPlanShoppingDishReadFailureRollsBack(t *testing.T) {
 	db, date, dishes := setupMealPlanTest(t)
-	req := planTestRequest(t, db, date, "request_dish_read_0001", MealPlanDish{dishes[0].ID, "lunch"})
+	req := planTestRequest(t, db, date, "request_dish_read_0001", MealPlanDish{dishes[0].ID, "lunch", nil})
 	before := planTestSnapshot(t, db, date)
 	injected := errors.New("injected shopping dish read failure")
 	const callback = "test:fail_shopping_dish_read"

@@ -63,6 +63,7 @@ export interface MealRecord {
   meal_type: string
   meal_date: string
   status: MealRecordStatus
+	plan_pinned?: boolean
   inventory_applied: boolean
   portion_scale: number // 相对菜谱原量的倍数，不代表人数
   rating: number

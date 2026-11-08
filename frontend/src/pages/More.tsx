@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
-import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
+import { achievementsApi, shoppingListApi, settingsApi, getUploadErrorMessage } from "@/api"
 import { logoutApp } from "@/api/client"
 import { ledgerApi } from "@/api/ledger"
 import type { ShoppingPurchase } from "@/lib/ledger"
@@ -10,29 +10,20 @@ import ShoppingLedgerToggle from "@/components/ShoppingLedgerToggle"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import { asString } from "@/lib/utils"
-import { Flip, gsap, motionDuration, useGSAP } from "@/lib/gsap"
-import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import StockInSheet, { type StockInCandidate } from "@/components/StockInSheet"
 import PageHeader from "@/components/PageHeader"
-import { cardShadow } from "@/components/Card"
-import type { Achievement, WeekDayPlan, ShoppingCategory, ShoppingItem, MealRecord } from "@/types"
+import type { Achievement, ShoppingCategory, ShoppingItem } from "@/types"
 import toast from "react-hot-toast"
 import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole, LogOut, NotebookPen } from "lucide-react"
 import { isAxiosError } from "axios"
 import "@/styles/kitchen-tools.css"
+import WeekPlanner from "@/components/WeekPlanner"
+import ShoppingScope from "@/components/ShoppingScope"
 
 function getTodayStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
-
-function getTomorrowStr() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
-const dayOrder: Record<string, number> = { "周一": 1, "周二": 2, "周三": 3, "周四": 4, "周五": 5, "周六": 6, "周日": 7 }
 
 // 买菜清单里的"配料"大多是家里常备的调料：默认收起，不计入待买
 const STAPLES_CATEGORY = "配料"
@@ -76,147 +67,6 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-type MealKey = "lunch" | "dinner"
-
-const MEAL_SECTIONS: { key: MealKey; label: string; titleClass: string; rowClass: string }[] = [
-  { key: "lunch", label: "🍳 午餐", titleClass: "text-primary", rowClass: "bg-primary-light text-primary" },
-  { key: "dinner", label: "🍲 晚餐", titleClass: "text-mint", rowClass: "bg-mint-light text-mint" },
-]
-
-// 某一天的菜单：每道菜都能单独换；今天、明天还能一键加入计划和买菜清单
-function WeekDaySheet({ day, dateLabel, canRecord, swappingKey, editing, recording, onSwap, onConfirm, onClose }: {
-  day: WeekDayPlan
-  dateLabel: string
-  canRecord: boolean
-  swappingKey: string | null // 正在换的那道菜 `${meal}-${dishId}`，换菜进行中时其余按钮也禁用
-  editing: boolean
-  recording: boolean
-  onSwap: (meal: MealKey, dishId: number) => void
-  onConfirm: () => void
-  onClose: () => void
-}) {
-  const busy = editing || swappingKey !== null
-  return (
-    <AnimatedBottomSheet onClose={onClose} className="flex max-h-[calc(100dvh-1rem)] flex-col overflow-hidden rounded-t-3xl p-5 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
-      {({ close }) => (
-      <>
-        <div className="shrink-0">
-          <div className="w-10 h-1 rounded-full bg-border2 mx-auto mb-4" />
-          <div className="text-lg font-bold mb-1">{canRecord ? `快速点菜 · ${dateLabel}` : `${dateLabel}的菜单`}</div>
-          <div className="text-xs text-text2 mb-4">{day.date.slice(5)} {day.day_name} · 不想吃哪道，点「换一道」</div>
-        </div>
-        <div className="min-h-0 overflow-y-auto overscroll-contain">
-          {MEAL_SECTIONS.map(({ key, label, titleClass, rowClass }) => day[key].length > 0 && (
-            <div key={key} className="mb-4">
-              <div className={`text-xs font-semibold mb-1.5 ${titleClass}`}>{label}</div>
-              <div className="flex flex-col gap-1.5">
-                {day[key].map((d) => (
-                  <div key={d.id} className={`flex items-center gap-2 pl-3 pr-1 py-1 rounded-xl ${rowClass}`}>
-                    <span className="flex-1 min-w-0 truncate text-sm font-medium">{d.name}</span>
-                    <button
-                      onClick={() => onSwap(key, d.id)}
-                      disabled={busy || recording}
-                      className="shrink-0 px-3.5 py-2.5 rounded-full text-xs font-semibold bg-card text-text2 border border-border transition-all active:scale-95 disabled:opacity-50"
-                    >
-                      {swappingKey === `${key}-${d.id}` ? "换菜中…" : "换一道"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="shrink-0 pt-1">
-          {canRecord ? (
-            <div className="flex gap-3">
-              <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">取消</button>
-              <button
-                onClick={onConfirm}
-                disabled={busy || recording}
-                className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-60"
-              >
-                {recording ? "记录中…" : "确认点菜"}
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="text-xs text-text3 text-center mb-3">到了前一天就能一键点菜，食材会进买菜清单</div>
-              <button onClick={close} className="w-full py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">好了</button>
-            </>
-          )}
-        </div>
-      </>
-      )}
-    </AnimatedBottomSheet>
-  )
-}
-
-function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
-  day: WeekDayPlan
-  todayStr: string
-  tomorrowStr: string
-  navigate: (path: string) => void
-  onCardClick: () => void
-}) {
-  // 今天及以后的菜单可以点开换菜（日期是 YYYY-MM-DD，可以直接按字符串比较）
-  const canOpen = day.date >= todayStr && (day.lunch.length > 0 || day.dinner.length > 0)
-  return (
-    <article className="k-week-card">
-      <div className="k-week-card-heading">
-        <h3>
-          {day.day_name}{" "}
-          {day.date === todayStr ? <span className="text-primary text-xs">今天</span> : day.date === tomorrowStr ? <span className="text-mint text-xs">明天</span> : null}
-        </h3>
-        <time dateTime={day.date}>{day.date.slice(5)}</time>
-      </div>
-      {canOpen && (
-        <button type="button" className="k-week-open" aria-label={`查看或更换${day.date}的菜单`} onClick={onCardClick}>
-          <span>查看 / 换菜 <ChevronRight size={15} aria-hidden="true" /></span>
-        </button>
-      )}
-      <div className="flex flex-col gap-1.5">
-        {day.lunch.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-primary font-semibold w-8 shrink-0">午餐</span>
-            <div className="flex flex-wrap gap-1.5">
-              {day.lunch.map((dish) => (
-                <button
-                  key={dish.id}
-                  type="button"
-                  onClick={() => navigate(`/dishes/${dish.id}`)}
-                  className="k-week-dish is-lunch"
-                >
-                  {dish.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {day.dinner.length > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-mint font-semibold w-8 shrink-0">晚餐</span>
-            <div className="flex flex-wrap gap-1.5">
-              {day.dinner.map((dish) => (
-                <button
-                  key={dish.id}
-                  type="button"
-                  onClick={() => navigate(`/dishes/${dish.id}`)}
-                  className="k-week-dish is-dinner"
-                >
-                  {dish.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {day.lunch.length === 0 && day.dinner.length === 0 && (
-          <div className="text-xs text-text3 py-1">暂无菜品</div>
-        )}
-      </div>
-    </article>
-  )
-}
-
 export default function More() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -234,10 +84,6 @@ export default function More() {
 
   const { data: rawAchievements } = useQuery({ queryKey: ["achievements"], queryFn: () => achievementsApi.list() })
   const achievements = Array.isArray(rawAchievements) ? rawAchievements : []
-  const weekPlanEdits = useMutationState({ filters: { mutationKey: ["week-plan-edit"], status: "pending" } }).length
-  const { data: weekPlan, isPending: weekPlanLoading, isError: weekPlanError, isFetching: weekPlanFetching, refetch: reloadWeekPlan } = useQuery({
-    queryKey: ["week-plan"], queryFn: () => weekPlanApi.get(), enabled: weekPlanEdits === 0,
-  })
   const { data: rawShoppingList, isPending: shoppingLoading, isError: shoppingError, isFetching: shoppingFetching, refetch: reloadShopping } = useQuery({
     queryKey: ["shopping-list"], queryFn: () => shoppingListApi.get(), staleTime: 0,
     // 写入时保留已确认的采购数量；最后一个请求结束后读取新的待买/待入库差额。
@@ -248,14 +94,18 @@ export default function More() {
   const [purchase, setPurchase] = useState<ShoppingPurchase | null>(null)
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => settingsApi.get() })
 
-  const [showAllWeekDays, setShowAllWeekDays] = useState(false)
-  // 记日期而不是那天的快照：换菜后弹层直接显示最新菜单
-  const [sheetDate, setSheetDate] = useState<string | null>(null)
   const [showStockIn, setShowStockIn] = useState(false)
   const [onlyNeedBuy, setOnlyNeedBuy] = useState(false)
   const [shoppingOpen, setShoppingOpen] = useState(location.hash === "#shopping")
-  const [weekOpen, setWeekOpen] = useState(false)
+  const [weekOpen, setWeekOpen] = useState(location.hash === "#week")
   const shoppingRef = useRef<HTMLElement>(null)
+  const { data: shoppingScope } = useQuery({ queryKey: ["shopping-settings"], queryFn: shoppingListApi.settings })
+  useEffect(() => {
+    if (location.pathname !== "/more" || location.hash !== "#week") return
+    const frame = requestAnimationFrame(() => setWeekOpen(true))
+    return () => cancelAnimationFrame(frame)
+  }, [location.pathname, location.hash, location.key])
+
 
   useEffect(() => {
     if (location.pathname !== "/more" || location.hash !== "#shopping") return
@@ -291,72 +141,6 @@ export default function More() {
       return !open
     })
   }
-  const weekListRef = useRef<HTMLDivElement>(null)
-  const flipStateRef = useRef<ReturnType<typeof Flip.getState> | null>(null)
-
-  const { contextSafe } = useGSAP(() => undefined, { scope: weekListRef })
-
-  const regenerateMut = useMutation({
-    mutationKey: ["week-plan-edit", "regenerate"],
-    mutationFn: () => weekPlanApi.regenerate(),
-    onMutate: () => qc.cancelQueries({ queryKey: ["week-plan"] }),
-    onSuccess: async (plan) => {
-      await qc.cancelQueries({ queryKey: ["week-plan"] })
-      qc.setQueryData(["week-plan"], plan)
-      qc.invalidateQueries({ queryKey: ["achievements"] })
-      if (plan.days?.length) toast.success("已重新生成并保存")
-      else toast("暂时没有可用的菜品", { icon: "ℹ️" })
-    },
-    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "重新生成未保存，请重试")),
-  })
-
-  const swapMut = useMutation({
-    mutationKey: ["week-plan-edit", "swap"],
-    mutationFn: (v: { date: string; meal_type: MealKey; dish_id: number }) => weekPlanApi.swap(v),
-    onMutate: () => qc.cancelQueries({ queryKey: ["week-plan"] }),
-    onSuccess: async ({ plan, dish }) => {
-      await qc.cancelQueries({ queryKey: ["week-plan"] })
-      qc.setQueryData(["week-plan"], plan)
-      toast.success(`换成了「${dish.name}」`)
-    },
-    onError: (err: unknown) => {
-      // 菜单在别处变过（重新生成、停用了菜……）：刷新成最新的再换
-      if (isAxiosError(err) && err.response?.status === 409) {
-        qc.invalidateQueries({ queryKey: ["week-plan"] })
-      }
-      toast.error(getUploadErrorMessage(err, "换菜失败，稍后再试"))
-    },
-  })
-  function startWeekPlanEdit(action: () => void) {
-    if (qc.isMutating({ mutationKey: ["week-plan-edit"] }) > 0) return
-    action()
-  }
-  const swappingKey = swapMut.isPending && swapMut.variables ? `${swapMut.variables.meal_type}-${swapMut.variables.dish_id}` : null
-
-  const recordMut = useMutation({
-    mutationFn: (data: Partial<MealRecord>[]) => recordsApi.batchCreate(data),
-    onSuccess: ({ created, skipped, failed }) => {
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["achievements"] })
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
-      qc.invalidateQueries({ queryKey: ["record"] })
-      qc.invalidateQueries({ queryKey: ["dish-records"] })
-      qc.invalidateQueries({ queryKey: ["admin", "records"] })
-      // 按实际结果提示：全部已记录过/部分失败都不能笼统地说"已记录"
-      const n = created?.length ?? 0
-      if (n === 0) {
-        if (failed > 0) toast.error(`保存失败 ${failed} 道，请重试`)
-        else toast("这些菜已在菜单中", { icon: "ℹ️" })
-      } else {
-        const extra = [skipped > 0 ? `${skipped} 道已在菜单中` : "", failed > 0 ? `${failed} 道失败` : ""].filter(Boolean).join("，")
-        if (failed > 0) toast.error(`已加入计划 ${n} 道，${extra}`)
-        else toast.success(extra ? `已加入计划 ${n} 道（${extra}）` : "已加入计划，吃过后到记录页确认")
-      }
-      setSheetDate(null)
-    },
-    onError: () => toast.error("记录失败"),
-  })
-
   const checkMut = useMutation({
     mutationKey: ["shopping-edit", "check"],
     mutationFn: (data: { item_name: string; meal_date: string; checked: boolean; demand_version: string }) =>
@@ -400,12 +184,12 @@ export default function More() {
   // 误点补料的撤销入口：只删补料条目
   const removeItemMut = useMutation({
     mutationKey: ["shopping-edit", "remove"],
-    mutationFn: (itemName: string) => shoppingListApi.removeItem(itemName),
+    mutationFn: (item: { item_name: string; demand_version: string }) => shoppingListApi.removeItem(item.item_name, item.demand_version),
     onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
     onSuccess: () => {
       toast.success("已从清单移除")
     },
-    onError: () => toast.error("移除失败，稍后再试"),
+    onError: (err) => toast.error(getUploadErrorMessage(err, "移除失败，稍后再试")),
     onSettled: () => qc.invalidateQueries({ queryKey: ["shopping-list"] }),
   })
 
@@ -422,14 +206,6 @@ export default function More() {
     if (settingsMut.isPending) return
     const newVal = currentVal === "1" ? "0" : "1"
     settingsMut.mutate({ [key]: newVal })
-  }
-
-  function handleConfirmRecord(day: WeekDayPlan) {
-    if (qc.isMutating({ mutationKey: ["week-plan-edit"] }) > 0) return
-    const data: Partial<MealRecord>[] = []
-    day.lunch.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "lunch", meal_date: day.date, status: "planned" }))
-    day.dinner.forEach((d) => data.push({ dish_id: d.id, dish_name: d.name, meal_type: "dinner", meal_date: day.date, status: "planned" }))
-    if (data.length > 0) recordMut.mutate(data)
   }
 
   const unlockedCount = achievements.filter((a: Achievement) => a.is_unlocked).length
@@ -488,7 +264,7 @@ export default function More() {
         </button>
         {item.removable && (
           <button
-            onClick={() => startShoppingEdit(item.name, () => removeItemMut.mutate(item.name))}
+            onClick={() => startShoppingEdit(item.name, () => removeItemMut.mutate({ item_name: item.name, demand_version: item.demand_version }))}
             disabled={pendingShopping.has(item.name)}
             aria-label={`从清单移除${item.name}`}
             className="relative after:absolute after:-inset-y-2 after:-right-2.5 after:left-0 w-5 h-5 rounded-full flex items-center justify-center text-text3 text-base leading-none transition-all hover:bg-black/5 active:scale-90 disabled:opacity-50"
@@ -528,40 +304,8 @@ export default function More() {
       ? []
       : cat.items
         .filter((item) => item.stock_in_amount !== undefined ? !!item.stock_in_amount : item.checked && !item.stocked && !item.in_stock)
-        .map((item) => ({ name: item.name, amount: item.stock_in_amount || item.amount, category: cat.category })),
+        .map((item) => ({ name: item.name, amount: item.stock_in_amount || item.amount, category: cat.category, demandVersion: item.demand_version })),
   )
-
-  const days = (weekPlan?.days || []).slice().sort((a: WeekDayPlan, b: WeekDayPlan) => (dayOrder[a.day_name] || 0) - (dayOrder[b.day_name] || 0))
-  const todayStr = getTodayStr()
-  const tomorrowStr = getTomorrowStr()
-  const defaultDays = days.filter((d: WeekDayPlan) => d.date === todayStr || d.date === tomorrowStr)
-  const collapsedDays = defaultDays.length > 0 ? defaultDays : days.slice(0, 2)
-  const displayDays = showAllWeekDays ? days : collapsedDays
-  const sheetDay = sheetDate ? days.find((d: WeekDayPlan) => d.date === sheetDate) : undefined
-
-  useGSAP(() => {
-    const state = flipStateRef.current
-    flipStateRef.current = null
-    if (!state) return
-    Flip.from(state, {
-      duration: motionDuration(0.3),
-      ease: "power2.out",
-      absolute: false,
-      nested: true,
-      onEnter: (elements) => gsap.fromTo(elements, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: motionDuration(0.24), stagger: 0.03 }),
-      onLeave: (elements) => gsap.to(elements, { autoAlpha: 0, y: -8, duration: motionDuration(0.18) }),
-    })
-  }, { dependencies: [displayDays], scope: weekListRef })
-
-  // contextSafe 只是把回调包一层（登记到 GSAP 上下文便于卸载时清理），ref 在点击时才读；
-  // react-hooks/refs 把"把读 ref 的函数传给 contextSafe"当成渲染时读 ref，属误报
-  // eslint-disable-next-line react-hooks/refs
-  const toggleWeekDays = contextSafe(() => {
-    if (weekListRef.current) {
-      flipStateRef.current = Flip.getState(".week-day-card", { props: "opacity,transform" })
-    }
-    setShowAllWeekDays((value) => !value)
-  })
 
   return (
     <div className="animate-fadeUp k-tools-page k-more-page">
@@ -571,13 +315,14 @@ export default function More() {
         <div className="k-more-shopping-cover">
           <button type="button" className="k-more-shopping-open" aria-expanded={shoppingOpen} aria-controls="shopping" onClick={() => setShoppingOpen(value => !value)}>
             <span className="k-more-shopping-title"><ShoppingBasket size={19} aria-hidden="true" /><strong>买菜清单</strong><span className="k-tool-leader" aria-hidden="true" /><small>{shoppingLoading ? "整理中" : shoppingError && !rawShoppingList ? "待重试" : `待买 ${needBuyItems} · 已买 ${totalChecked}`}</small></span>
-            <span className="k-more-shopping-caption">今天 + 明天要用的食材，按分类收好了<ChevronDown size={16} className={shoppingOpen ? "is-expanded" : ""} aria-hidden="true" /></span>
+            <span className="k-more-shopping-caption">{shoppingScope?.days === 7 ? "未来 7 天" : "今天 + 明天"}要用的食材，按分类收好了<ChevronDown size={16} className={shoppingOpen ? "is-expanded" : ""} aria-hidden="true" /></span>
           </button>
           {totalItems > 0 && <button type="button" className="k-tool-text-button k-more-copy" onClick={copyShoppingList}>复制待买</button>}
         </div>
         <section ref={shoppingRef} id="shopping" aria-label="买菜清单">
         <div hidden={!shoppingOpen} className="k-more-shopping-content">
         <h2 className="k-tool-section-title mb-3">「采购明细」</h2>
+        <ShoppingScope />
         <ShoppingLedgerToggle />
         {totalItems > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -603,7 +348,7 @@ export default function More() {
           {shoppingLoading ? (
             <div role="status" className="py-5 px-4 text-center text-sm text-text3">正在整理买菜清单…</div>
           ) : !rawShoppingList ? null : shoppingList.length === 0 ? (
-            <div className="py-5 px-4 text-center text-sm text-text3">暂无买菜清单，点菜后自动生成今日+明日食材</div>
+            <div className="py-5 px-4 text-center text-sm text-text3">暂无采购需求，安排菜单后自动汇总所选范围的食材</div>
           ) : (
             <>
               {onlyNeedBuy && needBuyItems === 0 ? (
@@ -658,63 +403,11 @@ export default function More() {
           </button>
           <button type="button" className="k-more-entry" aria-expanded={weekOpen} aria-controls="week-menu-pages" onClick={() => setWeekOpen(value => !value)}>
             <span className="k-more-entry-icon"><CalendarDays size={20} aria-hidden="true" /></span>
-            <strong>一周菜单</strong><span className="k-tool-leader" aria-hidden="true" /><small>{weekPlanLoading ? "读取中" : weekPlanError && !weekPlan ? "待重试" : `已排 ${days.length} 天`}</small><ChevronRight className={weekOpen ? "is-expanded" : ""} size={17} aria-hidden="true" />
+            <strong>一周菜单</strong><span className="k-tool-leader" aria-hidden="true" /><small>手选 · 加菜 · 钉住</small><ChevronRight className={weekOpen ? "is-expanded" : ""} size={17} aria-hidden="true" />
           </button>
         </nav>
-        <section id="week-menu-pages" hidden={!weekOpen} className="k-more-week-content">
-        <div className="flex items-center justify-between mb-3.5">
-          <div>
-            <h2 className="k-tool-section-title">「一周菜单」</h2>
-            {days.length > 0 && <div className="text-xs text-text3 mt-0.5">点开某一天，可以只换其中一道</div>}
-          </div>
-          <button
-            onClick={() => startWeekPlanEdit(() => regenerateMut.mutate())}
-            disabled={weekPlanEdits > 0}
-            className="k-tool-text-button"
-          >
-            {regenerateMut.isPending ? "生成中..." : "🔄 重新生成"}
-          </button>
-        </div>
-        {weekPlanLoading && (
-          <div role="status" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center text-sm text-text3 mb-2`}>
-            正在读取一周菜单…
-          </div>
-        )}
-        {weekPlanError && (
-          <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center mb-2`}>
-            <div className="text-sm font-semibold">{weekPlan ? "周菜单暂时无法更新" : "周菜单加载失败"}</div>
-            <div className="text-xs text-text2 mt-1">{weekPlan ? "下方保留上次读取的菜单，可以重试更新。" : "请检查网络后重试。"}</div>
-            <button type="button" onClick={() => { void reloadWeekPlan() }} disabled={weekPlanFetching || weekPlanEdits > 0} className="text-sm font-bold text-primary mt-3 disabled:opacity-50">
-              {weekPlanFetching ? "正在重试…" : "重新加载菜单"}
-            </button>
-          </div>
-        )}
-        {weekPlan && days.length === 0 && (
-          <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 text-center text-sm text-text3 mb-2`}>
-            暂时排不出一周菜单：没有可用的菜品，或全部被「严格过滤」忌口排除了
-          </div>
-        )}
-        <div ref={weekListRef} className="flex flex-col gap-2.5 mb-1">
-          {displayDays.map((day: WeekDayPlan) => (
-            <div
-              key={day.date}
-              className="week-day-card"
-            >
-              <WeekDayCard day={day} todayStr={todayStr} tomorrowStr={tomorrowStr} navigate={navigate} onCardClick={() => setSheetDate(day.date)} />
-            </div>
-          ))}
-        </div>
-
-        {days.length > 2 && (
-          <button
-            onClick={toggleWeekDays}
-            className="k-tool-button w-full mt-2 mb-5"
-          >
-            {showAllWeekDays ? "收起菜单" : "查看完整一周菜单 ▾"}
-          </button>
-        )}
-        {days.length <= 2 && <div className="mb-7" />}
-
+        <section id="week-menu-pages" className="k-more-week-content">
+          {weekOpen && <WeekPlanner />}
         </section>
         <nav className="k-more-directory" aria-label="更多厨房入口">
           <button type="button" className="k-more-entry" onClick={() => navigate("/achievements")}>
@@ -764,19 +457,6 @@ export default function More() {
         </section>
       </div>
 
-      {sheetDay && (
-        <WeekDaySheet
-          day={sheetDay}
-          dateLabel={sheetDay.date === todayStr ? "今天" : sheetDay.date === tomorrowStr ? "明天" : sheetDay.day_name}
-          canRecord={sheetDay.date === todayStr || sheetDay.date === tomorrowStr}
-          swappingKey={swappingKey}
-          editing={weekPlanEdits > 0}
-          recording={recordMut.isPending}
-          onSwap={(meal, dishId) => startWeekPlanEdit(() => swapMut.mutate({ date: sheetDay.date, meal_type: meal, dish_id: dishId }))}
-          onConfirm={() => handleConfirmRecord(sheetDay)}
-          onClose={() => setSheetDate(null)}
-        />
-      )}
     </div>
   )
 }

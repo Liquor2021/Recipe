@@ -1128,7 +1128,7 @@ func ShoppingListDates() []string {
 	return []string{now.Format("2006-01-02"), now.AddDate(0, 0, 1).Format("2006-01-02")}
 }
 
-// ToggleShoppingCheck 勾选/取消某食材"已买"：只改买菜清单展示范围（今天+明天）内的条目，
+// ToggleShoppingCheck 勾选/取消某食材"已买"：只改当前采购范围（今天起 2 或 7 天）内的条目，
 // 不能把历史日期和更远日期里同名的条目一起改掉（会污染"已买"统计与之后的清单）
 func ToggleShoppingCheck(itemName string, checked bool, demandVersion string, receipt ...*ExpenseInput) error {
 	if demandVersion == "" {
@@ -1152,7 +1152,10 @@ func ToggleShoppingCheck(itemName string, checked bool, demandVersion string, re
 				return nil
 			}
 		}
-		dates := ShoppingListDates()
+		dates, err := ShoppingPlanDates(tx)
+		if err != nil {
+			return err
+		}
 		var rows []models.ShoppingCheck
 		if err := tx.Where("item_name = ? AND meal_date IN ?", itemName, dates).Order("id ASC").Find(&rows).Error; err != nil {
 			return err
@@ -1193,12 +1196,13 @@ func ToggleShoppingCheck(itemName string, checked bool, demandVersion string, re
 
 // StockInItem 买菜清单里一样已买的食材，放进冰箱时的数量（取自清单用量，可为空）
 type StockInItem struct {
-	ItemName string
-	Quantity string
+	ItemName      string
+	Quantity      string
+	DemandVersion string
 }
 
 // StockInShoppingItems 仅处理当前清单已买且未入库的食材，每样新建一批。
-// 取消后到达的旧请求和重复入库请求跳过，隐藏的需求不被标记；读写共用事务。
+// 旧版本请求返回冲突；已无待入库采购则跳过。隐藏需求不被标记，读写共用事务。
 func StockInShoppingItems(items []StockInItem) (int, error) {
 	unique := make([]StockInItem, 0, len(items))
 	seen := make(map[string]bool, len(items))
@@ -1209,7 +1213,7 @@ func StockInShoppingItems(items []StockInItem) (int, error) {
 		}
 		if !seen[name] {
 			seen[name] = true
-			unique = append(unique, StockInItem{ItemName: name, Quantity: it.Quantity})
+			unique = append(unique, StockInItem{ItemName: name, Quantity: it.Quantity, DemandVersion: it.DemandVersion})
 		}
 	}
 	if len(unique) == 0 {
@@ -1217,10 +1221,17 @@ func StockInShoppingItems(items []StockInItem) (int, error) {
 	}
 	added := 0
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		dates, err := ShoppingPlanDates(tx)
+		if err != nil {
+			return err
+		}
 		for _, it := range unique {
 			var rows []models.ShoppingCheck
-			if err := tx.Where("item_name = ? AND meal_date IN ?", it.ItemName, ShoppingListDates()).Order("id ASC").Find(&rows).Error; err != nil {
+			if err := tx.Where("item_name = ? AND meal_date IN ?", it.ItemName, dates).Order("id ASC").Find(&rows).Error; err != nil {
 				return err
+			}
+			if it.DemandVersion != "" && shoppingDemandVersions(dates, rows)[it.ItemName] != it.DemandVersion {
+				return ErrShoppingDemandChanged
 			}
 			var eligible []shoppingDemand
 			var amounts []string
@@ -1270,16 +1281,33 @@ func StockInShoppingItems(items []StockInItem) (int, error) {
 	return added, nil
 }
 
-// RemoveShoppingExtraItem 从买菜清单删掉某食材的补料条目（今天+明天），返回删除条数。
+// RemoveShoppingExtraItem 从当前采购范围删掉某食材的补料条目，返回删除条数。
 // 只删补料（meal_type=extra）：菜品联动条目跟着用餐记录走，删记录时才会一起删。
-func RemoveShoppingExtraItem(itemName string) (int64, error) {
+func RemoveShoppingExtraItem(itemName string, expectedVersion ...string) (int64, error) {
 	itemName = strings.TrimSpace(itemName)
 	if itemName == "" {
 		return 0, ErrEmptyItemName
 	}
-	res := database.DB.Unscoped().Where("item_name = ? AND meal_type = ? AND meal_date IN ?", itemName, "extra", ShoppingListDates()).
-		Delete(&models.ShoppingCheck{})
-	return res.RowsAffected, res.Error
+	var removed int64
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		dates, err := ShoppingPlanDates(tx)
+		if err != nil {
+			return err
+		}
+		if len(expectedVersion) > 0 {
+			var rows []models.ShoppingCheck
+			if err := tx.Where("item_name = ? AND meal_date IN ?", itemName, dates).Order("id ASC").Find(&rows).Error; err != nil {
+				return err
+			}
+			if expectedVersion[0] == "" || shoppingDemandVersions(dates, rows)[itemName] != expectedVersion[0] {
+				return ErrShoppingDemandChanged
+			}
+		}
+		res := tx.Unscoped().Where("item_name = ? AND meal_type = ? AND meal_date IN ?", itemName, "extra", dates).Delete(&models.ShoppingCheck{})
+		removed = res.RowsAffected
+		return res.Error
+	})
+	return removed, err
 }
 
 // ToggleHomeInventory 买菜清单"家中有"开关：打开 = 冰箱新增一批；
