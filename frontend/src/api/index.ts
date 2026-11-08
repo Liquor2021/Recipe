@@ -110,7 +110,7 @@ export const weekPlanApi = {
 
 export const shoppingListApi = {
   get: () => api<ShoppingCategory[]>("GET", "/shopping-list"),
-  toggle: (data: { item_name: string; meal_date: string; checked: boolean; demand_version: string }) =>
+  toggle: (data: import("@/lib/ledger").ShoppingPurchase) =>
     api<null>("POST", "/shopping-list/toggle", data),
   setInventory: (data: { item_name: string; in_stock: boolean; inventory_version?: string }) =>
     api<null>("POST", "/shopping-list/inventory", data),

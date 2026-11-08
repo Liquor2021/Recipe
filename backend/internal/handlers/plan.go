@@ -76,10 +76,11 @@ func GetShoppingList(c *gin.Context) {
 }
 
 type ToggleShoppingCheckRequest struct {
-	ItemName      string `json:"item_name" binding:"required"`
-	MealDate      string `json:"meal_date" binding:"required"`
-	Checked       bool   `json:"checked"`
-	DemandVersion string `json:"demand_version"`
+	ItemName      string                 `json:"item_name" binding:"required"`
+	MealDate      string                 `json:"meal_date" binding:"required"`
+	Checked       bool                   `json:"checked"`
+	DemandVersion string                 `json:"demand_version"`
+	Expense       *services.ExpenseInput `json:"expense"`
 }
 
 func ToggleShoppingCheckHandler(c *gin.Context) {
@@ -88,7 +89,21 @@ func ToggleShoppingCheckHandler(c *gin.Context) {
 		utils.BadRequest(c, "参数无效")
 		return
 	}
-	if err := services.ToggleShoppingCheck(req.ItemName, req.Checked, req.DemandVersion); err != nil {
+	if req.Expense != nil {
+		if !req.Checked {
+			utils.BadRequest(c, "取消已买不能新建支出")
+			return
+		}
+		if err := services.ValidateExpense(req.Expense, true); err != nil {
+			utils.BadRequest(c, err.Error())
+			return
+		}
+	}
+	if err := services.ToggleShoppingCheck(req.ItemName, req.Checked, req.DemandVersion, req.Expense); err != nil {
+		if errors.Is(err, services.ErrExpenseRequestConflict) || errors.Is(err, services.ErrShoppingAlreadyPurchased) {
+			utils.Conflict(c, err.Error())
+			return
+		}
 		if errors.Is(err, services.ErrShoppingDemandChanged) {
 			utils.Conflict(c, "买菜清单已变化，请刷新后确认采购数量")
 			return

@@ -14,6 +14,7 @@ import { scrollToElement } from "@/lib/gsap"
 import toast from "react-hot-toast"
 import { ArrowRight, Check, ChefHat, Clock3, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
+import LedgerHomeNote from "@/components/LedgerHomeNote"
 import KitchenWheel from "@/components/KitchenWheel"
 import type { KitchenWheelHandle } from "@/components/KitchenWheel"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
@@ -497,6 +498,7 @@ export default function Home() {
           </div>
         </section>
 
+        <LedgerHomeNote month={todayKey.slice(0, 7)} />
         <button className="kitchen-tomorrow-note" onClick={() => navigate("/tomorrow")}>
           <Moon size={22} strokeWidth={1.4} />
           <span><strong>明天吃什么</strong><small>提前写好，明天少一点纠结</small></span>

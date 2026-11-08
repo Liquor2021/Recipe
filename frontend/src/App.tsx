@@ -22,6 +22,7 @@ const Achievements = lazy(() => import("@/pages/Achievements"))
 const CookMode = lazy(() => import("@/pages/CookMode"))
 const Fridge = lazy(() => import("@/pages/Fridge"))
 const Report = lazy(() => import("@/pages/Report"))
+const Ledger = lazy(() => import("@/pages/Ledger"))
 
 // 管理端按需加载：普通用户首屏不必下载后台代码
 const AdminLogin = lazy(() => import("@/pages/admin/Login"))
@@ -72,6 +73,7 @@ export default function App() {
             <Route path="/achievements" element={<Achievements />} />
             <Route path="/fridge" element={<Fridge />} />
             <Route path="/report" element={<Report />} />
+            <Route path="/ledger" element={<Ledger />} />
           </Route>
           <Route path="/dishes/:id/cook" element={<AppGate><Suspense fallback={<RouteLoading />}><CookMode /></Suspense></AppGate>} />
           <Route

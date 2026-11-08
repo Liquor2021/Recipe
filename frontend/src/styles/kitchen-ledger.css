@@ -1,0 +1,100 @@
+.ledger-page { min-height: 100%; color: var(--k-ink); padding-bottom: calc(94px + env(safe-area-inset-bottom)); }
+.ledger-content { max-width: 640px; margin: 0 auto; padding: 12px 20px 24px; }
+.ledger-month-nav { display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 24px; }
+.ledger-month-nav > button { display: grid; place-items: center; min-width: 36px; min-height: 36px; border: 1px solid var(--k-line); border-radius: 4px; }
+.ledger-month-nav input { width: 155px; min-height: 36px; padding: 5px 8px; border: 0; color: var(--k-ink); background: transparent; font-weight: 600; }
+.ledger-month-nav .ledger-this-month { padding: 4px 8px; font-size: 12px; }
+.ledger-summary { position: relative; padding: 20px 18px 17px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.ledger-tape { position: absolute; top: -7px; left: 50%; width: 64px; height: 14px; transform: translateX(-50%) rotate(-3deg); background: color-mix(in srgb, var(--k-amber) 35%, transparent); border-inline: 1px dashed var(--k-card); }
+.ledger-eyebrow { color: var(--k-muted); font-size: 12px; letter-spacing: .12em; }
+.ledger-total-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 9px 14px; margin: 6px 0 18px; }
+.ledger-total-line > strong { font: 900 clamp(30px, 6vw, 40px)/1.25 "Kitchen Serif", SimSun, serif; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ledger-total-line > strong > span { margin-right: 4px; font-size: .55em; }
+.ledger-comparison { padding: 2px 5px; border: 1px solid currentColor; border-radius: 3px; color: var(--k-green); font-size: 11px; transform: rotate(-2deg); }
+.ledger-comparison.is-up { color: var(--k-amber); }
+.ledger-budget-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px; font-size: 12px; color: var(--k-muted); }
+.ledger-budget-caption button { color: var(--k-red); text-decoration: underline; text-underline-offset: 3px; }
+.ledger-budget-track { height: 8px; margin-top: 9px; border-radius: 3px; overflow: hidden; background: var(--k-kraft); }
+.ledger-budget-track i { display: block; height: 100%; background: var(--k-green); }
+.ledger-budget-track.is-over i { background: var(--k-red); }
+.ledger-budget-note { margin: 7px 0 0; color: var(--k-muted); font-size: 11px; }
+.ledger-budget-note.is-over { display: inline-block; padding: 2px 6px; border: 1px solid currentColor; border-radius: 3px; color: var(--k-red); }
+.ledger-category-totals { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 14px; margin-top: 14px; border-top: 1px dashed var(--k-line); }
+.ledger-category-totals > span { border: 1px solid var(--k-line); padding: 3px 7px; border-radius: 4px; background: var(--k-paper); color: var(--k-muted); font-size: 11px; }
+.ledger-category-totals b { color: var(--k-ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+.ledger-distribution { margin-top: 12px; padding: 14px 18px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); }
+.ledger-distribution h2 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.ledger-distribution h2 svg { color: var(--k-red); }
+.ledger-mixbar { display: flex; height: 10px; margin-top: 12px; overflow: hidden; border-radius: 3px; background: var(--k-kraft); }
+.ledger-mixbar i { height: 100%; }
+.ledger-legend { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 9px; color: var(--k-muted); font-size: 11px; }
+.ledger-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.ledger-legend i { width: 6px; height: 6px; border-radius: 50%; }
+.ledger-entries-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px; margin: 24px 0 10px; }
+.ledger-entries-heading h2 { font: 900 19px "Kitchen Serif", SimSun, serif; }
+.ledger-entries-heading > span { color: var(--k-muted); font-size: 11px; }
+.ledger-filters { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.ledger-filters button { min-height: 32px; padding: 4px 9px; border: 1px solid var(--k-line); border-radius: 3px; font-size: 12px; }
+.ledger-filters button[aria-pressed="true"] { border-color: var(--k-ink); background: var(--k-ink); color: var(--k-card); }
+.ledger-day { padding: 12px 14px 6px; margin-bottom: 10px; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-card); }
+.ledger-day h3 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; padding-bottom: 5px; font: 900 16px "Kitchen Serif", SimSun, serif; }
+.ledger-day h3 small { color: var(--k-muted); font: 11px system-ui, sans-serif; }
+.ledger-day h3 b { margin-left: auto; color: var(--k-red); font-size: 14px; font-variant-numeric: tabular-nums; }
+.ledger-entry { display: flex; align-items: center; gap: 9px; width: 100%; padding: 11px 0; border-bottom: 1px dotted var(--k-line); text-align: left; }
+.ledger-entry:last-child { border: 0; }
+.ledger-source { flex-shrink: 0; padding: 1px 4px; border: 1px solid currentColor; border-radius: 3px; color: var(--k-muted); font-size: 10px; transform: rotate(-2deg); }
+.ledger-source.is-shopping { color: var(--k-green); }
+.ledger-source.is-takeout { color: var(--k-amber); }
+.ledger-entry-note { min-width: 0; max-width: 65%; }
+.ledger-entry-note strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.ledger-entry-note small { display: block; margin-top: 2px; color: var(--k-muted); font-size: 10px; }
+.ledger-leader { flex: 1; min-width: 8px; border-bottom: 1px dotted var(--k-line); }
+.ledger-entry > b { flex-shrink: 0; font: 700 15px "Kitchen Serif", SimSun, serif; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger-entry > svg { flex-shrink: 0; color: var(--k-muted); }
+.ledger-empty { min-height: 190px; padding: 24px 16px; text-align: center; font-size: 12px; }
+.ledger-empty strong { color: var(--k-ink); font-size: 15px; }
+.ledger-add-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 101; max-width: 640px; margin: auto; padding: 12px 20px max(12px, env(safe-area-inset-bottom)); background: var(--k-paper); border-top: 1px solid var(--k-line); }
+.ledger-add-bar button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 44px; border-radius: 5px; background: var(--k-ink); color: var(--k-card); font: 700 16px "Kitchen Serif", SimSun, serif; }
+.ledger-amount { display: block; margin: 0 0 18px; padding-top: 4px; text-align: center; font-size: 12px; color: var(--k-muted); }
+.ledger-money-input { display: flex; justify-content: center; align-items: baseline; gap: 8px; max-width: 340px; margin: 8px auto 0; color: var(--k-ink); }
+.ledger-money-input > b { font-size: 22px; }
+.ledger-money-input input { width: 100%; min-width: 0; padding: 2px 8px 7px; border: 0; border-bottom: 1px dashed var(--k-muted); border-radius: 0; background: transparent; color: var(--k-ink); text-align: center; font: 900 36px "Kitchen Serif", SimSun, serif; }
+.ledger-category-field { margin: 0 0 16px; }
+.ledger-category-field legend, .ledger-field { font-size: 12px; color: var(--k-muted); }
+.ledger-category-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.ledger-category-options label { position: relative; cursor: pointer; }
+.ledger-category-options input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ledger-category-options span { display: block; min-height: 35px; padding: 7px 11px; border: 1px dashed var(--k-line); border-radius: 4px; font-size: 13px; }
+.ledger-category-options .is-selected span { border: 1px solid var(--k-red); color: var(--k-red); background: color-mix(in srgb, var(--k-red) 5%, var(--k-card)); }
+.ledger-category-options input:focus-visible + span { outline: 2px solid var(--k-red); outline-offset: 2px; }
+.ledger-field { display: block; margin: 0 0 15px; }
+.ledger-field > span { font-size: 10px; margin-left: 4px; }
+.ledger-field input, .ledger-field textarea { display: block; width: 100%; margin-top: 6px; padding: 9px 10px; border: 1px solid var(--k-line); background: var(--k-paper); color: var(--k-ink); font-size: 14px; resize: vertical; }
+.ledger-link-setting { margin: 12px 0; padding-block: 11px; border-top: 1px dashed var(--k-line); }
+.ledger-link-setting > button[role="switch"] { display: flex; width: 100%; align-items: center; gap: 12px; text-align: left; }
+.ledger-link-setting strong { display: block; font-size: 13px; font-weight: 600; }
+.ledger-link-setting small { display: block; margin-top: 3px; color: var(--k-muted); font-size: 11px; }
+.ledger-switch { display: flex; align-items: center; flex-shrink: 0; width: 34px; height: 20px; margin-left: auto; padding: 3px; border: 1px solid var(--k-line); border-radius: 4px; background: var(--k-kraft); }
+.ledger-switch i { width: 12px; height: 12px; background: var(--k-muted); border-radius: 2px; }
+.ledger-switch.is-on { justify-content: flex-end; border-color: var(--k-green); }
+.ledger-switch.is-on i { background: var(--k-green); }
+.ledger-text-button { min-height: 36px; color: var(--k-muted); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.ledger-text-button.is-danger { color: var(--k-red); }
+.ledger-error { padding: 10px; margin: 10px 0; border: 1px dashed var(--k-red); border-radius: 4px; color: var(--k-red); font-size: 12px; line-height: 1.7; }
+.ledger-error button { margin-left: 10px; text-decoration: underline; }
+.ledger-page button:focus-visible, .ledger-sheet :where(input, textarea):focus-visible { outline: 2px solid var(--k-red); outline-offset: 2px; }
+.ledger-page button:disabled, .ledger-link-setting button:disabled { opacity: .5; cursor: default; }
+.ledger-home-note { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; margin-top: 12px; border: 1px solid var(--k-line); border-left: 3px solid var(--k-amber); border-radius: 4px; background: color-mix(in srgb, var(--k-amber) 5%, var(--k-card)); text-align: left; }
+.ledger-home-note > svg { color: var(--k-amber); flex-shrink: 0; }
+.ledger-home-note > span { min-width: 0; flex: 1; }
+.ledger-home-note strong { display: block; font: 900 17px "Kitchen Serif", SimSun, serif; }
+.ledger-home-note small { display: block; margin-top: 4px; color: var(--k-muted); font-size: 11px; }
+@media (max-width: 360px) {
+  .ledger-content { padding-inline: 14px; }
+  .ledger-summary, .ledger-distribution { padding-inline: 13px; }
+  .ledger-day { padding-inline: 10px; }
+  .ledger-entry { gap: 6px; }
+  .ledger-entry-note { max-width: 52%; }
+  .ledger-entry > b { font-size: 13px; }
+  .ledger-add-bar { padding-inline: 14px; }
+}

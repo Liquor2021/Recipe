@@ -49,6 +49,7 @@ func Init() error {
 		&models.BlindBox{},
 		&models.Holiday{},
 		&models.Setting{},
+		&models.Expense{},
 		&models.DayRating{},
 		&models.ShoppingCheck{},
 		&models.InventoryBatch{},

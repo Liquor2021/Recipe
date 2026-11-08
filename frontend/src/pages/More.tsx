@@ -3,6 +3,10 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
 import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { logoutApp } from "@/api/client"
+import { ledgerApi } from "@/api/ledger"
+import type { ShoppingPurchase } from "@/lib/ledger"
+import ExpenseSheet from "@/components/ExpenseSheet"
+import ShoppingLedgerToggle from "@/components/ShoppingLedgerToggle"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import { asString } from "@/lib/utils"
@@ -13,7 +17,7 @@ import PageHeader from "@/components/PageHeader"
 import { cardShadow } from "@/components/Card"
 import type { Achievement, WeekDayPlan, ShoppingCategory, ShoppingItem, MealRecord } from "@/types"
 import toast from "react-hot-toast"
-import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole, LogOut } from "lucide-react"
+import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole, LogOut, NotebookPen } from "lucide-react"
 import { isAxiosError } from "axios"
 import "@/styles/kitchen-tools.css"
 
@@ -240,6 +244,8 @@ export default function More() {
     enabled: shoppingEdits === 0,
   })
   const shoppingList = rawShoppingList ?? []
+  const { data: ledgerSettings } = useQuery({ queryKey: ["ledger-settings"], queryFn: ledgerApi.settings })
+  const [purchase, setPurchase] = useState<ShoppingPurchase | null>(null)
   const { data: settings } = useQuery({ queryKey: ["settings"], queryFn: () => settingsApi.get() })
 
   const [showAllWeekDays, setShowAllWeekDays] = useState(false)
@@ -357,8 +363,9 @@ export default function More() {
       shoppingListApi.toggle(data),
     retry: false,
     onMutate: () => qc.cancelQueries({ queryKey: ["shopping-list"] }),
-    onSuccess: () => {
+    onSuccess: (_, data) => {
       qc.invalidateQueries({ queryKey: ["achievements"] })
+      if (!data.checked) toast("已取消勾选；已记支出仍保留，可到账本修改", { duration: 3500 })
     },
     onError: (err: unknown) => {
       toast.error(getUploadErrorMessage(err, "勾选未保存，请重试"))
@@ -445,7 +452,11 @@ export default function More() {
   const renderShoppingRow = (item: ShoppingItem) => (
     <div key={item.name} className={`flex items-center gap-2.5 py-1.5 text-sm ${item.in_stock && !needsShopping(item) ? "opacity-70" : ""}`}>
       <button
-        onClick={() => startShoppingEdit(item.name, () => checkMut.mutate({ item_name: item.name, meal_date: getTodayStr(), checked: !item.checked, demand_version: item.demand_version }))}
+        onClick={() => startShoppingEdit(item.name, () => {
+          const data = { item_name: item.name, meal_date: getTodayStr(), checked: !item.checked, demand_version: item.demand_version }
+          if (data.checked && ledgerSettings?.shopping_link_enabled) setPurchase(data)
+          else checkMut.mutate(data)
+        })}
         disabled={(item.in_stock && !needsShopping(item)) || pendingShopping.has(item.name)}
         aria-label={`${item.checked ? "取消已买" : "标记已买"}${item.name}`}
         aria-pressed={item.checked}
@@ -567,6 +578,7 @@ export default function More() {
         <section ref={shoppingRef} id="shopping" aria-label="买菜清单">
         <div hidden={!shoppingOpen} className="k-more-shopping-content">
         <h2 className="k-tool-section-title mb-3">「采购明细」</h2>
+        <ShoppingLedgerToggle />
         {totalItems > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="text-xs text-text2">
@@ -632,12 +644,17 @@ export default function More() {
         )}
         </div>
         {showStockIn && <StockInSheet candidates={stockInCandidates} onClose={() => setShowStockIn(false)} />}
+        {purchase && <ExpenseSheet purchase={purchase} onClose={() => setPurchase(null)} />}
         </section>
 
         <nav className="k-more-directory" aria-label="厨房手册目录">
           <button type="button" onClick={() => navigate("/fridge")} className="k-more-entry">
             <span className="k-more-entry-icon"><Snowflake size={20} aria-hidden="true" /></span>
             <strong>冰箱库存</strong><span className="k-tool-leader" aria-hidden="true" /><small>食材与保质期</small><ChevronRight size={17} aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => navigate("/ledger")} className="k-more-entry">
+            <span className="k-more-entry-icon"><NotebookPen size={20} aria-hidden="true" /></span>
+            <strong>厨房账本</strong><span className="k-tool-leader" aria-hidden="true" /><small>柴米油盐的花销</small><ChevronRight size={17} aria-hidden="true" />
           </button>
           <button type="button" className="k-more-entry" aria-expanded={weekOpen} aria-controls="week-menu-pages" onClick={() => setWeekOpen(value => !value)}>
             <span className="k-more-entry-icon"><CalendarDays size={20} aria-hidden="true" /></span>

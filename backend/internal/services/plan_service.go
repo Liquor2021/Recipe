@@ -1130,11 +1130,28 @@ func ShoppingListDates() []string {
 
 // ToggleShoppingCheck 勾选/取消某食材"已买"：只改买菜清单展示范围（今天+明天）内的条目，
 // 不能把历史日期和更远日期里同名的条目一起改掉（会污染"已买"统计与之后的清单）
-func ToggleShoppingCheck(itemName string, checked bool, demandVersion string) error {
+func ToggleShoppingCheck(itemName string, checked bool, demandVersion string, receipt ...*ExpenseInput) error {
 	if demandVersion == "" {
 		return ErrShoppingDemandChanged
 	}
 	return database.DB.Transaction(func(tx *gorm.DB) error {
+		withExpense := len(receipt) > 0 && receipt[0] != nil
+		if withExpense {
+			if !checked {
+				return ErrExpenseRequestConflict
+			}
+			if err := ValidateExpense(receipt[0], true); err != nil {
+				return err
+			}
+			_, created, err := CreateExpenseTx(tx, *receipt[0], "shopping", itemName, demandVersion)
+			if err != nil {
+				return err
+			}
+			// 已提交成功但响应丢失时，原样重试仅确认原账目，不再修改采购状态。
+			if !created {
+				return nil
+			}
+		}
 		dates := ShoppingListDates()
 		var rows []models.ShoppingCheck
 		if err := tx.Where("item_name = ? AND meal_date IN ?", itemName, dates).Order("id ASC").Find(&rows).Error; err != nil {
@@ -1146,6 +1163,16 @@ func ToggleShoppingCheck(itemName string, checked bool, demandVersion string) er
 		demands, err := adoptShoppingDemands(tx, rows)
 		if err != nil {
 			return err
+		}
+		if withExpense {
+			pending := false
+			for _, demand := range demands {
+				_, needsBuy := outstandingShoppingAmount(demand.row.ItemAmount, demand.purchased)
+				pending = pending || needsBuy
+			}
+			if !pending {
+				return ErrShoppingAlreadyPurchased
+			}
 		}
 		for _, demand := range demands {
 			purchased := demand.stocked
