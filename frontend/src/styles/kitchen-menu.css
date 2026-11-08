@@ -8,7 +8,6 @@
   padding: 26px 20px calc(18px + env(safe-area-inset-bottom));
   border-radius: 16px 16px 0 0;
   background-color: var(--k-card);
-  overflow: hidden;
 }
 
 .kitchen-menu-sheet .kitchen-sheet-heading {
