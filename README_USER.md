@@ -6,8 +6,10 @@
 
 1. 运行 `ninimenu.exe`（Windows）或 `./ninimenu`（Linux）
 2. 浏览器打开 `http://localhost:8080`
-3. 输入应用密码登录（默认 `nini123`）
-4. 管理后台地址 `http://localhost:8080/admin`，默认密码 `nini123`
+3. 输入应用密码登录（默认 `123456`）
+4. 管理后台地址 `http://localhost:8080/admin`，默认密码 `123456`
+
+返回应用登录页：打开底部「更多」，在页面下方点击「退出并返回登录」。重新输入口令后会回到原页面。
 
 > 首次运行可在同目录下创建 `.env` 或 `env.bak` 文件修改端口、密码等配置。
 >
@@ -245,16 +247,15 @@ backend\imgtool.exe -t 250 logo.png
 
 ### 步骤五：替换 static 中的图片文件
 
-将压缩后的图片文件放入 `static/` 目录（对应 `backend/static/`），替换原有同名文件：
+将需要的 PNG 按下表重命名（192×192 需另行导出），并准备同款 SVG 图标。开发时替换 `frontend/public/` 中的文件后重新构建；发布包中替换 `static/` 目录（对应 `backend/static/`）的同名文件：
 
 | 文件 | 用途 |
 |------|------|
-| `32.png` | 最小图标 |
-| `64.png` | 小图标 |
-| `128.png` | 中等图标 |
-| `180.png` | Apple Touch Icon |
-| `256.png` | 大图标 |
-| `512.png` | PWA 启动图标 |
+| `kitchen-icon.svg` | “灶”字印章标签页图标 |
+| `kitchen-icon-32.png` | 标签页备用图标 |
+| `kitchen-icon-180.png` | Apple Touch Icon |
+| `kitchen-icon-192.png` | PWA 小图标 |
+| `kitchen-icon-512.png` | PWA 大图标 |
 
 ---
 

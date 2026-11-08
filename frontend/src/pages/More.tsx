@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
 import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
+import { logoutApp } from "@/api/client"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import { asString } from "@/lib/utils"
@@ -12,7 +13,7 @@ import PageHeader from "@/components/PageHeader"
 import { cardShadow } from "@/components/Card"
 import type { Achievement, WeekDayPlan, ShoppingCategory, ShoppingItem, MealRecord } from "@/types"
 import toast from "react-hot-toast"
-import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole } from "lucide-react"
+import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole, LogOut } from "lucide-react"
 import { isAxiosError } from "axios"
 import "@/styles/kitchen-tools.css"
 
@@ -735,6 +736,14 @@ export default function More() {
             </button>
           </section>
         )}
+        <section className="k-more-settings" aria-label="登录">
+          <h2 className="k-tool-section-title">「登录」</h2>
+          <button type="button" onClick={() => { logoutApp(); qc.clear() }} className="k-more-setting">
+            <span><strong>退出并返回登录</strong><small>合上手账，下次输入口令再打开</small></span>
+            <span className="k-tool-leader" aria-hidden="true" />
+            <LogOut size={17} aria-hidden="true" />
+          </button>
+        </section>
       </div>
 
       {sheetDay && (

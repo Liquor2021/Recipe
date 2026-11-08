@@ -2,7 +2,7 @@
 // 会留下痕迹（记录会解锁成就、测试菜是软删除），请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/features2_e2e.mjs
 const BASE = process.env.TEST_API_BASE || "http://localhost:8080/api"
-const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": "123456", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
 function check(name, cond, detail = "") {
@@ -24,7 +24,7 @@ async function shoppingItem(name) {
 }
 
 async function main() {
-  const login = await req("POST", "/admin/login", { password: "nini123" })
+  const login = await req("POST", "/admin/login", { password: "123456" })
   const AH = { ...H, Authorization: `Bearer ${login.data?.token || ""}` }
   check("管理端登录", login.code === 0, JSON.stringify(login))
 
@@ -73,7 +73,7 @@ async function main() {
 
   console.log("== 默认口令提醒 ==")
   r = await req("GET", "/admin/security", undefined, AH)
-  // E2E 服务用的是默认口令 nini123、未设置 JWT_SECRET
+  // E2E 服务用的是默认口令 123456、未设置 JWT_SECRET
   check("列出仍是默认值的口令和密钥", r.code === 0 && ["APP_PASSWORD", "ADMIN_PASSWORD", "JWT_SECRET"].every((n) => (r.data?.insecure_defaults || []).includes(n)), JSON.stringify(r.data))
 
   // 清理

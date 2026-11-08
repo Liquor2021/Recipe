@@ -29,7 +29,7 @@ var C Config
 
 // 未配置时的默认口令与签名密钥：只适合本机试用，部署到局域网/公网前必须改
 const (
-	DefaultPassword  = "nini123"
+	DefaultPassword  = "123456"
 	DefaultJWTSecret = "ninimenu-secret-key"
 )
 

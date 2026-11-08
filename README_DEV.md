@@ -55,8 +55,8 @@ chmod +x ninimenu
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `8080` | 服务端口 |
-| `APP_PASSWORD` | `nini123` | 应用端密码 |
-| `ADMIN_PASSWORD` | `nini123` | 管理端密码 |
+| `APP_PASSWORD` | `123456` | 应用端密码 |
+| `ADMIN_PASSWORD` | `123456` | 管理端密码 |
 | `JWT_SECRET` | `ninimenu-secret-key` | JWT 签名密钥 |
 | `JWT_EXPIRE` | `24h` | Token 过期时间 |
 | `DB_PATH` | `data/ninimenu.db` | 数据库路径 |

@@ -36,8 +36,8 @@ $env:BACKUP_DIR = Join-Path $testDir 'uploads_backup'
 $env:DB_BACKUP_DIR = Join-Path $testDir 'backups'
 $env:DB_BACKUP_KEEP = '7'
 $env:PORT = '8080'
-$env:APP_PASSWORD = 'nini123'
-$env:ADMIN_PASSWORD = 'nini123'
+$env:APP_PASSWORD = '123456'
+$env:ADMIN_PASSWORD = '123456'
 $env:JWT_SECRET = 'ninimenu-secret-key'
 & (Join-Path $testDir 'server.exe')
 ```

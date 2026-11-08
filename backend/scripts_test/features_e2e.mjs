@@ -1,6 +1,6 @@
 // 新功能批量 E2E：临期管理 / 食材搜索 / 健康报告 / 家庭忌口
 const BASE = "http://localhost:8080/api"
-const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": "123456", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
 function check(name, cond, detail = "") {
@@ -85,7 +85,7 @@ async function main() {
 
   console.log("== 家庭忌口 ==")
   // admin 接口需要 JWT：先登录拿 token
-  const login = await fetch(BASE + "/admin/login", { method: "POST", headers: H, body: JSON.stringify({ password: "nini123" }) })
+  const login = await fetch(BASE + "/admin/login", { method: "POST", headers: H, body: JSON.stringify({ password: "123456" }) })
   const loginData = await login.json()
   const adminH = { ...H, Authorization: `Bearer ${loginData.data?.token || ""}` }
   async function adminApi(method, path, body) {

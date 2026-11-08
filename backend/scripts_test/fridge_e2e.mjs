@@ -1,6 +1,6 @@
 // 冰箱库存 API E2E 测试（Node 原生 fetch，UTF-8）
 const BASE = "http://localhost:8080/api"
-const HEADERS = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const HEADERS = { "X-App-Token": "123456", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
 function check(name, cond, detail = "") {

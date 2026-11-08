@@ -41,9 +41,51 @@ function setup() {
     return module.exports
   }
   const auth = load("src/store/useAuthStore.ts").useAuthStore
-  const { default: client, api, apiFresh } = load("src/api/client.ts")
-  return { client, api, apiFresh, auth, storage, events, cacheMessages }
+  const { default: client, api, apiFresh, logoutApp } = load("src/api/client.ts")
+  return { client, api, apiFresh, logoutApp, auth, storage, events, cacheMessages }
 }
+
+test("主动退出同时清除两种身份及离线缓存，保留用户外观偏好", async () => {
+  const { client, logoutApp, auth, storage, events, cacheMessages } = setup()
+  storage.set("kitchen-theme", "night")
+  logoutApp()
+  assert.equal(storage.has("ninimenu_app_password"), false)
+  assert.equal(storage.has("token"), false)
+  assert.equal(auth.getState().isLoggedIn, false)
+  assert.equal(storage.get("kitchen-theme"), "night")
+  assert.deepEqual(events, ["app-auth-expired"])
+  await Promise.resolve()
+  assert.equal(cacheMessages.length, 1)
+  assert.equal(cacheMessages[0].type, "clear-api-cache")
+  client.defaults.adapter = async (config) => {
+    assert.equal(config.headers.get("X-App-Token"), undefined)
+    assert.equal(config.headers.get("Authorization"), undefined)
+    return successfulLogin(config)
+  }
+  await client.get("/app-info")
+})
+
+test("退出前的迟到认证失败不能影响用相同口令重新打开的手账", async () => {
+  for (const code of [40101, 40102]) {
+    const { client, logoutApp, auth, storage, events } = setup()
+    const started = deferred(), finish = deferred()
+    client.defaults.adapter = async (config) => {
+      started.resolve()
+      await finish.promise
+      throw reject401(config, code)
+    }
+    const pending = assert.rejects(client.get("/fridge"))
+    await started.promise
+    logoutApp()
+    storage.set("ninimenu_app_password", "app-password")
+    auth.getState().login("old-admin")
+    finish.resolve()
+    await pending
+    assert.equal(storage.get("ninimenu_app_password"), "app-password")
+    assert.equal(auth.getState().isLoggedIn, true)
+    assert.deepEqual(events, ["app-auth-expired"])
+  }
+})
 
 test("ordinary reads accept offline snapshots but editable reads reject old SW cache", async () => {
   const { client, api, apiFresh, events } = setup()

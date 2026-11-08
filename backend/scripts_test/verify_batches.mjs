@@ -1,5 +1,5 @@
 // 批次模型 E2E
-const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": "123456", "Content-Type": "application/json" }
 const B = "http://localhost:8080/api"
 let ok = 0, bad = 0
 const check = (n, c, d = "") => { if (c) { ok++; console.log("  ✓ " + n) } else { bad++; console.log("  ✗ " + n + " " + d) } }

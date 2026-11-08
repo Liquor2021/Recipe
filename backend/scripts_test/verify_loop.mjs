@@ -1,5 +1,5 @@
 // 验证冰箱闭环：补料入清单 + 做完菜扣库存
-const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": "123456", "Content-Type": "application/json" }
 const B = "http://localhost:8080/api"
 let ok = 0, bad = 0
 const check = (name, cond, detail = "") => {

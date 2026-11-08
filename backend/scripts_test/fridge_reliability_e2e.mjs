@@ -3,7 +3,7 @@
 import assert from "node:assert/strict"
 
 const BASE = process.env.TEST_API_BASE || "http://localhost:8080/api"
-const headers = { "X-App-Token": process.env.TEST_APP_PASSWORD || "nini123", "Content-Type": "application/json" }
+const headers = { "X-App-Token": process.env.TEST_APP_PASSWORD || "123456", "Content-Type": "application/json" }
 const stamp = Date.now()
 const owned = new Set()
 let passed = 0

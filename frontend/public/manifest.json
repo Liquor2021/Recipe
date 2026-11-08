@@ -5,35 +5,15 @@
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFF8F0",
-  "theme_color": "#863BFF",
+  "theme_color": "#c2492f",
   "icons": [
     {
-      "src": "/32.png",
-      "sizes": "32x32",
+      "src": "/kitchen-icon-192.png",
+      "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/64.png",
-      "sizes": "64x64",
-      "type": "image/png"
-    },
-    {
-      "src": "/128.png",
-      "sizes": "128x128",
-      "type": "image/png"
-    },
-    {
-      "src": "/180.png",
-      "sizes": "180x180",
-      "type": "image/png"
-    },
-    {
-      "src": "/256.png",
-      "sizes": "256x256",
-      "type": "image/png"
-    },
-    {
-      "src": "/512.png",
+      "src": "/kitchen-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

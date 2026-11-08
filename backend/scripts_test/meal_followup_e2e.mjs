@@ -1,7 +1,7 @@
 // 计划恢复/改期、待完成分页与库存扣减日志回归；必须对专用临时数据库运行。
 // node backend/scripts_test/meal_followup_e2e.mjs
 const BASE = process.env.TEST_API_BASE || "http://localhost:8080/api"
-const H = { "X-App-Token": process.env.TEST_APP_PASSWORD || "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": process.env.TEST_APP_PASSWORD || "123456", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 const records = new Set(), dishes = [], batchIDs = new Set(), undoOrder = []
 const stamp = Date.now()
@@ -53,7 +53,7 @@ async function undoMeal(id, entryID) {
   return req("POST", `/records/${id}/undo-completion`, { entry_id: entryID })
 }
 
-const login = await must("POST", "/admin/login", { password: process.env.TEST_ADMIN_PASSWORD || "nini123" })
+const login = await must("POST", "/admin/login", { password: process.env.TEST_ADMIN_PASSWORD || "123456" })
 if (!login?.token) throw new Error("测试服务管理端登录失败")
 const AH = { ...H, Authorization: "Bearer " + login.token }
 try {

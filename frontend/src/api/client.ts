@@ -50,6 +50,16 @@ function clearOfflineApiCache(expiredVersion: number) {
     .catch(() => {})
 }
 
+// 主动合上手账时退出两种身份，避免管理凭证继续放行应用请求。
+export function logoutApp() {
+  authVersions.app++
+  authVersions.admin++
+  localStorage.removeItem(APP_TOKEN_KEY)
+  useAuthStore.getState().logout()
+  clearOfflineApiCache(authVersions.app)
+  window.dispatchEvent(new Event("app-auth-expired"))
+}
+
 client.interceptors.request.use((config) => {
   const appToken = localStorage.getItem(APP_TOKEN_KEY)
   if (appToken) {

@@ -2,7 +2,7 @@
 // 会留下痕迹（记录测试菜会解锁成就、测试菜是软删除），请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/verify_review_fixes.mjs
 const BASE = process.env.TEST_API_BASE || "http://localhost:8080/api"
-const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": "123456", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
 function check(name, cond, detail = "") {
@@ -28,7 +28,7 @@ async function shoppingItem(name) {
 }
 
 async function main() {
-  const login = await req("POST", "/admin/login", { password: "nini123" })
+  const login = await req("POST", "/admin/login", { password: "123456" })
   const AH = { ...H, Authorization: `Bearer ${login.data?.token || ""}` }
   check("管理端登录", login.code === 0, JSON.stringify(login))
 

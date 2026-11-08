@@ -1,4 +1,4 @@
-const H={'X-App-Token':'nini123'}
+const H={'X-App-Token':'123456'}
 const B='http://localhost:8080/api'
 ;(async()=>{
   const recs = await fetch(B+'/records?pageSize=100',{headers:H}).then(r=>r.json())

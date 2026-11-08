@@ -7,7 +7,7 @@ const CACHE_NAME = "ninimenu-v1"
 // API 缓存独立命名 + 版本化：策略调整时递增 vN，activate 会清掉旧版本
 // v3：需要最新编辑基线的读取禁止离线回退；普通浏览仍可读有效期内的副本。
 const API_CACHE_NAME = "ninimenu-api-v3"
-const CORE_ASSETS = ["/", "/index.html", "/manifest.json"]
+const CORE_ASSETS = ["/", "/index.html", "/manifest.json", "/kitchen-icon.svg", "/kitchen-icon-32.png", "/kitchen-icon-180.png", "/kitchen-icon-192.png", "/kitchen-icon-512.png"]
 
 // 离线副本最多保留 7 天：再旧的家庭数据（忌口、记录等）宁可不展示
 const API_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000

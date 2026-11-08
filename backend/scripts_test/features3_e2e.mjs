@@ -2,7 +2,7 @@
 // 会改动本周菜单缓存、清掉冰箱里的猪肉批次，请对着临时库启动的服务跑：
 //   DB_PATH=<临时目录>/test.db ./ninimenu   然后   node scripts_test/features3_e2e.mjs
 const BASE = "http://localhost:8080/api"
-const H = { "X-App-Token": "nini123", "Content-Type": "application/json" }
+const H = { "X-App-Token": "123456", "Content-Type": "application/json" }
 let passed = 0, failed = 0
 
 function check(name, cond, detail = "") {
@@ -110,7 +110,7 @@ async function main() {
   check("没有应用口令返回 401", r.status === 401, String(r.status))
 
   console.log("== 清冰箱推荐显示冰箱里的真实名字 ==")
-  const login = await req("POST", "/admin/login", { password: "nini123" })
+  const login = await req("POST", "/admin/login", { password: "123456" })
   const AH = { ...H, Authorization: `Bearer ${login.data?.token || ""}` }
   const dish = await req("POST", "/dishes", {
     name: "E2E五花肉测试菜", category: "家常菜", meal_type: "all",
