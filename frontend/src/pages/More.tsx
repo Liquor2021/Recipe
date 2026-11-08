@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
 import { achievementsApi, weekPlanApi, shoppingListApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 import { asString } from "@/lib/utils"
 import { Flip, gsap, motionDuration, useGSAP } from "@/lib/gsap"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
@@ -11,8 +12,9 @@ import PageHeader from "@/components/PageHeader"
 import { cardShadow } from "@/components/Card"
 import type { Achievement, WeekDayPlan, ShoppingCategory, ShoppingItem, MealRecord } from "@/types"
 import toast from "react-hot-toast"
-import { Menu } from "lucide-react"
+import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole } from "lucide-react"
 import { isAxiosError } from "axios"
+import "@/styles/kitchen-tools.css"
 
 function getTodayStr() {
   const d = new Date()
@@ -73,7 +75,7 @@ type MealKey = "lunch" | "dinner"
 
 const MEAL_SECTIONS: { key: MealKey; label: string; titleClass: string; rowClass: string }[] = [
   { key: "lunch", label: "🍳 午餐", titleClass: "text-primary", rowClass: "bg-primary-light text-primary" },
-  { key: "dinner", label: "🍲 晚餐", titleClass: "text-mint", rowClass: "bg-mint-light text-[#2E8577]" },
+  { key: "dinner", label: "🍲 晚餐", titleClass: "text-mint", rowClass: "bg-mint-light text-mint" },
 ]
 
 // 某一天的菜单：每道菜都能单独换；今天、明天还能一键加入计划和买菜清单
@@ -211,6 +213,8 @@ export default function More() {
   const location = useLocation()
   const qc = useQueryClient()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const theme = useKitchenTheme((s) => s.theme)
+  const toggleTheme = useKitchenTheme((s) => s.toggleTheme)
   // 请求状态由 QueryClient 保留：去冰箱再返回时，同一食材仍不能重复提交。
   const pendingNames = useMutationState({
     filters: { mutationKey: ["shopping-edit"], status: "pending" },
@@ -238,20 +242,26 @@ export default function More() {
   const [sheetDate, setSheetDate] = useState<string | null>(null)
   const [showStockIn, setShowStockIn] = useState(false)
   const [onlyNeedBuy, setOnlyNeedBuy] = useState(false)
+  const [shoppingOpen, setShoppingOpen] = useState(location.hash === "#shopping")
+  const [weekOpen, setWeekOpen] = useState(false)
   const shoppingRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (location.pathname !== "/more" || location.hash !== "#shopping") return
-    // MainLayout 保留各 tab；只滚动当前页，避免 scrollIntoView 推动横向 tab 容器。
-    const frame = requestAnimationFrame(() => {
-      const section = shoppingRef.current
-      const scroller = section?.closest<HTMLElement>("[data-tab-scroll]")
-      if (section && scroller) {
-        scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16
-      }
-    })
+    const frame = requestAnimationFrame(() => setShoppingOpen(true))
     return () => cancelAnimationFrame(frame)
   }, [location.pathname, location.hash, location.key])
+
+  useLayoutEffect(() => {
+    if (!shoppingOpen || shoppingLoading || location.pathname !== "/more" || location.hash !== "#shopping") return
+    // 展开提交后再测量；旧的收起高度会把 scrollTop 截断。只滚动当前 tab。
+    const section = shoppingRef.current
+    const scroller = section?.closest<HTMLElement>("[data-tab-scroll]")
+    if (!section || !scroller) return
+    const header = section.closest(".k-more-page")?.querySelector<HTMLElement>(".kitchen-page-header")
+    const headerHeight = header?.getBoundingClientRect().height ?? 0
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - headerHeight - 12
+  }, [shoppingOpen, shoppingLoading, location.pathname, location.hash, location.key])
 
   function startShoppingEdit(name: string, action: () => void) {
     // 直接读取同步状态，也挡住 React 尚未重绘时的连续点击。
@@ -393,9 +403,11 @@ export default function More() {
       qc.invalidateQueries({ queryKey: ["settings"] })
       toast.success("已更新")
     },
+    onError: (error) => toast.error(getUploadErrorMessage(error, "设置未保存，请重试")),
   })
 
   function toggleSetting(key: string, currentVal: string) {
+    if (settingsMut.isPending) return
     const newVal = currentVal === "1" ? "0" : "1"
     settingsMut.mutate({ [key]: newVal })
   }
@@ -535,34 +547,21 @@ export default function More() {
     setShowAllWeekDays((value) => !value)
   })
 
-  const previewAchievements = achievements
-    .slice()
-    .sort((a: Achievement, b: Achievement) => {
-      if (a.is_unlocked !== b.is_unlocked) return a.is_unlocked ? -1 : 1
-      return a.id - b.id
-    })
-    .slice(0, 3)
-
   return (
-    <div className="animate-fadeUp">
-      <PageHeader title="更多" subtitle="买菜清单、一周菜单和设置" icon={Menu} />
+    <div className="animate-fadeUp k-tools-page k-more-page">
+      <PageHeader title="更多" meta="手册目录" icon={Menu} />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto">
-        <section ref={shoppingRef} id="shopping" aria-label="买菜清单">
-        <div className="flex items-center justify-between gap-3 mb-3.5">
-          <div>
-            <h2 className="text-lg font-bold">🛒 买菜清单</h2>
-            <div className="text-xs text-text2 mt-0.5">今天 + 明天要用的食材</div>
-          </div>
-          {totalItems > 0 && (
-              <button
-                onClick={copyShoppingList}
-                className="shrink-0 px-3 py-2.5 rounded-full text-xs font-semibold bg-card border border-border text-text2 transition-all active:scale-95"
-              >
-                复制待买
-              </button>
-          )}
+        <div className="k-more-shopping-cover">
+          <button type="button" className="k-more-shopping-open" aria-expanded={shoppingOpen} aria-controls="shopping" onClick={() => setShoppingOpen(value => !value)}>
+            <span className="k-more-shopping-title"><ShoppingBasket size={19} aria-hidden="true" /><strong>买菜清单</strong><span className="k-tool-leader" aria-hidden="true" /><small>{shoppingLoading ? "整理中" : shoppingError && !rawShoppingList ? "待重试" : `待买 ${needBuyItems} · 已买 ${totalChecked}`}</small></span>
+            <span className="k-more-shopping-caption">今天 + 明天要用的食材，按分类收好了<ChevronDown size={16} className={shoppingOpen ? "is-expanded" : ""} aria-hidden="true" /></span>
+          </button>
+          {totalItems > 0 && <button type="button" className="k-tool-text-button k-more-copy" onClick={copyShoppingList}>复制待买</button>}
         </div>
+        <section ref={shoppingRef} id="shopping" aria-label="买菜清单">
+        <div hidden={!shoppingOpen} className="k-more-shopping-content">
+        <h2 className="k-tool-section-title mb-3">「采购明细」</h2>
         {totalItems > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="text-xs text-text2">
@@ -571,7 +570,7 @@ export default function More() {
             <button
               onClick={() => setOnlyNeedBuy((value) => !value)}
               aria-pressed={onlyNeedBuy}
-              className={`min-h-9 px-3 rounded-full text-xs font-semibold border transition-all active:scale-95 ${onlyNeedBuy ? "bg-primary-light text-primary border-primary/20" : "bg-card text-text2 border-border"}`}
+              className={`k-tool-chip ${onlyNeedBuy ? "is-active" : ""}`}
             >
               {onlyNeedBuy ? "✓ 只看待买" : "只看待买"}
             </button>
@@ -583,7 +582,7 @@ export default function More() {
             <button onClick={() => void reloadShopping()} disabled={shoppingFetching || shoppingEdits > 0} className="shrink-0 min-h-10 px-2 font-semibold text-primary disabled:opacity-50">{shoppingFetching ? "重试中…" : "重试"}</button>
           </div>
         )}
-        <div className="bg-card rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border mb-7">
+        <div className="k-more-shopping-paper">
           {shoppingLoading ? (
             <div role="status" className="py-5 px-4 text-center text-sm text-text3">正在整理买菜清单…</div>
           ) : !rawShoppingList ? null : shoppingList.length === 0 ? (
@@ -597,7 +596,7 @@ export default function More() {
               )}
               {visibleCategories.map((cat: ShoppingCategory, ci: number) => (
                 <div key={cat.category} className={`px-4 py-3 ${ci > 0 ? "border-t border-border" : ""}`}>
-                  <div className="text-[13px] font-bold text-text2 mb-2 tracking-wide">{cat.category}</div>
+                  <h3 className="k-more-shopping-category">{cat.category}</h3>
                   {cat.items.map((item) => renderShoppingRow(item))}
                 </div>
               ))}
@@ -621,35 +620,35 @@ export default function More() {
           <button
             onClick={() => setShowStockIn(true)}
             disabled={shoppingEdits > 0 || shoppingFetching}
-            className="w-full -mt-4 mb-7 py-2.5 rounded-xl text-sm font-bold text-[#2E8577] bg-mint-light transition-all active:scale-98 disabled:opacity-50"
+            className="k-tool-button w-full mb-5"
           >
             🧊 把已买的 {stockInCandidates.length} 样放进冰箱
           </button>
         )}
+        </div>
         {showStockIn && <StockInSheet candidates={stockInCandidates} onClose={() => setShowStockIn(false)} />}
         </section>
 
-        <button
-          onClick={() => navigate("/fridge")}
-          className={`w-full bg-card rounded-2xl p-4 ${cardShadow} border border-border flex items-center gap-3.5 transition-all active:scale-98 mb-7`}
-        >
-          <div className="w-12 h-12 rounded-[10px] bg-gradient-to-br from-mint-light to-yellow-light flex items-center justify-center text-2xl flex-shrink-0">🧊</div>
-          <div className="flex-1 min-w-0 text-left">
-            <div className="text-[15px] font-bold mb-0.5">🧊 冰箱库存</div>
-            <div className="text-xs text-text2">记下家里有什么，按食材找能做的菜</div>
-          </div>
-          <span className="text-text3 text-sm">›</span>
-        </button>
-
+        <nav className="k-more-directory" aria-label="厨房手册目录">
+          <button type="button" onClick={() => navigate("/fridge")} className="k-more-entry">
+            <span className="k-more-entry-icon"><Snowflake size={20} aria-hidden="true" /></span>
+            <strong>冰箱库存</strong><span className="k-tool-leader" aria-hidden="true" /><small>食材与保质期</small><ChevronRight size={17} aria-hidden="true" />
+          </button>
+          <button type="button" className="k-more-entry" aria-expanded={weekOpen} aria-controls="week-menu-pages" onClick={() => setWeekOpen(value => !value)}>
+            <span className="k-more-entry-icon"><CalendarDays size={20} aria-hidden="true" /></span>
+            <strong>一周菜单</strong><span className="k-tool-leader" aria-hidden="true" /><small>{weekPlanLoading ? "读取中" : weekPlanError && !weekPlan ? "待重试" : `已排 ${days.length} 天`}</small><ChevronRight className={weekOpen ? "is-expanded" : ""} size={17} aria-hidden="true" />
+          </button>
+        </nav>
+        <section id="week-menu-pages" hidden={!weekOpen} className="k-more-week-content">
         <div className="flex items-center justify-between mb-3.5">
           <div>
-            <div className="text-lg font-bold">📅 一周菜单</div>
+            <h2 className="k-tool-section-title">「一周菜单」</h2>
             {days.length > 0 && <div className="text-xs text-text3 mt-0.5">点开某一天，可以只换其中一道</div>}
           </div>
           <button
             onClick={() => startWeekPlanEdit(() => regenerateMut.mutate())}
             disabled={weekPlanEdits > 0}
-            className={`text-sm font-semibold text-text2 hover:text-primary hover:bg-primary-light px-3 py-1.5 rounded-full transition-all ${weekPlanEdits > 0 ? "opacity-50 pointer-events-none" : ""}`}
+            className="k-tool-text-button"
           >
             {regenerateMut.isPending ? "生成中..." : "🔄 重新生成"}
           </button>
@@ -687,78 +686,50 @@ export default function More() {
         {days.length > 2 && (
           <button
             onClick={toggleWeekDays}
-            className="w-full py-2 text-sm font-medium text-mint bg-mint-light/50 rounded-xl mt-2 mb-7 transition-all active:scale-98"
+            className="k-tool-button w-full mt-2 mb-5"
           >
             {showAllWeekDays ? "收起菜单" : "查看完整一周菜单 ▾"}
           </button>
         )}
         {days.length <= 2 && <div className="mb-7" />}
 
-        <div className="flex items-center justify-between mb-3.5">
-          <div className="text-lg font-bold">🏆 成就墙</div>
-          <span className="text-xs text-text3 font-medium">{unlockedCount}/{achievements.length} 已解锁</span>
-        </div>
-        <div className="grid grid-cols-3 gap-3 mb-2">
-          {previewAchievements.map((a: Achievement) => (
-            <div
-              key={a.id}
-              onClick={() => navigate("/achievements")}
-              className={`bg-card rounded-2xl p-4 pt-5 text-center shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border transition-all relative overflow-hidden cursor-pointer active:scale-95 ${a.is_unlocked ? "border-primary/20" : "border-border opacity-35 grayscale-[.9]"}`}
-            >
-              {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
-              <span className="text-[32px] block mb-1.5">{a.icon}</span>
-              <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
-              <div className="text-[11px] text-text2 line-clamp-2">{a.description}</div>
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={() => navigate("/achievements")}
-          className="w-full py-2 text-sm font-medium text-primary bg-primary-light/50 rounded-xl mb-7 transition-all active:scale-98"
-        >
-          查看更多成就 ›
-        </button>
+        </section>
+        <nav className="k-more-directory" aria-label="更多厨房入口">
+          <button type="button" className="k-more-entry" onClick={() => navigate("/achievements")}>
+            <span className="k-more-entry-icon"><Trophy size={20} aria-hidden="true" /></span>
+            <strong>成就墙</strong><span className="k-tool-leader" aria-hidden="true" /><small>{unlockedCount} / {achievements.length} 已解锁</small><ChevronRight size={17} aria-hidden="true" />
+          </button>
+          <button type="button" className="k-more-entry" onClick={() => navigate("/dishes")}>
+            <span className="k-more-entry-icon"><UtensilsCrossed size={20} aria-hidden="true" /></span>
+            <strong>开始做菜</strong><span className="k-tool-leader" aria-hidden="true" /><small>挑一道喜欢的菜</small><ChevronRight size={17} aria-hidden="true" />
+          </button>
+        </nav>
+
+        <section className="k-more-settings" aria-label="外观">
+          <h2 className="k-tool-section-title">「外观」</h2>
+          <button type="button" role="switch" aria-checked={theme === "night"} aria-label="深夜厨房" onClick={toggleTheme} className="k-more-setting">
+            <span><strong>深夜厨房</strong><small>当前：{theme === "night" ? "深夜厨房" : "白日厨房"}</small></span>
+            <span className="k-tool-leader" aria-hidden="true" />
+            <span className={`k-more-switch ${theme === "night" ? "is-on" : ""}`} aria-hidden="true"><i /></span>
+          </button>
+        </section>
 
         {isLoggedIn && (
-          <>
-            <div className="flex items-center justify-between mb-3.5 mt-7">
-              <div className="text-lg font-bold">⚙ 设置</div>
-            </div>
-            <div className="bg-card rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border">
-              <button onClick={() => toast(`推荐去重天数：${asString(settings?.repeat_days, "3")}天`)} className="w-full flex items-center justify-between px-4 py-3.5 border-b border-border transition-all active:bg-bg text-left">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-[10px] bg-primary-light flex items-center justify-center text-base">📅</div>
-                  <div><div className="text-sm font-medium">推荐去重</div><div className="text-[11px] text-text2">近{asString(settings?.repeat_days, "3")}天吃过的菜不优先推荐</div></div>
-                </div>
-                <span className="text-text3 text-sm flex items-center gap-1">{asString(settings?.repeat_days, "3")}天 ›</span>
-              </button>
-              <button onClick={() => toggleSetting("voice_enabled", asString(settings?.voice_enabled, "1"))} className="w-full flex items-center justify-between px-4 py-3.5 border-b border-border transition-all active:bg-bg text-left">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-[10px] bg-mint-light flex items-center justify-center text-base">🔊</div>
-                  <div><div className="text-sm font-medium">语音播报</div><div className="text-[11px] text-text2">做菜时语音朗读步骤</div></div>
-                </div>
-                <div className={`w-11 h-6 rounded-xl relative cursor-pointer transition-all ${settings?.voice_enabled !== "0" ? "bg-primary" : "bg-border2"}`}>
-                  <div className={`absolute top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-all ${settings?.voice_enabled !== "0" ? "left-[22px]" : "left-[2px]"}`} />
-                </div>
-              </button>
-              <button onClick={() => toggleSetting("blind_box_enabled", asString(settings?.blind_box_enabled, "1"))} className="w-full flex items-center justify-between px-4 py-3.5 border-b border-border transition-all active:bg-bg text-left">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-[10px] bg-purple-light flex items-center justify-center text-base">🎁</div>
-                  <div><div className="text-sm font-medium">惊喜盲盒</div><div className="text-[11px] text-text2">首页显示盲盒推荐</div></div>
-                </div>
-                <div className={`w-11 h-6 rounded-xl relative cursor-pointer transition-all ${settings?.blind_box_enabled !== "0" ? "bg-primary" : "bg-border2"}`}>
-                  <div className={`absolute top-[2px] w-5 h-5 rounded-full bg-white shadow-sm transition-all ${settings?.blind_box_enabled !== "0" ? "left-[22px]" : "left-[2px]"}`} />
-                </div>
-              </button>
-               <button onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} className="w-full flex items-center justify-between px-4 py-3.5 transition-all active:bg-bg text-left">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-[10px] bg-pink-light flex items-center justify-center text-base">🔒</div>
-                  <div><div className="text-sm font-medium">管理模式</div><div className="text-[11px] text-text2">管理菜品、推荐语、成就</div></div>
-                </div>
-                <span className="text-text3 text-sm">›</span>
-              </button>
-            </div>
-          </>
+          <section className="k-more-settings" aria-label="设置">
+            <h2 className="k-tool-section-title">「设置」</h2>
+            <button type="button" role="switch" aria-checked={settings?.voice_enabled !== "0"} aria-label="语音播报步骤" disabled={settingsMut.isPending} onClick={() => toggleSetting("voice_enabled", asString(settings?.voice_enabled, "1"))} className="k-more-setting">
+              <span><strong>语音播报步骤</strong><small>做菜时朗读当前步骤</small></span><span className="k-tool-leader" aria-hidden="true" /><span className={`k-more-switch ${settings?.voice_enabled !== "0" ? "is-on" : ""}`} aria-hidden="true"><i /></span>
+            </button>
+            <button type="button" role="switch" aria-checked={settings?.blind_box_enabled !== "0"} aria-label="惊喜盲盒入口" disabled={settingsMut.isPending} onClick={() => toggleSetting("blind_box_enabled", asString(settings?.blind_box_enabled, "1"))} className="k-more-setting">
+              <span><strong>惊喜盲盒入口</strong><small>首页保留一点小惊喜</small></span><span className="k-tool-leader" aria-hidden="true" /><span className={`k-more-switch ${settings?.blind_box_enabled !== "0" ? "is-on" : ""}`} aria-hidden="true"><i /></span>
+            </button>
+            <button type="button" onClick={() => toast(`推荐去重天数：${asString(settings?.repeat_days, "3")}天`)} className="k-more-setting">
+              <span><strong>推荐去重 · 近 {asString(settings?.repeat_days, "3")} 天</strong><small>最近吃过的菜不优先推荐</small></span><span className="k-tool-leader" aria-hidden="true" /><Settings2 size={17} aria-hidden="true" />
+            </button>
+            <button type="button" onClick={() => navigate("/admin/dashboard")} className="k-more-setting">
+              <span><strong>管理模式</strong><small>菜品、推荐语与成就</small></span><span className="k-tool-leader" aria-hidden="true" /><LockKeyhole size={17} aria-hidden="true" />
+            </button>
+          </section>
         )}
       </div>
 

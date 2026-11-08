@@ -1,0 +1,151 @@
+.k-tools-page { color: var(--k-ink); }
+.k-tool-section-title { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 900; }
+.k-tool-leader { min-width: 10px; flex: 1; align-self: center; border-bottom: 1px dotted var(--k-line); }
+.k-tool-button, .k-tool-chip, .k-tool-icon-button, .k-tool-text-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; font-size: 13px; font-weight: 600; color: var(--k-ink);
+  border: 1px solid var(--k-line); border-radius: 5px; background: transparent;
+  padding: 0 12px; cursor: pointer; transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+.k-tool-button.is-ink { background: var(--k-ink); color: var(--k-paper); border-color: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 900; }
+.k-tool-chip { flex-shrink: 0; min-height: 40px; padding-inline: 13px; font-weight: 500; }
+.k-tool-chip.is-active { background: var(--k-ink); color: var(--k-paper); border-color: var(--k-ink); }
+.k-tool-chip.is-dashed { border-style: dashed; }
+.k-tool-text-button { border: 0; padding-inline: 5px; color: var(--k-muted); }
+.k-tool-icon-button { width: 44px; flex-shrink: 0; border: 0; padding: 0; color: var(--k-muted); }
+.k-tool-button:disabled, .k-tool-chip:disabled, .k-tool-text-button:disabled, .k-tool-icon-button:disabled { opacity: .45; cursor: default; }
+.k-tools-page button:focus-visible, .k-plan-picker button:focus-visible { outline: 2px solid var(--k-red); outline-offset: 3px; }
+.k-tool-field { min-height: 44px; border: 1px dashed var(--k-line); border-radius: 5px; padding: 10px 12px; background: var(--k-card); color: var(--k-ink); font-size: 13px; outline: none; }
+.k-tool-field:focus { border-color: var(--k-red); outline: 2px solid color-mix(in srgb, var(--k-red) 15%, transparent); outline-offset: 2px; }
+.k-tool-field::placeholder { color: var(--k-faint); }
+.k-tool-stamp { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; padding: 3px 7px; border: 1px solid currentColor; border-radius: 3px; transform: rotate(-2deg); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 11px; font-weight: 700; line-height: 1.4; white-space: nowrap; }
+.k-tool-stamp.is-expired { color: var(--k-red); }
+.k-tool-stamp.is-urgent, .k-tool-stamp.is-soon { color: var(--k-amber); border-style: dashed; }
+.k-tool-stamp.is-fresh { color: var(--k-green); }
+.k-tool-polaroid { display: block; width: 66px; height: 70px; flex-shrink: 0; padding: 4px 4px 9px; border: 1px solid var(--k-line); border-radius: 3px; background: var(--k-card); box-shadow: var(--k-shadow); transform: rotate(-3deg); overflow: hidden; }
+.k-tool-polaroid > div { background: var(--k-kraft); border-radius: 1px; overflow: hidden; }
+
+/* Fridge: a stock ledger, with the batch itself as the editable unit. */
+.k-fridge-quantity { min-height: 38px; font-size: 12px; background: transparent; border-style: solid; border-color: transparent transparent var(--k-line); border-radius: 0; }
+.k-fridge-search { padding-left: 40px; padding-right: 44px; border-style: solid; background: transparent; }
+.k-fridge-alert { display: flex; align-items: center; gap: 9px; margin-bottom: 20px; padding: 6px 11px; border: 1px solid color-mix(in srgb, var(--k-red) 45%, var(--k-line)); border-radius: 6px; background: color-mix(in srgb, var(--k-red) 6%, var(--k-kraft)); color: var(--k-red); font-size: 12px; }
+.k-fridge-alert > svg { flex-shrink: 0; }
+.k-fridge-alert > span { flex: 1; }
+.k-fridge-alert .k-tool-text-button { flex-shrink: 0; color: var(--k-red); font-size: 12px; }
+.k-fridge-group { padding: 8px 0 10px; }
+.k-fridge-group + .k-fridge-group { border-top: 1px dotted var(--k-line); }
+.k-fridge-group-heading { display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px; }
+.k-fridge-group-heading h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 900; font-size: 17px; }
+.k-fridge-group-heading > span { font-size: 11px; color: var(--k-faint); }
+.k-fridge-batch { display: flex; align-items: center; gap: 2px; }
+.k-fridge-batch-edit { min-width: 0; min-height: 48px; display: flex; flex: 1; align-items: center; gap: 9px; text-align: left; padding: 4px 0; }
+.k-fridge-batch-edit > svg { flex-shrink: 0; color: var(--k-faint); }
+.k-fridge-batch-quantity { max-width: 45%; font-size: 13px; overflow-wrap: anywhere; }
+.k-fridge-no-expiry { color: var(--k-faint); font-size: 11px; }
+.k-fridge-batch-remove { display: flex; width: 40px; min-height: 44px; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 5px; font-size: 20px; color: var(--k-faint); }
+.k-fridge-batch-remove:disabled, .k-fridge-batch-edit:disabled { opacity: .45; }
+.k-fridge-recipe { display: flex; gap: 10px; align-items: center; padding: 13px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.k-fridge-recipe-open { display: flex; align-items: center; gap: 13px; flex: 1; min-width: 0; text-align: left; }
+.k-fridge-recipe-info { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.k-fridge-recipe-title { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 16px; font-weight: 900; overflow-wrap: anywhere; }
+.k-fridge-recipe-coverage { color: var(--k-muted); font-size: 11px; }
+.k-fridge-recipe-stock { color: var(--k-green); font-size: 11px; overflow-wrap: anywhere; }
+.k-fridge-recipe-actions { display: flex; flex-direction: column; align-items: center; gap: 9px; flex-shrink: 0; }
+.k-fridge-recipe-actions .k-tool-button { font-size: 12px; padding-inline: 9px; }
+
+/* Tomorrow: one menu leaf. The optional editing tools stay on the leaf. */
+.k-plan-paper { padding: 22px 18px 8px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.k-plan-heading { position: relative; padding: 4px 0 19px; margin-bottom: 8px; text-align: center; border-bottom: 4px double var(--k-ink); }
+.k-plan-heading h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 24px; font-weight: 900; letter-spacing: .18em; }
+.k-plan-heading p { margin-top: 6px; color: var(--k-muted); font-size: 12px; }
+.k-plan-save-stamp { position: absolute; top: -12px; right: -7px; font-size: 11px; transform: rotate(5deg); }
+.k-plan-meal { padding: 9px 0 4px; }
+.k-plan-meal + .k-plan-meal { padding-top: 16px; }
+.k-plan-meal-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.k-plan-meal-heading h3 { color: var(--k-red); letter-spacing: .55em; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 15px; font-weight: 900; }
+.k-plan-stepper { display: grid; height: 40px; grid-template-columns: 36px 24px 36px; align-items: stretch; border: 1px solid var(--k-line); border-radius: 4px; font-size: 12px; }
+.k-plan-stepper button { display: flex; align-items: center; justify-content: center; }
+.k-plan-dish { display: flex; align-items: center; gap: 9px; padding: 10px 0 7px; }
+.k-plan-photo { width: 43px; height: 47px; padding: 3px 3px 6px; }
+.k-plan-dish-name { min-width: 0; flex-shrink: 1; text-align: left; }
+.k-plan-dish-name strong { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 16px; font-weight: 900; overflow-wrap: anywhere; }
+.k-plan-dish-name > span { display: block; font-size: 11px; color: var(--k-muted); margin-top: 2px; }
+.k-plan-dish-actions { display: flex; flex-shrink: 0; gap: 0; }
+.k-plan-dish-actions .k-tool-icon-button { width: 36px; }
+.k-plan-dish-actions .is-delete { width: 30px; opacity: .7; }
+.k-plan-meal-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 4px; border-top: 1px dotted var(--k-line); }
+.k-plan-meal-tools .k-tool-text-button { font-size: 11px; padding-inline: 0; }
+.k-plan-preferences { margin-top: 22px; }
+.k-plan-preferences .k-tool-chip { min-height: 38px; }
+.k-plan-shopping-note { display: flex; align-items: center; gap: 9px; width: 100%; margin-top: 17px; padding: 14px; text-align: left; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-kraft); color: var(--k-muted); font-size: 12px; }
+.k-plan-shopping-note > svg { color: var(--k-red); flex-shrink: 0; }
+.k-plan-shopping-link { margin-left: auto; color: var(--k-red); flex-shrink: 0; font-size: 11px; }
+.k-plan-save-bar { position: fixed; z-index: 110; left: 50%; bottom: 0; transform: translateX(-50%); width: 100%; max-width: 680px; padding: 12px 18px; background: var(--k-card); border: 1px solid var(--k-line); border-bottom: 0; border-radius: 10px 10px 0 0; box-shadow: 0 -4px 16px rgb(43 37 32 / 6%); }
+.k-plan-save-button { min-height: 48px; flex-shrink: 0; padding-inline: 18px; font-size: 14px; }
+.k-plan-picker[open] { display: flex; flex-direction: column; height: min(760px, 88dvh); overflow: hidden; }
+.k-plan-picker > .kitchen-sheet-heading { flex-shrink: 0; }
+.k-plan-picker .k-tool-field { padding-left: 40px; }
+.k-plan-picker-results { overscroll-behavior: contain; }
+.k-plan-picker-count { margin: -6px 0 12px; color: var(--k-muted); font-size: 12px; }
+.k-plan-picker-count > span { color: var(--k-amber); }
+
+/* More: index page. Each leaf opens without losing the existing tools. */
+.k-more-shopping-cover { position: relative; padding: 16px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-kraft); margin-bottom: 16px; }
+.k-more-shopping-open { width: 100%; text-align: left; }
+.k-more-shopping-title { display: flex; align-items: center; gap: 10px; }
+.k-more-shopping-title > svg { color: var(--k-red); flex-shrink: 0; }
+.k-more-shopping-title strong { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 900; white-space: nowrap; }
+.k-more-shopping-title small { color: var(--k-muted); font-size: 11px; white-space: nowrap; }
+.k-more-shopping-caption { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; min-height: 24px; font-size: 12px; color: var(--k-muted); }
+.k-more-shopping-caption > svg { flex-shrink: 0; transition: transform 160ms ease; }
+.k-more-shopping-caption > svg.is-expanded { transform: rotate(180deg); }
+.k-more-copy { min-height: 34px; padding-inline: 0; color: var(--k-red); font-size: 12px; margin-top: 4px; }
+.k-more-entry { display: flex; align-items: center; gap: 11px; min-height: 78px; width: 100%; padding: 9px 0; text-align: left; border-bottom: 1px dotted var(--k-line); }
+.k-more-entry-icon { display: flex; width: 36px; height: 36px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--k-red); border-radius: 50%; color: var(--k-red); }
+.k-more-entry strong { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 900; white-space: nowrap; }
+.k-more-entry small { color: var(--k-faint); font-size: 11px; white-space: nowrap; }
+.k-more-entry > svg { color: var(--k-faint); flex-shrink: 0; transition: transform 150ms ease; }
+.k-more-entry > svg.is-expanded { transform: rotate(90deg); }
+.k-more-week-content, .k-more-shopping-content { padding-top: 19px; }
+.k-more-shopping-paper { margin-bottom: 20px; overflow: hidden; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); }
+.k-more-shopping-category { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 15px; font-weight: 900; color: var(--k-muted); margin-bottom: 8px; }
+.k-more-settings { padding-top: 24px; }
+.k-more-settings > h2 { margin-bottom: 6px; }
+.k-more-setting { display: flex; width: 100%; align-items: center; gap: 12px; min-height: 70px; padding: 13px 0; text-align: left; border-bottom: 1px dotted var(--k-line); }
+.k-more-setting strong { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 15px; font-weight: 900; }
+.k-more-setting small { display: block; font-size: 11px; color: var(--k-faint); margin-top: 3px; }
+.k-more-setting > svg { color: var(--k-faint); flex-shrink: 0; }
+.k-more-setting:disabled { opacity: .5; }
+.k-more-switch { display: inline-block; width: 37px; height: 22px; padding: 3px; flex-shrink: 0; border: 1px solid var(--k-faint); border-radius: 12px; color: var(--k-faint); }
+.k-more-switch i { display: block; width: 14px; height: 14px; background: currentColor; border-radius: 50%; transition: transform 160ms ease; }
+.k-more-switch.is-on { border-color: var(--k-red); color: var(--k-red); }
+.k-more-switch.is-on i { transform: translateX(15px); }
+
+@media (hover: hover) {
+  .k-tool-button:hover:not(:disabled), .k-tool-chip:hover:not(:disabled):not(.is-active) { color: var(--k-red); border-color: var(--k-red); background: color-mix(in srgb, var(--k-red) 4%, transparent); }
+  .k-tool-button.is-ink:hover:not(:disabled) { background: var(--k-red); color: var(--k-card); }
+  .k-tool-text-button:hover:not(:disabled), .k-tool-icon-button:hover:not(:disabled), .k-fridge-batch-remove:hover:not(:disabled) { color: var(--k-red); }
+  .k-more-entry:hover strong, .k-fridge-recipe-open:hover .k-fridge-recipe-title { color: var(--k-red); }
+}
+@media (max-width: 359px) {
+  .k-plan-paper { padding-inline: 12px; }
+  .k-plan-dish { gap: 6px; }
+  .k-plan-dish .k-tool-leader { display: none; }
+  .k-plan-dish-name { flex: 1; }
+  .k-plan-dish-name strong { font-size: 15px; }
+  .k-plan-dish-name > span { font-size: 11px; }
+  .k-plan-shopping-note { flex-wrap: wrap; }
+  .k-plan-shopping-link { margin-left: 26px; }
+  .k-plan-save-bar { padding-inline: 12px; }
+  .k-plan-save-button { padding-inline: 12px; }
+  .k-more-entry { gap: 8px; }
+  .k-more-entry strong { font-size: 16px; }
+  .k-more-entry small { font-size: 11px; }
+  .k-fridge-recipe { padding: 10px; gap: 7px; }
+  .k-fridge-recipe-open { gap: 10px; }
+  .k-fridge-recipe .k-tool-polaroid { width: 55px; height: 61px; }
+  .k-fridge-batch-quantity { max-width: 30%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-tool-button, .k-tool-chip, .k-tool-icon-button, .k-tool-text-button, .k-more-switch i, .k-more-entry > svg { transition: none; }
+}

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { isAxiosError } from "axios"
@@ -9,8 +9,19 @@ import { createCookTimer, pauseCookTimer, startCookTimer, syncCookTimer } from "
 import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import type { Dish, DishIngredient } from "@/types"
 import toast from "react-hot-toast"
+import { Check, ChevronsLeft, ChevronsRight, Moon, Pause, Play, RotateCcw, Sun, Volume2, X } from "lucide-react"
+import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
+import "@/styles/kitchen-shell.css"
+import "@/styles/kitchen-cook.css"
 
 interface Step { text: string; time?: number }
+
+function stepNumeral(value: number) {
+  const digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+  if (value < 10) return digits[value]
+  if (value < 100) return `${value < 20 ? "" : digits[Math.floor(value / 10)]}十${value % 10 ? digits[value % 10] : ""}`
+  return String(value)
+}
 
 function isValidId(value: string | null | undefined) {
   return !!value && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0
@@ -23,11 +34,12 @@ function CookModeMessage({ message, onBack, onRetry, retrying = false, loading =
   retrying?: boolean
   loading?: boolean
 }) {
+  const theme = useKitchenTheme((state) => state.theme)
   return (
-    <div className="bg-[#1A1A2E] min-h-screen text-white flex flex-col items-center justify-center gap-4 px-5 text-center">
+    <div className={`kitchen-surface kitchen-${theme} kitchen-cook-message`}>
       <p role={loading ? "status" : "alert"}>{message}</p>
-      {onRetry && <button onClick={onRetry} disabled={retrying} className="px-5 py-2 rounded-full bg-primary text-white disabled:opacity-50">{retrying ? "重试中..." : "重试"}</button>}
-      <button onClick={onBack} className="px-5 py-2 rounded-full bg-white/10 text-white">返回菜品列表</button>
+      {onRetry && <button onClick={onRetry} disabled={retrying} className="cook-action cook-action-primary">{retrying ? "重试中..." : "重试"}</button>}
+      <button onClick={onBack} className="cook-action">返回菜品列表</button>
     </div>
   )
 }
@@ -52,6 +64,9 @@ export default function CookMode() {
 }
 
 function CookModeContent() {
+  const theme = useKitchenTheme((state) => state.theme)
+  const toggleTheme = useKitchenTheme((state) => state.toggleTheme)
+  useEffect(() => watchKitchenTheme(), [])
   const { id } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -145,6 +160,10 @@ function CookModeContent() {
 
   // 最后一步做完：给出"记为午餐/晚餐"，记完接着弹扣库存
   const [finished, setFinished] = useState(false)
+  const finishedTitleRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (finished) finishedTitleRef.current?.focus({ preventScroll: true })
+  }, [finished])
   const [consumeDish, setConsumeDish] = useState<Dish | null>(null)
   const [consumedScale, setConsumedScale] = useState(1)
   const [consumedRecordId, setConsumedRecordId] = useState(0)
@@ -225,111 +244,92 @@ function CookModeContent() {
   const circumference = 2 * Math.PI * 80
   const secondsLeft = Math.ceil((timer.status === "idle" ? totalMs : timer.remainingMs) / 1000)
   const offset = timer.totalMs > 0 ? circumference * (1 - timer.remainingMs / timer.totalMs) : 0
-  const timerStatusText = { idle: "准备开始", running: "进行中...", paused: "已暂停", elapsed: "时间到" }[timer.status]
+  const timerStatusText = { idle: "准备开始", running: "进行中 · 剩余", paused: "已暂停 · 剩余", elapsed: "时间到" }[timer.status]
   const timerAction = { idle: "开始计时", running: "暂停计时", paused: "继续计时", elapsed: "重新计时" }[timer.status]
   const ingredients = [...asArray<string | DishIngredient>(dish.ingredients), ...asArray<string | DishIngredient>(dish.seasonings)]
   const meals = linkedRecord ? [linkedRecord.meal_type as "lunch" | "dinner"] : suggestedMeal === "lunch" ? ["lunch", "dinner"] as const : ["dinner", "lunch"] as const
 
   return (
-    <div className="fixed inset-0 z-[300] bg-[#1A1A2E] text-white flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-5 py-4 shrink-0">
-        <div className="min-w-0">
-          <div className="text-lg font-bold truncate">🍳 {dish.name}</div>
-          <div className="text-xs text-white/60 mt-1">{portionLabel(portionScale)}{linkedRecord ? ` · ${linkedRecord.meal_date} ${linkedRecord.meal_type === "lunch" ? "午餐" : "晚餐"}` : ""}</div>
+    <div className={`kitchen-surface kitchen-${theme} kitchen-cook`}>
+      {!finished && <>
+      <header className="cook-heading">
+        <button type="button" onClick={() => navigate(-1)} aria-label="退出做菜" className="cook-icon"><X size={20} /></button>
+        <div className="cook-heading-title">
+          <h1>{dish.name}</h1>
+          <div className="cook-progress" role="progressbar" aria-label="做菜进度" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
+            {steps.map((_, index) => <span key={index} className={index <= currentStep ? "is-current" : ""} />)}
+          </div>
         </div>
-        <button onClick={() => navigate(-1)} aria-label="退出做菜" className="w-10 h-10 shrink-0 rounded-full bg-white/10 flex items-center justify-center text-lg">✕</button>
-      </div>
+        <button type="button" className="cook-icon cook-theme-toggle" onClick={toggleTheme} aria-label={`切换到${theme === "day" ? "深夜" : "白日"}厨房`} title={`切换到${theme === "day" ? "深夜" : "白日"}厨房`}>
+          {theme === "day" ? <Moon size={19} /> : <Sun size={19} />}
+        </button>
+      </header>
+      {linkedRecord && <div className="cook-linked-plan">{linkedRecord.meal_date} · {linkedRecord.meal_type === "lunch" ? "午餐" : "晚餐"} · {portionLabel(portionScale)}</div>}
 
       {(dishQuery.isError || planError) && (
-        <div className="px-5 mb-3 text-sm text-white/70" role="alert">
-          {dishQuery.isError && <div className="flex items-center justify-between gap-3"><span>菜谱更新失败，已保留当前步骤。</span><button onClick={() => { void dishQuery.refetch() }} disabled={dishQuery.isFetching} className="shrink-0 px-3 py-2 rounded-full bg-white/10 text-white disabled:opacity-50">{dishQuery.isFetching ? "重试中..." : "重试菜谱"}</button></div>}
-          {planError && <div className="flex items-center justify-between gap-3"><span>计划更新失败，重试成功后再记录吃过。</span><button onClick={retryPlan} disabled={planRetrying} className="shrink-0 px-3 py-2 rounded-full bg-white/10 text-white disabled:opacity-50">{planRetrying ? "重试中..." : "重试计划"}</button></div>}
+        <div className="cook-error" role="alert">
+          {dishQuery.isError && <div><span>菜谱更新失败，已保留当前步骤。</span><button onClick={() => { void dishQuery.refetch() }} disabled={dishQuery.isFetching}>{dishQuery.isFetching ? "重试中..." : "重试菜谱"}</button></div>}
+          {planError && <div><span>计划更新失败，重试成功后再记录吃过。</span><button onClick={retryPlan} disabled={planRetrying}>{planRetrying ? "重试中..." : "重试计划"}</button></div>}
         </div>
       )}
 
-      <div className="px-5 mb-2">
-        <div className="h-1 bg-white/10 rounded overflow-hidden">
-          <div className="h-full bg-primary rounded transition-all duration-300" style={{ width: `${progress}%` }} />
-        </div>
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 text-center">
+      <div className="cook-scroll">
         {todayPlans.length > 1 && (
-          <div className="flex flex-wrap justify-center gap-2 text-xs">
-            {todayPlans.map((r) => <button key={r.id} disabled={r.id === recordId} onClick={() => navigate(`/dishes/${dishId}/cook?record_id=${r.id}`, { replace: true })} className={`px-3 py-2 rounded-full ${r.id === recordId ? "bg-primary" : "bg-white/10"}`}>今天{r.meal_type === "lunch" ? "午餐" : "晚餐"} · {portionLabel(r.portion_scale)}</button>)}
+          <div className="cook-plan-choices">
+            {todayPlans.map((r) => <button key={r.id} disabled={r.id === recordId} onClick={() => navigate(`/dishes/${dishId}/cook?record_id=${r.id}`, { replace: true })} className={`cook-action ${r.id === recordId ? "is-selected" : ""}`}>今天{r.meal_type === "lunch" ? "午餐" : "晚餐"} · {portionLabel(r.portion_scale)}</button>)}
           </div>
         )}
         {ingredients.length > 0 && (
-          <details className="my-3 mx-auto max-w-[400px] rounded-xl bg-white/5 text-left">
-            <summary className="cursor-pointer px-4 py-3 text-sm text-white/80">食材用量 · {portionLabel(portionScale)}</summary>
-            <div className="px-4 pb-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-white/70">
-              {ingredients.map((ing, i) => <div key={i}>{typeof ing === "string" ? ing : `${ing.name} ${scaleAmount(ing.amount || "", portionScale)}`}</div>)}
+          <details className="cook-ingredients">
+            <summary><strong>食材 · {portionLabel(portionScale)}</strong><span>展开用量</span></summary>
+            <div className="cook-ingredient-grid">
+              {ingredients.map((ing, i) => <div key={i}>{typeof ing === "string" ? ing : <><span>{ing.name}</span><span>{scaleAmount(ing.amount || "", portionScale)}</span></>}</div>)}
             </div>
           </details>
         )}
-        <div className="flex flex-col items-center justify-center min-h-[250px] py-4">
-        <div className="text-sm text-white/50 mb-2">步骤 <span>{currentStep + 1}</span> / <span>{steps.length}</span></div>
-        <div className="text-[64px] font-extrabold text-primary leading-none mb-4">{currentStep + 1}</div>
-        <div className="text-xl font-semibold leading-relaxed mb-6 max-w-[400px]">{step?.text || "这道菜还没有步骤，做好后可直接记录。"}</div>
-
-        {totalMs > 0 && (
-          <div className="relative w-[160px] h-[160px] mb-6">
-            <div className="w-[160px] h-[160px] rounded-full border-4 border-white/10 relative flex items-center justify-center">
-              <svg viewBox="0 0 168 168" className="absolute inset-[-4px]" style={{ transform: "rotate(-90deg)" }}>
-                <circle cx="84" cy="84" r="80" fill="none" stroke="#E8734A" strokeWidth="4" strokeLinecap="round"
-                  strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: "stroke-dashoffset .5s ease" }} />
+        <main className="cook-step-content">
+          <div className="cook-step-caption">{steps.length > 0 ? <>步骤 {currentStep + 1} / {steps.length}</> : "自由烹饪"}</div>
+          {steps.length > 0 && <div className="cook-step-number" aria-hidden="true">{stepNumeral(currentStep + 1)}</div>}
+          <h2 className="cook-step-instruction">{step?.text || "这道菜还没有步骤，做好后可直接记录。"}</h2>
+          {totalMs > 0 ? (
+            <div className="cook-timer">
+              <svg viewBox="0 0 168 168" className="cook-timer-ring" aria-hidden="true">
+                <circle cx="84" cy="84" r="80" className="cook-timer-track" />
+                <circle cx="84" cy="84" r="80" className="cook-timer-progress" strokeDasharray={circumference} strokeDashoffset={offset} />
               </svg>
-              <div>
-                <div role="timer" aria-label="剩余时间" className={`text-4xl font-extrabold tracking-wider ${timer.status === "elapsed" ? "animate-countdown-pulse" : ""}`}>
-                  {`${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`}
-                </div>
-                <div role="status" className="text-xs text-white/40 mt-1">{timerStatusText}</div>
+              <div className="cook-timer-label">
+                <div role="timer" aria-label="剩余时间" className={`cook-timer-digits ${timer.status === "elapsed" ? "is-elapsed" : ""}`}>{`${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`}</div>
+                <div role="status" className="cook-timer-status">{timerStatusText}</div>
               </div>
             </div>
-          </div>
-        )}
-        </div>
+          ) : <p className="cook-no-timer">这一步不用计时，完成后进入下一步</p>}
+        </main>
       </div>
 
-      <div className="flex items-center justify-center gap-3 px-4 py-5 shrink-0" style={{ paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
-        <button onClick={() => goToStep(currentStep - 1)} disabled={currentStep === 0} aria-label="上一步" className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all disabled:opacity-30">◀◀</button>
-        <button onClick={speakStep} aria-label="朗读当前步骤" disabled={!step?.text} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all disabled:opacity-30">🔊</button>
-        <button onClick={toggleTimer} disabled={totalMs <= 0} aria-label={totalMs > 0 ? timerAction : "当前步骤无需计时"} title={totalMs > 0 ? timerAction : "当前步骤无需计时"} className="w-[72px] h-[72px] rounded-full flex items-center justify-center text-[28px] bg-primary transition-all active:scale-90 disabled:opacity-30">{timer.status === "running" ? "⏸" : "▶"}</button>
-        <button onClick={() => setTimer(createCookTimer(totalMs))} disabled={totalMs <= 0 || timer.status === "idle"} aria-label="重置计时" title="重置计时" className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all disabled:opacity-30">↺</button>
-        <button
-          onClick={finishStep}
-          aria-label={currentStep < steps.length - 1 ? "下一步" : "做好了"}
-          className="w-14 h-14 rounded-full flex items-center justify-center text-2xl bg-white/10 hover:bg-white/20 transition-all"
-        >
-          {currentStep < steps.length - 1 ? "⏭" : "✓"}
-        </button>
+      <div className="cook-controls" aria-label="做菜控制">
+        <button type="button" onClick={() => goToStep(currentStep - 1)} disabled={currentStep === 0} aria-label="上一步" className="cook-round"><ChevronsLeft size={21} /><span>上一步</span></button>
+        <button type="button" onClick={speakStep} aria-label="朗读当前步骤" disabled={!step?.text || !("speechSynthesis" in window)} className="cook-round"><Volume2 size={20} /><span>朗读</span></button>
+        <button type="button" onClick={toggleTimer} disabled={totalMs <= 0} aria-label={totalMs > 0 ? timerAction : "当前步骤无需计时"} title={totalMs > 0 ? timerAction : "当前步骤无需计时"} className="cook-round cook-round-primary">{timer.status === "running" ? <Pause size={26} /> : <Play size={26} />}<span>{timer.status === "running" ? "暂停" : timer.status === "paused" ? "继续" : "计时"}</span></button>
+        <button type="button" onClick={() => setTimer(createCookTimer(totalMs))} disabled={totalMs <= 0 || timer.status === "idle"} aria-label="重置计时" title="重置计时" className="cook-round"><RotateCcw size={20} /><span>重置</span></button>
+        <button type="button" onClick={finishStep} aria-label={currentStep < steps.length - 1 ? "下一步" : "做好了"} className="cook-round">{currentStep < steps.length - 1 ? <ChevronsRight size={21} /> : <Check size={22} />}<span>{currentStep < steps.length - 1 ? "下一步" : "做好了"}</span></button>
       </div>
 
+      </>}
       {finished && (
-        <div className="absolute inset-0 z-[10] bg-[#1A1A2E]/96 flex flex-col items-center justify-center px-8 py-6 overflow-y-auto text-center">
-          <div className="text-[56px] mb-3">🎉</div>
-          <div className="text-xl font-extrabold mb-1">{dish.name} 做好了！</div>
-          <div className="text-sm text-white/60 mb-8">{portionLabel(portionScale)} · {planError ? "计划暂时无法读取，重试成功后再记录吃过。" : !planReady ? "正在核对用餐计划..." : canComplete ? "确认吃过，再更新冰箱" : linkedRecord?.status === "completed" ? "这份用餐已经记录" : linkedRecord?.status === "cancelled" ? "这份计划已取消，请先在用餐记录中恢复" : "到计划用餐当天，再记为已吃"}</div>
-          <div className="w-full max-w-[320px] flex flex-col gap-3">
-            {planError && <button onClick={retryPlan} disabled={planRetrying} className="w-full py-3 rounded-full text-[15px] font-bold bg-white/10 text-white disabled:opacity-50">{planRetrying ? "重试中..." : "重试读取计划"}</button>}
+        <main className="cook-finished" aria-labelledby="cook-finished-title">
+          <div className="cook-finished-stamp" aria-hidden="true">开饭</div>
+          <h1 id="cook-finished-title" ref={finishedTitleRef} tabIndex={-1}>{dish.name} 做好了！</h1>
+          <p>{portionLabel(portionScale)} · {planError ? "计划暂时无法读取，重试成功后再记录吃过。" : !planReady ? "正在核对用餐计划..." : canComplete ? "确认吃过，再更新冰箱" : linkedRecord?.status === "completed" ? "这份用餐已经记录" : linkedRecord?.status === "cancelled" ? "这份计划已取消，请先在用餐记录中恢复" : "到计划用餐当天，再记为已吃"}</p>
+          <div className="cook-finished-actions">
+            {planError && <button onClick={retryPlan} disabled={planRetrying} className="cook-action">{planRetrying ? "重试中..." : "重试读取计划"}</button>}
             {meals.map((meal, i) => (
-              <button
-                key={meal}
-                disabled={!canComplete || recordMut.isPending || recordMut.isSuccess}
-                onClick={() => recordMut.mutate(meal)}
-                className={`w-full py-3 rounded-full text-[15px] font-bold transition-all active:scale-96 disabled:opacity-50 ${i === 0 ? "bg-primary text-white" : "bg-white/10 text-white"}`}
-              >
-                {recordMut.isSuccess ? "已记录" : linkedRecord ? `确认 ${linkedRecord.meal_date.slice(5)} ${meal === "lunch" ? "午餐" : "晚餐"}已吃` : meal === "lunch" ? "🍳 今天午餐已吃" : "🍲 今天晚餐已吃"}
+              <button key={meal} disabled={!canComplete || recordMut.isPending || recordMut.isSuccess} onClick={() => recordMut.mutate(meal)} className={`cook-action ${i === 0 ? "cook-action-primary" : ""}`}>
+                {recordMut.isSuccess ? "已记录" : recordMut.isPending ? "记录中…" : linkedRecord ? `确认 ${linkedRecord.meal_date.slice(5)} ${meal === "lunch" ? "午餐" : "晚餐"}已吃` : meal === "lunch" ? "今天午餐已吃" : "今天晚餐已吃"}
               </button>
             ))}
-            <button
-              onClick={() => navigate(-1)}
-              className="w-full py-2.5 text-sm font-semibold text-white/60"
-            >
-              {recordMut.isSuccess || !canComplete ? "返回" : "先不记录，返回"}
-            </button>
+            <button type="button" onClick={() => navigate(-1)} className="cook-return">{recordMut.isSuccess || !canComplete ? "返回" : "先不记录，返回"}</button>
           </div>
-        </div>
+        </main>
       )}
       {/* 做菜模式是 z-[300] 的全屏层，扣库存弹层要盖在它上面；关掉后回到菜品详情 */}
       <ConsumeInventorySheet dish={consumeDish} recordId={consumedRecordId} portionScale={consumedScale} onClose={() => navigate(-1)} zIndexClass="z-[320]" />

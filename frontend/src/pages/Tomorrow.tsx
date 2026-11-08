@@ -11,12 +11,14 @@ import { createTomorrowRequestGate, isMealPlanConflict } from "@/lib/tomorrowReq
 import { getTomorrow, nextLocalMidnightDelay } from "@/lib/tomorrowDate"
 import DishImage from "@/components/DishImage"
 import PageHeader from "@/components/PageHeader"
+import KitchenSheet from "@/components/KitchenSheet"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 import toast from "react-hot-toast"
+import "@/styles/kitchen-tools.css"
 import {
   CalendarClock,
   Check,
   ChefHat,
-  Clock,
   Dice5,
   Flame,
   Heart,
@@ -90,18 +92,8 @@ function diffLabel(difficulty: string) {
   return "费点劲"
 }
 
-function difficultyTone(difficulty: string) {
-  if (difficulty === "easy") return "bg-mint-light text-mint"
-  if (difficulty === "medium") return "bg-yellow-light text-yellow"
-  return "bg-primary-light text-primary"
-}
-
 function cookTimeText(dish: Dish) {
   return dish.cook_time > 0 ? `${dish.cook_time}分钟` : "时间未填"
-}
-
-function totalCookTime(dishes: Dish[]) {
-  return dishes.reduce((sum, d) => sum + Math.max(0, d.cook_time || 0), 0)
 }
 
 function uniqueById(items: Dish[]) {
@@ -164,7 +156,7 @@ function hydrateDishes(dishes: Dish[], full: Dish[] | undefined) {
 
 function CountStepper({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   return (
-    <div className="grid h-8 grid-cols-[32px_32px_32px] overflow-hidden rounded-full border border-border bg-bg">
+    <div className="k-plan-stepper">
       <button
         onClick={() => onChange(Math.max(0, value - 1))}
         disabled={value <= 0}
@@ -197,21 +189,14 @@ function ProfileButton({
   active: boolean
   onClick: () => void
 }) {
-  const Icon = option.Icon
   return (
     <button
       onClick={onClick}
-      className={`flex min-w-[86px] shrink-0 items-center gap-2 rounded-2xl border px-3 py-2 text-left transition-all active:scale-95 ${
-        active ? "border-primary bg-primary-light text-primary" : "border-border bg-card text-text2 hover:border-primary/30"
-      }`}
+      aria-pressed={active}
+      title={option.hint}
+      className={`k-tool-chip ${active ? "is-active" : ""}`}
     >
-      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${active ? "bg-white text-primary" : "bg-bg text-text3"}`}>
-        <Icon size={17} strokeWidth={2.35} />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[13px] font-bold leading-tight">{option.label}</span>
-        <span className="block truncate text-[11px] font-medium leading-tight opacity-70">{option.hint}</span>
-      </span>
+      {option.label}
     </button>
   )
 }
@@ -222,82 +207,22 @@ function PlanSummary({
   hasSavedPlan,
   hasChanges,
   pendingReview,
-  lunch,
-  dinner,
-  onGenerateAll,
-  onOpenShopping,
-  disabled,
 }: {
   dateLabel: string
   totalCount: number
   hasSavedPlan: boolean
   hasChanges: boolean
   pendingReview: boolean
-  lunch: Dish[]
-  dinner: Dish[]
-  onGenerateAll: () => void
-  onOpenShopping: () => void
-  disabled: boolean
 }) {
   const savedText = pendingReview ? "待核对" : hasSavedPlan ? (hasChanges ? "有修改" : "已保存") : "待保存"
-  const savedTone = hasSavedPlan && !hasChanges && !pendingReview ? "bg-mint-light text-mint" : "bg-yellow-light text-yellow"
-  const lunchMinutes = totalCookTime(lunch)
-  const dinnerMinutes = totalCookTime(dinner)
+  const savedTone = hasSavedPlan && !hasChanges && !pendingReview ? "is-fresh" : "is-urgent"
 
   return (
-    <section className="rounded-[24px] border border-border bg-card p-4 shadow-[0_1px_3px_rgba(0,0,0,.035),0_8px_24px_rgba(26,26,46,.05)]">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-primary-light text-primary">
-              <CalendarClock size={22} strokeWidth={2.45} />
-            </span>
-            <div className="min-w-0">
-              <div className="truncate text-[22px] font-extrabold leading-tight tracking-tight">明天菜单</div>
-              <div className="truncate text-[12px] font-semibold text-text3">{dateLabel}</div>
-            </div>
-          </div>
-        </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-extrabold ${savedTone}`}>{savedText}</span>
-      </div>
-
-      <div className="mb-4 grid grid-cols-3 gap-2">
-        <div className="rounded-2xl bg-bg px-3 py-2.5">
-          <div className="text-[11px] font-semibold text-text3">菜品</div>
-          <div className="text-lg font-extrabold leading-tight">{totalCount} 道</div>
-        </div>
-        <div className="rounded-2xl bg-bg px-3 py-2.5">
-          <div className="text-lg font-extrabold leading-tight">午餐 {lunch.length} 道</div>
-          <div className="mt-0.5 truncate text-[11px] font-semibold text-text3">
-            约用时 {lunchMinutes > 0 ? `${lunchMinutes} 分钟` : "-"}
-          </div>
-        </div>
-        <div className="rounded-2xl bg-bg px-3 py-2.5">
-          <div className="text-lg font-extrabold leading-tight">晚餐 {dinner.length} 道</div>
-          <div className="mt-0.5 truncate text-[11px] font-semibold text-text3">
-            约用时 {dinnerMinutes > 0 ? `${dinnerMinutes} 分钟` : "-"}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2.5">
-        <button
-          onClick={onGenerateAll}
-          disabled={disabled}
-          className="flex h-11 items-center justify-center gap-2 rounded-2xl bg-primary text-sm font-extrabold text-white transition-all hover:bg-primary-dark active:scale-95 disabled:opacity-50"
-        >
-          <Dice5 size={17} strokeWidth={2.5} />
-          重新生成
-        </button>
-        <button
-          onClick={onOpenShopping}
-          className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-border bg-bg text-sm font-extrabold text-text2 transition-all hover:border-mint/40 hover:text-mint active:scale-95"
-        >
-          <ShoppingBasket size={17} strokeWidth={2.35} />
-          买菜清单
-        </button>
-      </div>
-    </section>
+    <header className="k-plan-heading">
+      <span className={`k-tool-stamp k-plan-save-stamp ${savedTone}`}>{savedText}</span>
+      <h2>明日菜单</h2>
+      <p>{dateLabel} · 共 {totalCount} 道</p>
+    </header>
   )
 }
 
@@ -314,35 +239,28 @@ function DishRow({
   onSwap: () => void
   onRemove: () => void
 }) {
-  const meta = mealMeta[meal]
   return (
-    <div className="flex items-center gap-3 py-3">
-      <button onClick={onOpen} className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-primary-light to-pink-light" aria-label={`查看${dish.name}`}>
+    <div className="k-plan-dish">
+      <button onClick={onOpen} className="k-tool-polaroid k-plan-photo" aria-label={`查看${dish.name}`}>
         <DishImage dish={dish} className="h-full w-full" emojiSize="text-[30px]" />
       </button>
-      <button onClick={onOpen} className="min-w-0 flex-1 text-left">
-        <div className="mb-1 truncate text-[15px] font-extrabold leading-tight">{dish.name}</div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {dish.category && <span className="max-w-[92px] truncate rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-text2">{dish.category}</span>}
-          <span className="flex items-center gap-1 rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-text2">
-            <Clock size={10} strokeWidth={2.5} />
-            {cookTimeText(dish)}
-          </span>
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${difficultyTone(dish.difficulty)}`}>{diffLabel(dish.difficulty)}</span>
-        </div>
+      <button onClick={onOpen} className="k-plan-dish-name">
+        <strong>{dish.name}</strong>
+        <span>{[dish.category, dish.cook_time > 0 ? `${dish.cook_time} 分钟` : "", `火候·${diffLabel(dish.difficulty)}`].filter(Boolean).join(" · ")}</span>
       </button>
-      <div className="flex shrink-0 items-center gap-1">
+      <span className="k-tool-leader" aria-hidden="true" />
+      <div className="k-plan-dish-actions">
         <button
           onClick={onSwap}
-          className={`flex h-9 w-9 items-center justify-center rounded-full ${meta.soft} ${meta.text} transition-all active:scale-90`}
-          aria-label={`替换${dish.name}`}
-          title="替换"
+          className="k-tool-icon-button"
+          aria-label={`替换${mealMeta[meal].shortLabel}的${dish.name}`}
+          title="换一个"
         >
           <RefreshCw size={16} strokeWidth={2.35} />
         </button>
         <button
           onClick={onRemove}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-bg text-text3 transition-all hover:bg-red-light hover:text-red active:scale-90"
+          className="k-tool-icon-button is-delete"
           aria-label={`移除${dish.name}`}
           title="移除"
         >
@@ -379,36 +297,16 @@ function MealPlanner({
   onOpenPicker: () => void
 }) {
   const meta = mealMeta[meal]
-  const Icon = meta.Icon
   const missing = Math.max(0, target - dishes.length)
-  const minutes = totalCookTime(dishes)
 
   return (
-    <section className="overflow-hidden rounded-[24px] border border-border bg-card shadow-[0_1px_3px_rgba(0,0,0,.035),0_8px_24px_rgba(26,26,46,.05)]">
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ${meta.soft} ${meta.text}`}>
-              <Icon size={23} strokeWidth={2.45} />
-            </span>
-            <div className="min-w-0">
-              <div className="truncate text-[17px] font-extrabold leading-tight">{meta.label}</div>
-              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-text3">
-                <span className="min-w-0 truncate">{meta.helper}</span>
-                {minutes > 0 && (
-                  <>
-                    <span className="h-[3px] w-[3px] shrink-0 rounded-full bg-text4" />
-                    <span className="shrink-0">约 {minutes} 分钟</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+    <section className="k-plan-meal">
+      <div className="k-plan-meal-heading">
+          <h3>{meal === "lunch" ? "午市" : "晚市"}</h3>
           <CountStepper value={target} onChange={onTargetChange} />
-        </div>
       </div>
 
-      <div className="px-4">
+      <div>
         {dishes.length === 0 ? (
           <div className="py-7 text-center">
             <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl ${meta.soft} ${meta.text}`}>
@@ -418,7 +316,7 @@ function MealPlanner({
             <div className="mt-1 text-[12px] text-text3">可以智能补齐，也可以自己挑</div>
           </div>
         ) : (
-          <div className="divide-y divide-border/70">
+          <div>
             {dishes.map((dish) => (
               <DishRow
                 key={dish.id}
@@ -433,11 +331,11 @@ function MealPlanner({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-2 border-t border-border bg-bg/55 px-4 py-3">
+      <div className="k-plan-meal-tools">
         <button
           onClick={onFill}
           disabled={disabled || missing === 0}
-          className="flex h-10 items-center justify-center gap-1.5 rounded-2xl bg-card text-[12px] font-extrabold text-text2 transition-all hover:text-primary active:scale-95 disabled:opacity-45"
+          className="k-tool-text-button"
         >
           <Plus size={15} strokeWidth={2.5} />
           {missing > 0 ? `补 ${missing} 道` : "已够数"}
@@ -445,7 +343,7 @@ function MealPlanner({
         <button
           onClick={onReplaceMeal}
           disabled={disabled || target === 0}
-          className="flex h-10 items-center justify-center gap-1.5 rounded-2xl bg-card text-[12px] font-extrabold text-text2 transition-all hover:text-primary active:scale-95 disabled:opacity-45"
+          className="k-tool-text-button"
         >
           <Dice5 size={15} strokeWidth={2.5} />
           换一批
@@ -453,7 +351,7 @@ function MealPlanner({
         <button
           onClick={onOpenPicker}
           disabled={disabled}
-          className="flex h-10 items-center justify-center gap-1.5 rounded-2xl bg-card text-[12px] font-extrabold text-text2 transition-all hover:text-mint active:scale-95 disabled:opacity-45"
+          className="k-tool-text-button"
         >
           <Search size={15} strokeWidth={2.5} />
           手动选
@@ -480,6 +378,9 @@ function DishPickerModal({
   const [keyword, setKeyword] = useState("")
   const [category, setCategory] = useState("全部")
   const meta = mealMeta[meal]
+  const theme = useKitchenTheme(s => s.theme)
+  const selectedCount = [...selectedMealById.values()].filter(selectedMeal => selectedMeal === meal).length
+  const mealFull = selectedCount >= maxPerMeal
 
   // 输入停顿 250ms 再搜，避免每敲一个字发一次请求
   useEffect(() => {
@@ -512,27 +413,13 @@ function DishPickerModal({
   )
 
   return (
-    <div className="fixed inset-0 z-[220] flex items-end justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/42" />
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="relative flex max-h-[86vh] w-full max-w-[640px] flex-col rounded-t-[28px] bg-card shadow-[0_-8px_30px_rgba(0,0,0,.16)] animate-fadeUp"
-      >
-        <div className="shrink-0 px-5 pt-3">
-          <div className="mx-auto mb-4 h-1 w-11 rounded-full bg-border2" />
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-lg font-extrabold">挑选{meta.shortLabel}</div>
-              <div className="mt-0.5 text-[12px] font-medium text-text3">{total} 道可选</div>
-            </div>
-            <button
-              onClick={onClose}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg text-text3 transition-all hover:text-primary active:scale-95"
-              aria-label="关闭"
-            >
-              <X size={18} strokeWidth={2.35} />
-            </button>
-          </div>
+    <KitchenSheet title={`挑选${meta.shortLabel}`} theme={theme} onClose={onClose} className="k-plan-picker">
+        <div className="shrink-0 pt-2">
+          <p className="mb-3 text-[12px] text-text3">{total} 道可选</p>
+          <p className="k-plan-picker-count" role="status" aria-live="polite">
+            本餐已选 {selectedCount} / {maxPerMeal} 道
+            {mealFull && <span> · 已满，移除一道后可继续添加</span>}
+          </p>
 
           <label className="relative mb-3 block">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text3" size={17} strokeWidth={2.35} />
@@ -540,8 +427,7 @@ function DishPickerModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜索菜名、分类、配料"
-              className="h-11 w-full rounded-2xl border-[1.5px] border-border bg-bg pl-10 pr-4 text-sm font-medium outline-none transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.12)]"
-              autoFocus
+              className="k-tool-field w-full pl-10"
             />
           </label>
 
@@ -550,9 +436,8 @@ function DishPickerModal({
               <button
                 key={item}
                 onClick={() => setCategory(item)}
-                className={`shrink-0 rounded-full border px-3.5 py-1.5 text-[12px] font-bold transition-all active:scale-95 ${
-                  category === item ? "border-primary bg-primary text-white" : "border-border bg-bg text-text2"
-                }`}
+                aria-pressed={category === item}
+                className={`k-tool-chip ${category === item ? "is-active" : ""}`}
               >
                 {item}
               </button>
@@ -560,7 +445,7 @@ function DishPickerModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <div className="k-plan-picker-results min-h-0 flex-1 overflow-y-auto pb-4">
           {isLoading ? (
             <div className="space-y-2 py-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -583,11 +468,11 @@ function DishPickerModal({
                 const selectedOther = selectedMeal && selectedMeal !== meal
                 return (
                   <div key={dish.id} className="flex items-center gap-3 py-3">
-                    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-primary-light to-pink-light">
+                    <div className="k-tool-polaroid">
                       <DishImage dish={dish} className="h-full w-full" emojiSize="text-[27px]" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-extrabold">{dish.name}</div>
+                      <div className="k-tool-section-title truncate">{dish.name}</div>
                       <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-text3">
                         {dish.category && <span className="max-w-[84px] truncate">{dish.category}</span>}
                         {dish.category && <span className="h-[3px] w-[3px] rounded-full bg-text4" />}
@@ -599,14 +484,14 @@ function DishPickerModal({
                     {selectedOther ? (
                       <button
                         disabled
-                        className="h-9 shrink-0 rounded-full bg-bg px-3 text-[11px] font-extrabold text-text3"
+                        className="k-tool-button shrink-0 text-[11px]"
                       >
                         已在{mealMeta[selectedMeal].shortLabel}
                       </button>
                     ) : selectedHere ? (
                       <button
                         onClick={() => onRemove(meal, dish.id)}
-                        className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-red-light px-3 text-[12px] font-extrabold text-red transition-all active:scale-95"
+                        className="k-tool-button shrink-0"
                       >
                         <X size={13} strokeWidth={2.5} />
                         移除
@@ -614,10 +499,12 @@ function DishPickerModal({
                     ) : (
                       <button
                         onClick={() => onAdd(dish)}
-                        className={`flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-[12px] font-extrabold text-white transition-all active:scale-95 ${meta.accent}`}
+                        disabled={mealFull}
+                        title={mealFull ? `每餐最多 ${maxPerMeal} 道，移除一道后可继续添加` : `加入${dish.name}`}
+                        className="k-tool-button is-ink shrink-0"
                       >
                         <Plus size={13} strokeWidth={2.7} />
-                        加入
+                        {mealFull ? "已满" : "加入"}
                       </button>
                     )}
                   </div>
@@ -629,8 +516,7 @@ function DishPickerModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </KitchenSheet>
   )
 }
 
@@ -1070,12 +956,11 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
   }
 
   return (
-    <div className="animate-fadeUp pb-[116px]">
+    <div className="animate-fadeUp pb-[116px] k-tools-page k-tomorrow-page">
       {createPortal(<div ref={confettiRef} className="fixed inset-0 z-50 pointer-events-none overflow-hidden" />, document.body)}
 
       <PageHeader
         title="明天吃什么"
-        subtitle={tomorrowLabel}
         icon={CalendarClock}
         onBack={() => navigate(-1)}
       />
@@ -1104,47 +989,17 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
               ) : <button disabled={readingConflict} onClick={() => void loadConflictingPlan()} className="mt-3 min-h-11 rounded-full bg-card px-4 text-sm font-semibold text-primary">{readingConflict ? "读取最新菜单…" : "重新读取最新菜单"}</button>}
             </section>
           )}
-          <fieldset disabled={savePlanMut.isPending || !!conflict} className="mx-auto min-w-0 max-w-[640px] space-y-4">
+          <fieldset disabled={savePlanMut.isPending || !!conflict} className="k-plan-layout mx-auto min-w-0 max-w-[640px]">
+            <div className="k-plan-paper">
             <PlanSummary
               dateLabel={tomorrowLabel}
               totalCount={totalCount}
               hasSavedPlan={hasSavedPlan}
               hasChanges={hasChanges}
               pendingReview={!!conflict}
-              lunch={lunchView}
-              dinner={dinnerView}
-              onGenerateAll={() => generateAll()}
-              onOpenShopping={() => navigate("/more#shopping")}
-              disabled={disabled}
             />
 
-            <section>
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[15px] font-extrabold">偏好</div>
-                  <div className="text-[11px] font-medium text-text3">生成和替换都会按这里来</div>
-                </div>
-                <button
-                  onClick={() => generateAll()}
-                  disabled={disabled}
-                  className="flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-bg px-3 text-[12px] font-extrabold text-text2 transition-all hover:text-primary active:scale-95 disabled:opacity-45"
-                >
-                  <Dice5 size={14} strokeWidth={2.5} />
-                  试一版
-                </button>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                {profileOptions.map((option) => (
-                  <ProfileButton
-                    key={option.key}
-                    option={option}
-                    active={profile === option.key}
-                    onClick={() => applyProfile(option.key)}
-                  />
-                ))}
-              </div>
-            </section>
-
+            <div className="k-plan-meals">
             <MealPlanner
               meal="lunch"
               dishes={lunchView}
@@ -1172,13 +1027,47 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
               onRemoveDish={(dishId) => removeDish("dinner", dishId)}
               onOpenPicker={() => setPickerMeal("dinner")}
             />
+            </div>
+            </div>
+            <section className="k-plan-preferences">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="k-tool-section-title">「口味偏好」</h2>
+                  <div className="text-[11px] font-medium text-text3">生成和替换都会按这里来</div>
+                </div>
+                <button
+                  onClick={() => generateAll()}
+                  disabled={disabled}
+                  className="k-tool-text-button"
+                >
+                  <Dice5 size={14} strokeWidth={2.5} />
+                  重新生成
+                </button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                {profileOptions.map((option) => (
+                  <ProfileButton
+                    key={option.key}
+                    option={option}
+                    active={profile === option.key}
+                    onClick={() => applyProfile(option.key)}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <button type="button" onClick={() => navigate("/more#shopping")} className="k-plan-shopping-note">
+              <ShoppingBasket size={17} aria-hidden="true" />
+              <span>保存后自动生成明天的买菜清单</span>
+              <span className="k-plan-shopping-link">查看清单</span>
+            </button>
           </fieldset>
         </main>
       )}
 
       {!loading && (
         <div
-          className="fixed bottom-0 left-0 right-0 z-[110] border-t border-white/70 bg-bg/92 px-5 pt-3 backdrop-blur-2xl shadow-[0_-10px_28px_rgba(26,26,46,.07)]"
+          className="k-plan-save-bar"
           style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
         >
           <div className="mx-auto flex max-w-[640px] items-center gap-3">
@@ -1193,7 +1082,7 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
             <button
               onClick={savePlan}
               disabled={disabled || !!conflict || (totalCount === 0 && !hasSavedPlan) || (hasSavedPlan && !hasChanges)}
-              className="flex h-12 min-w-[148px] items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-extrabold text-white transition-all hover:bg-primary-dark active:scale-95 disabled:opacity-50"
+              className="k-tool-button is-ink k-plan-save-button"
             >
               <Check size={17} strokeWidth={2.6} />
               {conflict ? "待核对" : savePlanMut.isPending ? "保存中" : hasSavedPlan ? (hasChanges ? "更新菜单" : "已保存") : "保存菜单"}

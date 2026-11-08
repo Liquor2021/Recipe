@@ -1,6 +1,7 @@
 import { useRef } from "react"
 import { createPortal } from "react-dom"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 
 type BottomSheetControls = { close: () => void }
 
@@ -19,6 +20,7 @@ export default function AnimatedBottomSheet({
   className = "",
   zIndexClass = "z-[250]",
 }: AnimatedBottomSheetProps) {
+  const theme = useKitchenTheme((state) => state.theme)
   const rootRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
   const closingRef = useRef(false)
@@ -51,7 +53,7 @@ export default function AnimatedBottomSheet({
       <div
         ref={sheetRef}
         onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-[640px] bg-card will-change-transform ${className}`}
+        className={`relative w-full max-w-[640px] will-change-transform kitchen-surface kitchen-${theme} kitchen-paper-drawer ${className}`}
       >
         {typeof children === "function" ? children({ close }) : children}
       </div>

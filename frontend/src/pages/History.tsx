@@ -5,8 +5,6 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tansta
 import { recordsApi, statsApi, dayRatingApi, dishesApi, uploadApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import type { MealRecord, DayRating, Dish } from "@/types"
-import StatCard from "@/components/StatCard"
-import SectionHeader from "@/components/SectionHeader"
 import SafeImage from "@/components/SafeImage"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import PhotoViewer from "@/components/PhotoViewer"
@@ -14,9 +12,10 @@ import SwipeDeleteRow from "@/components/SwipeDeleteRow"
 import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import InventoryHistorySheet from "@/components/InventoryHistorySheet"
 import ReschedulePlanSheet from "@/components/ReschedulePlanSheet"
-import { cardShadow } from "@/components/Card"
 import toast from "react-hot-toast"
-import { CalendarDays, Star } from "lucide-react"
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, Star } from "lucide-react"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
+import "@/styles/kitchen-memories.css"
 import { thumbUrl } from "@/lib/dishImage"
 
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"]
@@ -77,63 +76,49 @@ function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRatin
   const completed = record.status === "completed"
   const canComplete = record.status === "planned" && record.meal_date <= todayStr()
   return (
-    <div className="px-4 py-3 border-b border-border last:border-0">
-      <div className="flex items-center gap-3">
+    <article className="history-ledger-row">
+      <div className="history-ledger-main">
         <button
-          onClick={() => navigate(`/dishes/${record.dish_id}${completed ? "" : `?record_id=${record.id}`}`)}
-          className="flex flex-1 min-w-0 items-center gap-3 text-left rounded-lg active:opacity-70"
+          onClick={() => navigate("/dishes/" + record.dish_id + (completed ? "" : "?record_id=" + record.id))}
+          className="history-dish-link"
         >
-          <span className={`w-11 h-11 rounded-[10px] flex items-center justify-center text-xl flex-shrink-0 overflow-hidden ${record.meal_type === "lunch" ? "bg-primary-light" : "bg-mint-light"}`}>
-            <SafeImage src={thumbUrl(record.dish_image_url)} alt="" className="w-full h-full object-cover" fallback={record.dish_emoji} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className={`block text-sm font-semibold mb-0.5 ${record.status === "cancelled" ? "text-text3" : ""}`}>{record.dish_name}</span>
-            <span className="block text-[11px] text-text2">
-              {showDate ? `${record.meal_date} · ` : ""}{record.meal_type === "lunch" ? "午餐" : "晚餐"} · 原量 × {record.portion_scale || 1}
-            </span>
-            {record.status === "planned" && record.meal_date < todayStr() && <span className="block mt-1 text-[11px] text-primary">已过计划日期，仍待完成</span>}
-            {completed && record.remark && <span className="block mt-1 text-[11px] text-text2 truncate">{record.remark}</span>}
-          </span>
+          <strong className={record.status === "cancelled" ? "is-cancelled" : undefined}>{record.dish_name}</strong>
+          <span className="memory-dot-leader" aria-hidden="true" />
+          <span className="history-meal-label">{record.meal_type === "lunch" ? "午市" : "晚市"}</span>
         </button>
-        <span className={`flex-shrink-0 px-2 py-1 rounded-full text-[11px] font-medium ${completed ? "bg-mint-light text-mint" : record.status === "cancelled" ? "bg-bg text-text3" : "bg-primary-light text-primary"}`}>
-          {statusLabels[record.status] || "计划"}
-        </span>
-        {completed && (
-          <button
-            onClick={() => onRating(record)}
-            aria-label={`评价${record.dish_name}`}
-            className="min-h-11 flex-shrink-0 flex items-center gap-1 px-2 rounded-full text-xs font-medium text-primary active:bg-primary-light"
-          >
-            {record.mood ? <span className="text-lg">{moodEmojiMap[record.mood]}</span> : "评价"}
-            {record.rating > 0 && <span className="text-[11px] font-bold text-[#C8A23C]">★{record.rating}</span>}
-          </button>
-        )}
+        <span className={"history-status-stamp is-" + record.status}>{statusLabels[record.status] || "计划"}</span>
       </div>
-      {!completed && (
-        <div className="mt-2 flex flex-wrap justify-end gap-2">
-          {record.status === "cancelled" ? (
-            <button disabled={pending} onClick={() => onStatus(record, "planned")} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">恢复计划</button>
-          ) : (
-            <>
-              <button disabled={pending} onClick={() => onStatus(record, "cancelled")} className="min-h-11 px-3 rounded-xl text-text3 text-xs font-medium disabled:opacity-50 active:bg-bg">取消计划</button>
-              <button disabled={pending} onClick={() => onReschedule(record)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">改期</button>
-              {canComplete && (
-                <>
-                  <button disabled={pending} onClick={() => navigate(`/dishes/${record.dish_id}/cook?record_id=${record.id}`)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">开始做菜</button>
-                  <button disabled={pending} onClick={() => onStatus(record, "completed")} className="min-h-11 px-3 rounded-xl bg-primary text-white text-xs font-semibold disabled:opacity-50 active:scale-95">标记已吃</button>
-                </>
-              )}
-            </>
-          )}
+      <div className="history-row-footnote">
+        <span>{showDate ? record.meal_date + " · " : ""}原量 × {record.portion_scale || 1}</span>
+        {completed && <button onClick={() => onRating(record)} aria-label={"评价" + record.dish_name} className="history-rating-button">
+          {record.mood ? <span>{moodEmojiMap[record.mood]}</span> : "写评价"}
+          {record.rating > 0 && <span>★ {record.rating}</span>}
+        </button>}
+      </div>
+      {record.status === "planned" && record.meal_date < todayStr() && <p className="history-overdue">已过计划日期，仍待完成</p>}
+      {completed && record.remark && <p className="history-record-remark">“{record.remark}”</p>}
+      <details className="history-row-actions">
+        <summary>记录操作 <ChevronDown size={13} aria-hidden="true" /></summary>
+        <div className="history-action-content">
+          <span className="history-action-photo"><SafeImage src={thumbUrl(record.dish_image_url)} alt="" className="w-full h-full object-cover" fallback={record.dish_emoji} /></span>
+          <div className="history-action-buttons">
+            {!completed ? record.status === "cancelled" ? (
+              <button disabled={pending} onClick={() => onStatus(record, "planned")}>恢复计划</button>
+            ) : <>
+              <button disabled={pending} onClick={() => onStatus(record, "cancelled")}>取消计划</button>
+              <button disabled={pending} onClick={() => onReschedule(record)}>改期</button>
+              {canComplete && <>
+                <button disabled={pending} onClick={() => navigate("/dishes/" + record.dish_id + "/cook?record_id=" + record.id)}>开始做菜</button>
+                <button disabled={pending} className="is-primary" onClick={() => onStatus(record, "completed")}>标记已吃</button>
+              </>}
+            </> : <>
+              <button disabled={pending} onClick={() => onUndo(record)}>撤销已吃</button>
+              <button disabled={pending} onClick={() => onInventory(record)}>{record.inventory_applied ? "库存记录" : "补扣库存"}</button>
+            </>}
+          </div>
         </div>
-      )}
-      {completed && (
-        <div className="mt-2 flex flex-wrap justify-end gap-2">
-          <button disabled={pending} onClick={() => onUndo(record)} className="min-h-11 px-3 rounded-xl text-text3 text-xs font-medium disabled:opacity-50 active:bg-bg">撤销已吃</button>
-          <button disabled={pending} onClick={() => onInventory(record)} className="min-h-11 px-3 rounded-xl bg-bg text-text2 text-xs font-medium disabled:opacity-50 active:bg-primary-light">{record.inventory_applied ? "库存记录" : "补扣库存"}</button>
-        </div>
-      )}
-    </div>
+      </details>
+    </article>
   )
 }
 
@@ -147,7 +132,7 @@ function SwipeRowBg({ children, onDelete }: { children: React.ReactNode; onDelet
 
 function SwipeRowCard({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   return (
-    <SwipeDeleteRow actionWidth={72} onDelete={onDelete} className={`rounded-2xl border border-border ${cardShadow}`}>
+    <SwipeDeleteRow actionWidth={72} onDelete={onDelete} className="history-swipe-card">
       {children}
     </SwipeDeleteRow>
   )
@@ -160,6 +145,7 @@ function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
   onClose: () => void
   onConfirm: (entryId: number | null) => void
 }) {
+  const theme = useKitchenTheme((state) => state.theme)
   const history = useQuery({
     queryKey: ["record-consumption", record.id],
     queryFn: () => recordsApi.consumption(record.id),
@@ -175,7 +161,7 @@ function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
 
   return createPortal(
     <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => !pending && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="undo-completion-title" className="bg-card w-full max-w-[640px] rounded-t-2xl p-5 max-h-[90dvh] overflow-y-auto animate-slide-in-up" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !pending) onClose() }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="undo-completion-title" className={`kitchen-surface kitchen-${theme} kitchen-memory-sheet bg-card w-full max-w-[640px] rounded-t-2xl p-5 max-h-[90dvh] overflow-y-auto animate-slide-in-up`} style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !pending) onClose() }}>
         <h2 id="undo-completion-title" className="text-base font-bold">撤销「{record.dish_name}」已吃记录？</h2>
         <p className="mt-3 text-sm text-text2 leading-relaxed">这道菜会恢复为待完成计划，本条记录的评分、心情和成品照会清空。</p>
         {history.isError ? (
@@ -213,6 +199,7 @@ function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
 }
 
 export default function History() {
+  const theme = useKitchenTheme((state) => state.theme)
   const navigate = useNavigate()
   const location = useLocation()
   const qc = useQueryClient()
@@ -907,20 +894,19 @@ export default function History() {
   const topDish = stats?.top_dishes?.[0]
 
   return (
-    <div className="animate-fadeUp">
+    <div className="kitchen-history animate-fadeUp">
       <PageHeader
         title="记录"
-        subtitle="安排做菜计划，吃过后再记下感受"
-        icon={CalendarDays}
+        meta={stats ? stats.total_records + " 道已吃" : undefined}
         actions={
           <HeaderIconButton onClick={() => navigate("/report")} aria-label="饮食报告">
-            <span className="text-base leading-none">📊</span>
+            <BarChart3 size={18} strokeWidth={1.7} />
           </HeaderIconButton>
         }
       />
 
-      <div className="px-5 py-4 max-w-[640px] mx-auto">
-        <div className="grid grid-cols-2 gap-1 p-1 mb-4 rounded-2xl bg-bg border border-border" role="group" aria-label="记录视图">
+      <div className="kitchen-memory-body">
+        <div className="history-view-tabs" role="group" aria-label="记录视图">
           <button onClick={() => setView("calendar")} aria-pressed={view === "calendar"} className={`min-h-11 rounded-xl text-sm font-semibold transition-colors ${view === "calendar" ? "bg-card text-primary shadow-sm" : "text-text2"}`}>日历记录</button>
           <button onClick={() => setView("pending")} aria-pressed={view === "pending"} className={`min-h-11 rounded-xl text-sm font-semibold transition-colors ${view === "pending" ? "bg-card text-primary shadow-sm" : "text-text2"}`}>待完成</button>
         </div>
@@ -951,15 +937,15 @@ export default function History() {
           </div>
         ) : (
           <>
-        <div className={`bg-card rounded-2xl p-3.5 mb-5 ${cardShadow} border border-border`}>
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="text-base font-bold">{calYear} 年 {calMonth + 1} 月</div>
+        <div className="history-calendar">
+          <div className="history-calendar-heading">
+            <h2>{calYear} 年 {calMonth + 1} 月</h2>
             <div className="flex gap-2">
-              <button onClick={() => changeMonth(-1)} className="w-7 h-7 rounded-full bg-bg flex items-center justify-center text-sm transition-all active:bg-primary-light">←</button>
-              <button onClick={() => changeMonth(1)} className="w-7 h-7 rounded-full bg-bg flex items-center justify-center text-sm transition-all active:bg-primary-light">→</button>
+              <button onClick={() => changeMonth(-1)} aria-label="上个月"><ChevronLeft size={18} strokeWidth={1.5} /></button>
+              <button onClick={() => changeMonth(1)} aria-label="下个月"><ChevronRight size={18} strokeWidth={1.5} /></button>
             </div>
           </div>
-          <div className="grid grid-cols-7 gap-1 text-center">
+          <div className="history-calendar-grid">
             {weekdays.map((w) => <div key={w} className="text-[11px] text-text3 font-semibold py-0.5">{w}</div>)}
             {calCells.map((cell, i) => {
               const recs = recordByDate.get(cell.dateKey) || []
@@ -974,12 +960,16 @@ export default function History() {
                   key={i}
                   onClick={() => cell.isCurrentMonth && setSelectedDay(cell.day)}
                   aria-label={`${cell.dateKey}${hasLunch || hasDinner ? " 已吃" : ""}${hasPlan ? " 有计划" : ""}`}
-                  className={`h-8 flex items-center justify-center rounded-full text-[12px] cursor-pointer transition-all relative ${!cell.isCurrentMonth ? "text-text4" : ""} ${cell.isToday ? "font-bold text-primary" : ""} ${isSelected ? "bg-primary text-white font-bold" : "active:bg-primary-light"}`}
+                  disabled={!cell.isCurrentMonth}
+                  aria-current={cell.isToday ? "date" : undefined}
+                  aria-pressed={isSelected}
+                  className={`history-calendar-day ${cell.isToday ? "is-today" : ""} ${isSelected ? "is-selected" : ""}`}
                 >
                   {cell.day}
-                  {(hasLunch || hasDinner || hasPlan) && (
-                    <span className={`absolute bottom-0.5 h-1 w-1 rounded-full ${hasLunch || hasDinner ? isSelected ? "bg-white" : hasLunch ? "bg-primary" : "bg-mint" : isSelected ? "border border-white" : "border border-primary"}`} />
-                  )}
+                  <span className="history-date-marks" aria-hidden="true">
+                    {(hasLunch || hasDinner) && <span className="is-eaten" />}
+                    {hasPlan && <span className="is-planned" />}
+                  </span>
                   {homeMoodEmoji && <span className="absolute -top-0.5 right-0 text-[10px] leading-none">{homeMoodEmoji}</span>}
                 </button>
               )
@@ -989,13 +979,13 @@ export default function History() {
         </div>
 
         {selectedDay !== null && (
-          <div className={`bg-card rounded-2xl overflow-hidden mb-5 ${cardShadow} border border-border animate-pop-soft`}>
-            <div className="px-4 py-3 bg-primary-light text-sm font-semibold text-primary flex items-center justify-between">
+          <div className="history-day-ledger animate-pop-soft">
+            <div className="history-day-heading">
               <div className="flex items-center gap-1.5 flex-wrap">
                 {calMonth + 1}月{selectedDay}日
-                {selectedDateKey === todayStr() && <span className="text-[11px] font-medium bg-primary text-white px-1.5 py-px rounded-full">今天</span>}
+                {selectedDateKey === todayStr() && <span className="history-today-note">今天</span>}
                 {dayRating?.home_mood && (
-                  <span className="text-[11px] font-medium bg-white/80 text-primary px-1.5 py-px rounded-full">
+                  <span className="memory-mood-stamp">
                     {homeMoodEmojiMap[dayRating.home_mood] || "😃"} {homeMoodLabelMap[dayRating.home_mood] || "心情"}
                   </span>
                 )}
@@ -1003,7 +993,7 @@ export default function History() {
               {canRateSelectedDay ? (
                 <button
                   onClick={openMealRating}
-                  className={`min-h-11 px-2.5 rounded-full text-[11px] font-semibold transition-all active:scale-95 ${dayRating?.mood ? "bg-mint text-white" : "bg-primary text-white"}`}
+                  className="history-day-rating"
                 >
                   {dayRating?.mood ? "✓ 已评价" : "😌 评价"}
                 </button>
@@ -1082,14 +1072,14 @@ export default function History() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <StatCard value={stats?.total_records || 0} label="累计做饭" color="primary" />
-          <StatCard value={topDish?.dish_name || "-"} label="最常吃的菜" color="mint" small />
-          <StatCard value={stats?.lunch_count || 0} label="午餐次数" color="pink" />
-          <StatCard value={stats?.dinner_count || 0} label="晚餐次数" color="yellow" />
-        </div>
+        <dl className="history-kraft-stats">
+          <div><dt>累计做菜</dt><dd>{stats ? stats.total_records + " 道" : "—"}</dd></div>
+          <div><dt>最常吃</dt><dd>{topDish?.dish_name || "尚未记录"}</dd></div>
+          <div><dt>午餐菜品</dt><dd>{stats ? stats.lunch_count + " 道" : "—"}</dd></div>
+          <div><dt>晚餐菜品</dt><dd>{stats ? stats.dinner_count + " 道" : "—"}</dd></div>
+        </dl>
 
-        <SectionHeader title="最近记录" />
+        <h2 className="history-recent-heading">「最近记录」</h2>
         <div className="flex flex-col gap-2.5">
           {records.slice(0, 5).map((r) => (
             <SwipeRowCard key={r.id} onDelete={() => requestDelete(r)}>
@@ -1115,7 +1105,7 @@ export default function History() {
 
       {ratingRecord && createPortal(
         <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={closeRating}>
-          <div role="dialog" aria-modal="true" aria-label={`${ratingRecord.dish_name}评价`} className="bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up" onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeRating() }}>
+          <div role="dialog" aria-modal="true" aria-label={`${ratingRecord.dish_name}评价`} className={`kitchen-surface kitchen-${theme} kitchen-memory-sheet bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up`} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeRating() }}>
             <div className="w-9 h-1 rounded-full bg-border2 mx-auto mt-2" />
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <div className="text-base font-bold">{ratingRecord.dish_name} — 这道菜怎么样？</div>
@@ -1202,7 +1192,7 @@ export default function History() {
 
       {showMealRating && createPortal(
         <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={closeMealRating}>
-          <div role="dialog" aria-modal="true" aria-label="整体用餐评价" className="bg-card w-full max-w-[640px] max-h-[90dvh] overflow-y-auto rounded-t-2xl animate-slide-in-up" onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeMealRating() }}>
+          <div role="dialog" aria-modal="true" aria-label="整体用餐评价" className={`kitchen-surface kitchen-${theme} kitchen-memory-sheet bg-card w-full max-w-[640px] max-h-[90dvh] overflow-y-auto rounded-t-2xl animate-slide-in-up`} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeMealRating() }}>
             <div className="w-9 h-1 rounded-full bg-border2 mx-auto mt-2" />
             <div className="px-5 py-4 border-b border-border flex items-center justify-between">
               <div className="text-base font-bold">🍲 这顿饭怎么样？</div>

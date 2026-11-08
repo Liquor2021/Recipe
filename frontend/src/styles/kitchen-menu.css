@@ -1,12 +1,12 @@
 .kitchen-sheet.kitchen-menu-sheet {
-  width: calc(100% - 24px);
+  width: 100%;
   max-width: 560px;
   max-height: 85dvh;
-  bottom: calc(12px + env(safe-area-inset-bottom));
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  padding: 18px 20px 14px;
-  border-radius: 9px 12px 8px 10px;
+  padding: 26px 20px calc(18px + env(safe-area-inset-bottom));
+  border-radius: 16px 16px 0 0;
   background-color: var(--k-card);
   overflow: hidden;
 }

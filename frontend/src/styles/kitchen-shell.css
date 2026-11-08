@@ -8,8 +8,28 @@
   --k-line: #d7c9b3;
   --k-red: #c2492f;
   --k-green: #5f7a52;
+  --k-amber: #996b27;
   --k-kraft: #e8dcc6;
   --k-shadow: 0 3px 9px rgb(64 45 25 / 8%), 0 1px 2px rgb(64 45 25 / 5%);
+  --color-bg: var(--k-paper);
+  --color-card: var(--k-card);
+  --color-text: var(--k-ink);
+  --color-text2: var(--k-muted);
+  --color-text3: var(--k-muted);
+  --color-text4: var(--k-faint);
+  --color-border: var(--k-line);
+  --color-border2: var(--k-line);
+  --color-primary: var(--k-red);
+  --color-primary-dark: var(--k-red);
+  --color-primary-light: color-mix(in srgb, var(--k-red) 9%, var(--k-card));
+  --color-mint: var(--k-green);
+  --color-mint-light: color-mix(in srgb, var(--k-green) 10%, var(--k-card));
+  --color-yellow: var(--k-amber);
+  --color-yellow-light: var(--k-kraft);
+  --color-pink: var(--k-red);
+  --color-pink-light: var(--k-kraft);
+  --color-red: var(--k-red);
+  --color-red-light: color-mix(in srgb, var(--k-red) 9%, var(--k-card));
   color-scheme: light;
   color: var(--k-ink);
   background-color: var(--k-paper);
@@ -25,20 +45,14 @@
   --k-line: #4b4033;
   --k-red: #eb7856;
   --k-green: #a0b58b;
+  --k-amber: #d6ad70;
   --k-kraft: #342c22;
   --k-shadow: 0 4px 12px rgb(0 0 0 / 24%), 0 1px 2px rgb(0 0 0 / 18%);
   color-scheme: dark;
 }
 
-.kitchen-surface[data-tab-scroll="/"] {
+.kitchen-surface[data-tab-scroll] {
   padding-bottom: calc(90px + env(safe-area-inset-bottom));
-}
-
-/* 主页保留挂载以支持滑回预览；相邻旧页面仍使用原来的底色和文字。 */
-.kitchen-shell [data-tab-scroll]:not([data-tab-scroll="/"]) {
-  color-scheme: light;
-  background: var(--color-bg);
-  color: var(--color-text);
 }
 
 .kitchen-bookmarks {

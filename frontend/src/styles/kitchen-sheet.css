@@ -5,13 +5,15 @@
   max-width: 600px;
   max-height: 90dvh;
   margin: 0 auto;
-  padding: 20px 24px calc(20px + env(safe-area-inset-bottom));
+  padding: 28px 24px calc(20px + env(safe-area-inset-bottom));
   border: 1px solid var(--k-line);
   border-radius: 15px 15px 0 0;
   box-shadow: var(--k-shadow);
   overflow-y: auto;
   overscroll-behavior: contain;
+  background-color: var(--k-card);
 }
+.kitchen-sheet::before { content: ""; position: absolute; top: 0; left: calc(50% - 43px); width: 86px; height: 12px; transform: rotate(-3deg); background: color-mix(in srgb, #c48b53 36%, transparent); border-inline: 2px dashed var(--k-card); pointer-events: none; }
 .kitchen-sheet[open] { animation: kitchen-sheet-arrive 220ms ease-out; }
 .kitchen-sheet::backdrop { background: rgb(25 20 15 / 48%); backdrop-filter: blur(3px); }
 .kitchen-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 15px; }

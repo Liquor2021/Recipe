@@ -38,7 +38,6 @@ export default function MainLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const kitchenTheme = useKitchenTheme((state) => state.theme)
-  const isNotebookHome = location.pathname === "/"
   useEffect(watchKitchenTheme, [])
   const [activeIdx, setActiveIdx] = useState(() =>
     tabs.findIndex((t) => t.path === location.pathname)
@@ -238,7 +237,7 @@ export default function MainLayout() {
   }, [navigate])
 
   return (
-    <div className={`h-dvh overflow-hidden ${isNotebookHome ? "kitchen-shell" : "bg-bg"}`} data-kitchen-theme={isNotebookHome ? kitchenTheme : undefined} style={{ touchAction: "pan-y" }}>
+    <div className="h-dvh overflow-hidden kitchen-shell" data-kitchen-theme={kitchenTheme} style={{ touchAction: "pan-y" }}>
       <div className="h-full overflow-hidden">
         <div
           ref={stripRef}
@@ -253,7 +252,7 @@ export default function MainLayout() {
               data-tab-scroll={tab.path}
               aria-hidden={i !== activeIdx}
               inert={i !== activeIdx}
-              className={`h-full overflow-y-auto overscroll-y-contain pb-[calc(60px+env(safe-area-inset-bottom))]${tab.path === "/" ? ` kitchen-surface kitchen-${kitchenTheme}` : ""}`}
+              className={`h-full overflow-y-auto overscroll-y-contain kitchen-surface kitchen-${kitchenTheme}`}
               style={{ width: `${STEP_PCT}%`, flexShrink: 0 }}
             >
               {mountedTabs.has(i) ? (
@@ -270,10 +269,9 @@ export default function MainLayout() {
 
       <nav
         aria-label="主导航"
-        className={isNotebookHome ? "kitchen-bookmarks" : "fixed bottom-0 left-0 right-0 z-[100] border-t border-white/70 bg-white/92 backdrop-blur-2xl shadow-[0_-10px_30px_rgba(26,26,46,.07)]"}
-        style={isNotebookHome ? undefined : { paddingBottom: "env(safe-area-inset-bottom)" }}
+        className="kitchen-bookmarks"
       >
-        <div className={isNotebookHome ? "kitchen-bookmarks-grid" : "mx-auto grid h-[58px] max-w-[640px] grid-cols-6 items-center px-2"}>
+        <div className="kitchen-bookmarks-grid">
           {tabs.map((tab) => {
             const Icon = tab.icon
             const isActive = activeIdx === tabs.indexOf(tab)
@@ -292,15 +290,15 @@ export default function MainLayout() {
                   }
                 }}
                 className={() =>
-                  isNotebookHome ? `kitchen-bookmark${isActive ? " is-active" : ""}` : `group relative flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[13px] text-[11px] font-semibold transition-all active:scale-95 ${isActive ? "text-primary" : "text-text3 hover:text-text2"}`
+                  `kitchen-bookmark${isActive ? " is-active" : ""}`
                 }
               >
                 {() => (
                   <>
-                    <span className={isNotebookHome ? "kitchen-bookmark-icon" : `flex h-6 w-8 items-center justify-center rounded-full transition-all ${isActive ? "bg-primary-light text-primary shadow-[inset_0_0_0_1px_rgba(232,115,74,.10)]" : "text-text3 group-hover:bg-bg"}`}>
-                      <Icon aria-hidden="true" size={18} strokeWidth={isNotebookHome ? 1.6 : isActive ? 2.6 : 2.1} />
+                    <span className="kitchen-bookmark-icon">
+                      <Icon aria-hidden="true" size={18} strokeWidth={1.6} />
                     </span>
-                    <span className={isNotebookHome ? "kitchen-bookmark-label" : `max-w-full truncate leading-none transition-colors ${isActive ? "text-primary" : "text-text3"}`}>
+                    <span className="kitchen-bookmark-label">
                       {tab.label}
                     </span>
                   </>

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { createPortal } from "react-dom"
 import type { MealRecord } from "@/types"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 
 function dateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
@@ -13,6 +14,7 @@ export default function ReschedulePlanSheet({ record, pending, error, onSubmit, 
   onSubmit: (data: { meal_date: string; meal_type: string }) => void
   onClose: () => void
 }) {
+  const theme = useKitchenTheme((state) => state.theme)
   const today = dateKey(new Date())
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
@@ -27,7 +29,7 @@ export default function ReschedulePlanSheet({ record, pending, error, onSubmit, 
         role="dialog"
         aria-modal="true"
         aria-labelledby="reschedule-title"
-        className="bg-card w-full max-w-[640px] rounded-t-2xl p-5 max-h-[90dvh] overflow-y-auto animate-slide-in-up"
+        className={`relative kitchen-surface kitchen-${theme} kitchen-paper-drawer w-full max-w-[640px] p-5 max-h-[90dvh] overflow-y-auto animate-slide-in-up`}
         style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => { if (event.key === "Escape" && !pending) onClose() }}

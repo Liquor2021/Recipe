@@ -36,3 +36,13 @@
   src: url(/fonts/kitchen-serif-recipes-3.woff2) format('woff2');
   unicode-range: U+8f83, U+8f9b, U+8fc5, U+8fd1, U+8fd8, U+8fde, U+8ffd, U+9002, U+9006, U+900f-9010, U+9014, U+901a, U+901f, U+903c, U+904d, U+9053, U+9075, U+90b5, U+90eb, U+90f4, U+914d, U+9152, U+9165, U+916f, U+9171, U+9175, U+9178, U+917f, U+918b, U+91aa, U+91ca, U+91ce-91cf, U+91d1, U+94b1, U+94b5, U+94c1, U+94dc, U+94f2, U+94f6, U+94fa, U+9505, U+9519, U+9526, U+952e, U+956c, U+95fd, U+9632-9634, U+9636, U+9645, U+9648, U+964d, U+9655, U+9699, U+96c6, U+96ea, U+96f6, U+9752, U+975e, U+9760, U+97e7, U+97ed, U+987a-987b, U+9884, U+9887, U+9891, U+9897, U+989c-989d, U+98ce, U+9968, U+9975, U+997a, U+997c, U+9984-9985, U+998d, U+9992-9993, U+9995, U+9999, U+9a6c, U+9a7e, U+9aa8, U+9b3c, U+9b54, U+9c7c, U+9c7f, U+9c88, U+9c8d, U+9c9c, U+9ca4, U+9cab, U+9cae, U+9e21, U+9e2d, U+9e45, U+9e4c, U+9e51, U+9ea6, U+9ebb, U+9ec4, U+9ecf, U+9ed1, U+9f13, U+9f50, U+9f99;
 }
+
+/* Notebook pages: characters absent from the earlier UI and recipe subsets. */
+@font-face {
+  font-family: 'Kitchen Serif';
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url(/fonts/kitchen-serif-notebook.woff2) format('woff2');
+  unicode-range: U+201c-201d, U+4e22, U+4e5d, U+4ec5, U+4ef7, U+4f18, U+518c, U+51d1, U+521d, U+5339, U+5386, U+5417, U+544a, U+54e6, U+54ea, U+56fe, U+5b66, U+5c1a, U+5c55, U+5e08, U+5e8f, U+5e93, U+5f15, U+5fc6, U+62a5, U+64a4, U+64ad, U+6559, U+6628, U+667a, U+6717, U+67d0, U+6807, U+6982, U+6b64, U+6dfb, U+70f9, U+7387, U+76ee, U+79f0, U+7a3f, U+7b26, U+7d2f, U+7ec3, U+7edc, U+7f16, U+7f3a, U+7f51, U+8005, U+822c, U+8303, U+888b, U+8986, U+89c2, U+89c6, U+89c8, U+8bc4, U+8bc9, U+8be5, U+8d39, U+8d70, U+8d8b, U+8f91, U+91c7, U+94fe, U+9500-9501, U+95e8, U+9650, U+97f3, U+9879, U+987f, U+996a, U+996e, U+9aa4;
+}

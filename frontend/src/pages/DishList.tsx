@@ -11,7 +11,8 @@ import type { Dish, MealRecord } from "@/types"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import { useAuthStore } from "@/store/useAuthStore"
 import toast from "react-hot-toast"
-import { Settings, UtensilsCrossed, Minus, Plus, ChefHat, LoaderCircle } from "lucide-react"
+import "@/styles/kitchen-dishes.css"
+import { Settings, Plus, Check, Heart, Search, X, ArrowRight, LoaderCircle } from "lucide-react"
 
 const DEFAULT_CATEGORIES = ["川菜", "粤菜", "家常菜", "快手菜", "汤品", "主食"]
 const DEFAULT_TASTES = ["酸", "甜", "辣", "鲜", "清淡", "咸鲜", "麻辣", "蒜香", "酱香", "糖醋", "酸辣", "香辣"]
@@ -167,7 +168,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
   }, [today, search, activeCategory, activeTaste])
 
   useLayoutEffect(() => {
-    if (sidebarRef.current) sidebarRef.current.scrollTop = session.categoryScrollTop
+    if (sidebarRef.current) sidebarRef.current.scrollLeft = session.categoryScrollTop
     if (tasteRef.current) tasteRef.current.scrollLeft = session.tasteScrollLeft
   }, [session])
 
@@ -177,8 +178,8 @@ function DishListPage({ today, generation }: { today: string; generation: number
     if (!sidebar || !selected) return
     const bounds = sidebar.getBoundingClientRect()
     const itemBounds = selected.getBoundingClientRect()
-    if (itemBounds.top < bounds.top) sidebar.scrollTop += itemBounds.top - bounds.top
-    else if (itemBounds.bottom > bounds.bottom) sidebar.scrollTop += itemBounds.bottom - bounds.bottom
+    if (itemBounds.left < bounds.left) sidebar.scrollLeft += itemBounds.left - bounds.left
+    else if (itemBounds.right > bounds.right) sidebar.scrollLeft += itemBounds.right - bounds.right
   }, [activeCategory, sidebarCats])
 
   useEffect(() => {
@@ -304,31 +305,11 @@ function DishListPage({ today, generation }: { today: string; generation: number
   }, [allDishes])
 
   const categoryRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  const [highlightCat, setHighlightCat] = useState("")
 
   const categoryRefCallback = useCallback((cat: string) => (el: HTMLDivElement | null) => {
     if (el) categoryRefs.current.set(cat, el)
     else categoryRefs.current.delete(cat)
   }, [])
-
-  useEffect(() => {
-    const container = listRef.current
-    if (!container) return
-    const sections = categoryRefs.current
-    if (sections.size === 0) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setHighlightCat(entry.target.getAttribute("data-category") || "")
-          }
-        }
-      },
-      { root: container, rootMargin: "-60px 0px -70% 0px", threshold: 0 }
-    )
-    sections.forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
-  }, [allDishes])
 
   function scrollToCategory(cat: string) {
     restoreScrollRef.current = null
@@ -357,15 +338,15 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const showGrouped = activeCategory === "全部" && activeTaste === "全部" && !search
 
   return (
-    <div className="animate-fadeUp flex flex-col h-full">
+    <div className="kitchen-dishes animate-fadeUp flex flex-col h-full">
       <PageHeader
         title="菜品"
-        subtitle="选菜加餐，一键搞定"
-        icon={UtensilsCrossed}
+        meta={`共 ${enabledTotal} 道`}
         actions={
-           <HeaderIconButton onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} aria-label="管理设置">
-            <Settings size={18} strokeWidth={2.3} />
-          </HeaderIconButton>
+          <>
+            <HeaderIconButton onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} aria-label="管理设置"><Settings size={18} strokeWidth={1.7} /></HeaderIconButton>
+            <HeaderIconButton className="kitchen-dishes-add" onClick={() => navigate(isLoggedIn ? "/admin/dishes/new" : "/admin/login")} aria-label="添加菜品"><Plus size={20} strokeWidth={1.7} /></HeaderIconButton>
+          </>
         }
       />
 
@@ -377,61 +358,32 @@ function DishListPage({ today, generation }: { today: string; generation: number
       )}
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div className="absolute inset-0 flex">
-          <div
-            ref={sidebarRef}
-            role="navigation"
-            aria-label="菜品分类"
-            onScroll={(event) => saveDishListSession(today, { categoryScrollTop: event.currentTarget.scrollTop })}
-            className="w-[76px] flex-shrink-0 bg-card border-r border-border overflow-y-auto overscroll-y-contain scrollbar-none"
-          >
-            {sidebarCats.map((cat) => {
-              const count = cat === "全部" ? enabledTotal : (categoryCountMap.get(cat) ?? 0)
-              return (
-                <button
-                  key={cat}
-                  onClick={() => scrollToCategory(cat)}
-                  aria-current={activeCategory === cat ? "true" : undefined}
-                  className={`w-full py-3 px-1.5 text-[12px] font-medium text-center transition-all relative whitespace-pre-line leading-tight ${
-                    (activeCategory === cat || (cat !== "全部" && highlightCat === cat && activeCategory === "全部"))
-                      ? "bg-bg text-primary font-bold before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:h-5 before:bg-primary before:rounded-r-full"
-                      : "text-text2 bg-card"
-                  }`}
-                >
-                  {cat}<span className="block text-[11px] text-text3 font-normal">{count}道</span>
-                </button>
-              )
-            })}
-          </div>
-
           <div className="flex-1 min-w-0 flex flex-col">
-            <div className="px-3 pt-3 pb-2">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text3 text-sm">🔍</span>
-                <input
-                  type="text"
-                  placeholder="搜索菜品、配料..."
-                  value={search}
-                  onChange={(e) => { setSearch(e.target.value); setActiveCategory("全部"); setActiveTaste("全部") }}
-                  className="w-full py-2 pl-9 pr-3 rounded-full bg-bg border border-border text-[13px] transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.12)] outline-none"
-                />
-              </div>
+            <div className="kitchen-dishes-search">
+              <Search size={17} aria-hidden="true" />
+              <input type="search" aria-label="搜索菜品或配料" placeholder="写个名字，翻翻看…" value={search}
+                onChange={(e) => { setSearch(e.target.value); setActiveCategory("全部"); setActiveTaste("全部") }} />
+              {search && <button type="button" aria-label="清空搜索" onClick={() => setSearch("")}><X size={17} /></button>}
             </div>
-
-            <div className="px-3 pb-2">
+            <div ref={sidebarRef} role="navigation" aria-label="菜品分类"
+              onScroll={(event) => saveDishListSession(today, { categoryScrollTop: event.currentTarget.scrollLeft })}
+              className="kitchen-category-tabs scrollbar-none">
+              {sidebarCats.map((cat) => <button key={cat} onClick={() => scrollToCategory(cat)} aria-current={activeCategory === cat ? "true" : undefined}>
+                {cat}
+              </button>)}
+            </div>
+            <div className="kitchen-taste-wrap">
               <div
                 ref={tasteRef}
                 onScroll={(event) => saveDishListSession(today, { tasteScrollLeft: event.currentTarget.scrollLeft })}
-                className="flex items-center gap-1.5 overflow-x-auto scrollbar-none scroll-fade-x"
+                className="kitchen-taste-tabs scrollbar-none"
               >
                 {tastes.map((t) => (
                   <button
                     key={t}
                     onClick={() => setActiveTaste(t)}
-                    className={`px-3 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all active:scale-95 ${
-                      activeTaste === t
-                        ? "bg-pink text-white"
-                        : "bg-card border border-border text-text2"
-                    }`}
+                    className={activeTaste === t ? "is-active" : undefined}
+                    aria-pressed={activeTaste === t}
                   >
                     {t}
                   </button>
@@ -446,7 +398,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
               onScroll={(event) => {
                 if (restoreScrollRef.current === null) saveDishListSession(today, { scrollTop: event.currentTarget.scrollTop })
               }}
-              className="flex-1 overflow-y-auto px-3 scrollbar-none overscroll-y-contain"
+              className="kitchen-dishes-scroll flex-1 overflow-y-auto scrollbar-none overscroll-y-contain"
             >
               {isError && dishesData && !isFetchNextPageError && (
                 <div role="alert" className="py-3 text-center text-[12px] text-text2">
@@ -481,8 +433,8 @@ function DishListPage({ today, generation }: { today: string; generation: number
               ) : showGrouped ? (
                 Array.from(groupedByCategory.entries()).map(([cat, dishes]) => (
                   <div key={cat} ref={categoryRefCallback(cat)} data-category={cat}>
-                    <div className="sticky top-0 z-10 bg-bg/92 backdrop-blur-sm py-2 px-1 text-[13px] font-bold text-text2 flex items-center gap-2">
-                       <span className="w-1 h-4 bg-primary rounded-full" />
+                    <div className="kitchen-dish-group">
+                       <span aria-hidden="true">「</span>
                        {cat}
                        <span className="text-[11px] text-text3 font-normal">{categoryCountMap.get(cat) ?? dishes.length}道</span>
                     </div>
@@ -544,25 +496,10 @@ function DishListPage({ today, generation }: { today: string; generation: number
       </div>
 
       {totalPicked > 0 && (
-        <div className="flex-shrink-0 bg-card/95 backdrop-blur-xl border-t border-border px-4 py-2.5 flex items-center gap-3 z-20">
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <ChefHat size={22} className="text-primary" />
-              <span className="absolute -top-1.5 -right-2 bg-primary text-white text-[11px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">{totalPicked}</span>
-            </div>
-            <div className="text-[13px]">
-              {todayLunchIds.size > 0 && <span className="text-primary font-semibold">🍳午餐{todayLunchIds.size}道</span>}
-              {todayLunchIds.size > 0 && todayDinnerIds.size > 0 && <span className="text-text3 mx-1">·</span>}
-              {todayDinnerIds.size > 0 && <span className="text-mint font-semibold">🍲晚餐{todayDinnerIds.size}道</span>}
-            </div>
-          </div>
-          <div className="flex-1" />
-          <button
-            onClick={() => setShowTodayModal(true)}
-            className="py-2 px-5 rounded-full text-[13px] font-semibold bg-primary text-white transition-all active:scale-96"
-          >
-            今日菜单
-          </button>
+        <div className="kitchen-picked-bar">
+          <span className="kitchen-picked-count">{totalPicked}</span>
+          <div className="kitchen-picked-label"><strong>已选 {totalPicked} 道</strong><span>午 {todayLunchIds.size} · 晚 {todayDinnerIds.size}</span></div>
+          <button onClick={() => setShowTodayModal(true)}>今日菜单 <ArrowRight size={16} /></button>
         </div>
       )}
 
@@ -603,43 +540,27 @@ interface DishRowProps {
 
 function DishRow({ dish, isFav, isLunch, isDinner, lunchPending, dinnerPending, mealDisabled, onToggleFav, onToggleMeal, onClick }: DishRowProps) {
   return (
-    <div className="flex items-center gap-3 py-2.5 px-1 rounded-xl transition-all active:bg-card group">
-      <div
-        onClick={onClick}
-        className="w-[72px] h-[72px] rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br from-primary-light to-pink-light cursor-pointer"
-      >
+    <article className="kitchen-dish-row">
+      <button type="button" onClick={onClick} className="kitchen-dish-photo" aria-label={`查看${dish.name}的做法`}>
         <DishImage dish={dish} className="w-full h-full" emojiSize="text-[28px]" />
-      </div>
-
-      <div className="flex-1 min-w-0" onClick={onClick}>
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="text-[14px] font-semibold truncate">{dish.name}</span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleFav() }}
-            className={`text-[14px] transition-all active:scale-90 flex-shrink-0 ${isFav ? "text-primary animate-heartbeat" : "text-text3 opacity-0 group-hover:opacity-100"}`}
-          >
-            {isFav ? "❤" : "♡"}
-          </button>
+      </button>
+      <div className="kitchen-dish-info">
+        <div className="kitchen-dish-title">
+          <button type="button" onClick={onClick}>{dish.name}</button>
+          <button type="button" onClick={onToggleFav} aria-label={`${isFav ? "取消收藏" : "收藏"}${dish.name}`} aria-pressed={isFav} className={`kitchen-dish-heart${isFav ? " is-active" : ""}`}><Heart size={17} fill={isFav ? "currentColor" : "none"} strokeWidth={1.5} /></button>
         </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-text2 mb-1.5">
+        <div className="kitchen-dish-meta">
           <span>{dish.category}</span>
-          <span className="w-[3px] h-[3px] rounded-full bg-text3" />
-          <span>{dish.cook_time}分钟</span>
-          <span className="w-[3px] h-[3px] rounded-full bg-text3" />
-          <span className={diffColor(dish.difficulty)}>{diffLabel(dish.difficulty)}</span>
-          {dish.taste && (
-            <>
-              <span className="w-[3px] h-[3px] rounded-full bg-text3" />
-              <span>{dish.taste}</span>
-            </>
-          )}
+          {dish.cook_time > 0 && <span>{dish.cook_time}分钟</span>}
+          <span className={`kitchen-dish-difficulty ${diffColor(dish.difficulty)}`}>火候·{diffLabel(dish.difficulty)}</span>
+          {dish.taste && <span>{dish.taste}</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <MealToggle active={isLunch} pending={lunchPending} disabled={mealDisabled} emoji="🍳" label="午餐" onClick={() => onToggleMeal("lunch")} color="primary" />
-          <MealToggle active={isDinner} pending={dinnerPending} disabled={mealDisabled} emoji="🍲" label="晚餐" onClick={() => onToggleMeal("dinner")} color="mint" />
+        <div className="kitchen-dish-meals">
+          <MealToggle active={isLunch} pending={lunchPending} disabled={mealDisabled} label="午餐" onClick={() => onToggleMeal("lunch")} color="primary" />
+          <MealToggle active={isDinner} pending={dinnerPending} disabled={mealDisabled} label="晚餐" onClick={() => onToggleMeal("dinner")} color="mint" />
         </div>
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -647,31 +568,16 @@ interface MealToggleProps {
   active: boolean
   pending: boolean
   disabled: boolean
-  emoji: string
   label: string
   onClick: () => void
   color: "primary" | "mint"
 }
 
-function MealToggle({ active, pending, disabled, emoji, label, onClick, color }: MealToggleProps) {
-  const activeClass = color === "primary"
-    ? "bg-primary text-white border-primary"
-    : "bg-mint text-white border-mint"
-  const inactiveClass = "bg-card border-border text-text2"
-
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onClick() }}
-      disabled={disabled || pending}
-      aria-busy={pending}
-      aria-label={pending ? `正在更新${label}计划` : undefined}
-      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all active:scale-95 disabled:opacity-50 ${
-        active ? activeClass : inactiveClass
-      }`}
-    >
-      {pending ? <LoaderCircle size={10} className="animate-spin" /> : active ? <Minus size={10} /> : <Plus size={10} />}
-      <span>{emoji}</span>
-      <span>{label}</span>
-    </button>
-  )
+function MealToggle({ active, pending, disabled, label, onClick, color }: MealToggleProps) {
+  return <button type="button" onClick={onClick} disabled={disabled || pending} aria-busy={pending} aria-pressed={active}
+    aria-label={pending ? `正在更新${label}计划` : `${active ? "已选" : "选择"}${label}`}
+    className={`kitchen-meal-toggle is-${color}${active ? " is-active" : ""}`}>
+    {pending ? <LoaderCircle size={13} className="animate-spin" /> : active ? <Check size={13} /> : <Plus size={13} />}
+    {label}
+  </button>
 }

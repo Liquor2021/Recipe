@@ -10,8 +10,9 @@ import DishImage from "@/components/DishImage"
 import { cardShadow } from "@/components/Card"
 import type { FridgeMatch, InventoryBatch } from "@/types"
 import { fridgeDaysLeft, matchesFridgeFilter, parseFridgeFilter, searchFridge, type FridgeFilter } from "@/lib/fridgeFilters"
-import { Search, X } from "lucide-react"
+import { Search, X, ShoppingBasket, Pencil, TriangleAlert } from "lucide-react"
 import toast from "react-hot-toast"
+import "@/styles/kitchen-tools.css"
 
 const QUICK_ITEMS = ["鸡蛋", "番茄", "土豆", "青椒", "洋葱", "豆腐", "猪肉", "鸡翅", "虾仁", "白菜", "面条", "玉米"]
 
@@ -25,21 +26,14 @@ function todayStr(offset = 0) {
 function expiryBadge(expiry: string, today: string): { text: string; cls: string; level: "expired" | "urgent" | "soon" | "ok" } | null {
   const left = fridgeDaysLeft(expiry, today)
   if (left === null) return null
-  if (left < 0) return { text: `已过期 ${-left} 天`, cls: "bg-red-light text-red", level: "expired" }
-  if (left === 0) return { text: "今天到期", cls: "bg-red-light text-red", level: "urgent" }
-  if (left <= 2) return { text: `${left} 天后到期`, cls: "bg-red-light text-red", level: "urgent" }
-  if (left <= 4) return { text: `${left} 天后到期`, cls: "bg-yellow-light text-[#C8A23C]", level: "soon" }
-  return { text: `${left} 天`, cls: "bg-bg text-text3", level: "ok" }
-}
-
-function coverageTone(coverage: number) {
-  if (coverage >= 80) return { bg: "bg-mint-light", text: "text-mint", bar: "bg-mint" }
-  if (coverage >= 50) return { bg: "bg-primary-light", text: "text-primary", bar: "bg-primary" }
-  return { bg: "bg-yellow-light", text: "text-[#C8A23C]", bar: "bg-yellow" }
+  if (left < 0) return { text: `已过期 ${-left} 天`, cls: "is-expired", level: "expired" }
+  if (left === 0) return { text: "今天到期", cls: "is-urgent", level: "urgent" }
+  if (left <= 2) return { text: `${left} 天后到期`, cls: "is-urgent", level: "urgent" }
+  if (left <= 4) return { text: `${left} 天后到期`, cls: "is-soon", level: "soon" }
+  return { text: `新鲜 · ${left} 天后到期`, cls: "is-fresh", level: "ok" }
 }
 
 function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: FridgeMatch; onClick: () => void; onAddMissing?: () => void; addingMissing?: boolean }) {
-  const tone = coverageTone(match.coverage)
   // 后端字段可能为 null，统一兜底成数组
   const matched = match.matched || []
   const missing = match.missing || []
@@ -51,46 +45,24 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
   // 只有 100% 才叫"可以做"，其余是部分匹配，不夸大
   const badgeText = match.coverage === 100 ? "可以做" : `匹配 ${match.coverage}%`
   return (
-    <div
-      onClick={onClick}
-      className={`bg-card rounded-2xl border border-border ${cardShadow} p-3 flex gap-3 cursor-pointer transition-all active:scale-98`}
-    >
-      <DishImage dish={match.dish} className="w-[72px] h-[72px] rounded-xl overflow-hidden flex-shrink-0 bg-gradient-to-br from-primary-light to-pink-light" emojiSize="text-[30px]" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[15px] font-bold truncate">{match.dish.name}</span>
-          <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold ${tone.bg} ${tone.text}`}>
-            {badgeText}
-          </span>
-          {urgent.length > 0 && (
-            <span className="flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-light text-red">
-              清临期
-            </span>
-          )}
-        </div>
-        <div className="h-1.5 rounded-full bg-bg overflow-hidden mb-1.5">
-          <div className={`h-full rounded-full ${tone.bar} transition-all`} style={{ width: `${match.coverage}%` }} />
-        </div>
-        <div className="text-[11px] leading-relaxed text-text2 flex items-center gap-1.5">
-          <span className="min-w-0 truncate">
-            <span className="text-mint font-medium">有 {haveText}</span>
-            {missing.length > 0 && (
-              <span className="text-text3"> · 缺 {missing.slice(0, 3).join("、")}{missing.length > 3 ? "…" : ""}</span>
-            )}
-          </span>
-          {missing.length > 0 && onAddMissing && (
-            <button
-              type="button"
-              disabled={addingMissing}
-              onClick={(e) => { e.stopPropagation(); onAddMissing() }}
-              className="relative after:absolute after:-inset-2 flex-shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold bg-yellow-light text-[#C8A23C] transition-all active:scale-95 disabled:opacity-50"
-            >
-              🛒 补料
-            </button>
-          )}
-        </div>
+    <article className="k-fridge-recipe">
+      <button type="button" onClick={onClick} className="k-fridge-recipe-open">
+        <span className="k-tool-polaroid"><DishImage dish={match.dish} className="h-full w-full" emojiSize="text-[30px]" /></span>
+        <span className="k-fridge-recipe-info">
+          <span className="k-fridge-recipe-title">{match.dish.name}</span>
+          <span className="k-fridge-recipe-coverage">{badgeText}{missing.length > 0 && ` · 缺 ${missing.slice(0, 3).join("、")}${missing.length > 3 ? "…" : ""}`}</span>
+          <span className="k-fridge-recipe-stock">有 {haveText}</span>
+        </span>
+      </button>
+      <div className="k-fridge-recipe-actions">
+        {urgent.length > 0 && <span className="k-tool-stamp is-expired">清临期</span>}
+        {missing.length > 0 && onAddMissing && (
+          <button type="button" disabled={addingMissing} onClick={onAddMissing} className="k-tool-button" aria-label={`为${match.dish.name}补料`}>
+            <ShoppingBasket size={15} aria-hidden="true" />补料
+          </button>
+        )}
       </div>
-    </div>
+    </article>
   )
 }
 
@@ -348,27 +320,27 @@ export default function Fridge() {
   }
 
   return (
-    <div className="animate-fadeUp">
+    <div className="animate-fadeUp k-tools-page k-fridge-page">
       <PageHeader
         title="冰箱库存"
-        subtitle="记下家里有什么，帮你清冰箱"
         onBack={() => navigate(-1)}
         meta={expiredCount + soonCount > 0 ? [expiredCount > 0 ? `${expiredCount} 批过期` : "", soonCount > 0 ? `${soonCount} 批临期` : ""].filter(Boolean).join(" · ") : items.length > 0 ? `${items.length} 批` : undefined}
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
         {/* 添加食材：同食材再添加 = 追加新批次 */}
-        <form onSubmit={(e) => { e.preventDefault(); handleAdd(input, true) }} className="flex gap-2 mb-2.5">
+        <form onSubmit={(e) => { e.preventDefault(); handleAdd(input, true) }} className="k-fridge-add flex gap-2 mb-2.5">
           <input
             value={input}
             onChange={(e) => { draftRevision.current++; setInput(e.target.value) }}
             placeholder="冰箱里有什么？如：鸡蛋、番茄…"
-            className="min-w-0 flex-1 h-11 rounded-2xl border-[1.5px] border-border bg-card px-4 text-sm font-medium outline-none transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.12)]"
+            aria-label="新放入的食材名称"
+            className="k-tool-field min-w-0 flex-1"
           />
           <button
             type="submit"
             disabled={!input.trim() || addMut.isPending}
-            className="h-11 px-5 rounded-2xl bg-primary text-white text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
+            className="k-tool-button is-ink px-5"
           >
             {addMut.isPending ? "放入中…" : "放入"}
           </button>
@@ -377,7 +349,8 @@ export default function Fridge() {
           value={quantityInput}
           onChange={(e) => { draftRevision.current++; setQuantityInput(e.target.value) }}
           placeholder="数量（可选），如：3个、半袋"
-          className="w-full h-9 mb-3 rounded-xl border border-border bg-bg px-3.5 text-xs text-text2 outline-none transition-all focus:border-primary"
+          aria-label="新放入食材的数量"
+          className="k-tool-field k-fridge-quantity w-full mb-3"
         />
 
         {/* 快速添加 */}
@@ -389,7 +362,7 @@ export default function Fridge() {
                 type="button"
                 disabled={addMut.isPending}
                 onClick={() => handleAdd(name)}
-                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-card border border-border text-text2 transition-all active:scale-95 hover:border-primary/30 hover:text-primary"
+                className="k-tool-chip is-dashed flex-shrink-0"
               >
                 + {name}
               </button>
@@ -407,14 +380,14 @@ export default function Fridge() {
                 placeholder="搜索库存食材"
                 value={search}
                 onChange={(event) => updateSearch(event.target.value)}
-                className="w-full h-11 rounded-xl border border-border bg-card pl-10 pr-11 text-sm outline-none transition-all focus:border-primary [&::-webkit-search-cancel-button]:appearance-none"
+                className="k-tool-field k-fridge-search w-full [&::-webkit-search-cancel-button]:appearance-none"
               />
               {search && <button type="button" aria-label="清空库存搜索" onClick={() => updateSearch("")} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-text3 active:text-text"><X size={16} /></button>}
             </div>
             <div className="grid grid-cols-3 gap-2" role="group" aria-label="按保质期筛选">
               {([{ key: "all", label: "全部" }, { key: "soon", label: "临期" }, { key: "expired", label: "已过期" }] as const).map(({ key, label }) => (
                 <button key={key} type="button" onClick={() => updateFilter(key)} aria-pressed={filter === key}
-                  className={`min-h-11 rounded-xl border text-[13px] font-semibold transition-all active:scale-95 ${filter === key ? "border-primary/30 bg-primary-light text-primary" : "border-border bg-card text-text2"}`}
+                  className={`k-tool-chip ${filter === key ? "is-active" : ""}`}
                 >{label} <span className="ml-1 text-xs tabular-nums">{filterCounts[key]}</span></button>
               ))}
             </div>
@@ -426,13 +399,14 @@ export default function Fridge() {
         )}
 
         {expiredIds.length > 0 && (
-          <div className="flex items-center justify-between gap-3 mb-3 px-3.5 py-2.5 rounded-2xl bg-red-light text-red">
-            <span className="text-xs font-semibold">{hasFilters ? "当前结果" : "有"} {expiredIds.length} 批食材已过期</span>
+          <div className="k-fridge-alert">
+            <TriangleAlert size={17} aria-hidden="true" />
+            <span>{hasFilters ? "当前结果" : "有"} {expiredIds.length} 批食材已过期</span>
             <button
               type="button"
               disabled={batchBusy}
               onClick={clearExpired}
-              className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold bg-red text-white transition-all active:scale-95 disabled:opacity-50"
+              className="k-tool-text-button"
             >
               清理这 {expiredIds.length} 批
             </button>
@@ -456,20 +430,14 @@ export default function Fridge() {
         ) : groups.length > 0 ? (
           <div aria-label="库存批次" className="flex flex-col gap-2.5 mb-6">
             {groups.map(([name, batches]) => {
-              const hasUrgent = batches.some((b) => {
-                const l = fridgeDaysLeft(b.expiry_date, today)
-                return l !== null && l <= 2
-              })
               return (
                 <div
                   key={name}
-                  className={`bg-card rounded-2xl border ${cardShadow} p-3.5 ${hasUrgent ? "border-red/20" : "border-border"}`}
+                  className="k-fridge-group"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`text-[15px] font-bold ${hasUrgent ? "text-red" : ""}`}>{name}</span>
-                    {batches.length > 1 && (
-                      <span className="text-[11px] font-semibold text-text3 bg-bg px-2 py-0.5 rounded-full">{batches.length} 批</span>
-                    )}
+                  <div className="k-fridge-group-heading">
+                    <h2>「{name}」</h2>
+                    <span>{batches.length} 批</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {batches.map((b) => {
@@ -477,24 +445,20 @@ export default function Fridge() {
                       return (
                         <div
                           key={b.id}
-                          onClick={() => openBatchEditor(b)}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm cursor-pointer transition-all active:scale-[.98] ${
-                            badge?.level === "expired" || badge?.level === "urgent"
-                              ? "bg-red-light/60 border-red/20 text-red"
-                              : "bg-bg border-border text-text"
-                          }`}
+                          className="k-fridge-batch"
                         >
-                          {b.quantity && <span className="font-semibold">{b.quantity}</span>}
-                          {badge ? (
-                            <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${badge.cls}`}>{badge.text}</span>
-                          ) : <span className="text-[11px] text-text3">未设保质期</span>}
+                          <button type="button" disabled={batchBusy} onClick={() => openBatchEditor(b)} className="k-fridge-batch-edit" aria-label={`编辑${name} ${b.quantity || "该批"}`}>
+                            <Pencil size={14} aria-hidden="true" />
+                            <span className="k-fridge-batch-quantity">{b.quantity || "数量未填"}</span>
+                            <span className="k-tool-leader" aria-hidden="true" />
+                            {badge ? <span className={`k-tool-stamp ${badge.cls}`}>{badge.text}</span> : <span className="k-fridge-no-expiry">未设保质期</span>}
+                          </button>
                           <button
                             type="button"
                             disabled={batchBusy}
                             aria-label={`移出${name}该批`}
                             onClick={(e) => { e.stopPropagation(); removeBatch(b.id) }}
-                            // 透明 ::after 撑大点击区；删除不用确认，向左只扩一点，点行内其他地方仍是编辑
-                            className="relative after:absolute after:-inset-y-2 after:-right-3 after:-left-1 ml-auto w-5 h-5 rounded-full flex items-center justify-center opacity-50 hover:bg-black/5 hover:opacity-100 transition-all active:scale-90 text-base leading-none"
+                            className="k-fridge-batch-remove"
                           >
                             ×
                           </button>
@@ -527,7 +491,7 @@ export default function Fridge() {
         {items.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-3">
-              <div className="text-lg font-bold">🍳 清冰箱推荐</div>
+              <h2 className="k-tool-section-title">「清冰箱推荐」</h2>
               <span className="text-[11px] text-text3">临期批次会优先用掉</span>
             </div>
             {hasFilters && <div className="-mt-1 mb-3 text-xs text-text2">推荐基于全部可用库存</div>}
@@ -595,7 +559,7 @@ export default function Fridge() {
             disabled={batchBusy}
             onChange={(e) => setEditQuantity(e.target.value)}
             placeholder="数量（可选），如：3个、半袋"
-            className="w-full h-10 mb-3 rounded-xl border-[1.5px] border-border bg-bg px-3.5 text-sm outline-none transition-all focus:border-primary"
+            className="k-tool-field w-full mb-3"
           />
           <div className="grid grid-cols-4 gap-2 mb-3">
             {EXPIRY_PRESETS.map((p) => {
@@ -607,7 +571,8 @@ export default function Fridge() {
                   type="button"
                   disabled={batchBusy}
                   onClick={() => setEditDate(val)}
-                  className={`py-2.5 rounded-xl text-[13px] font-bold border-[1.5px] transition-all active:scale-95 ${active ? "border-primary bg-primary-light text-primary" : "border-border text-text2"}`}
+                  aria-pressed={active}
+                  className={`k-tool-chip ${active ? "is-active" : ""}`}
                 >
                   {p.label}
                 </button>
@@ -629,7 +594,7 @@ export default function Fridge() {
               type="button"
               onClick={() => removeBatch(editing.id)}
               disabled={batchBusy || editConflict}
-              className="py-2.5 px-4 rounded-full text-sm font-semibold bg-red-light text-red active:scale-96 transition-all"
+              className="k-tool-button"
             >
               {removeBatchMut.isPending ? "移出中…" : "移出该批"}
             </button>
@@ -637,7 +602,7 @@ export default function Fridge() {
               type="button"
               onClick={saveBatch}
               disabled={batchBusy || editConflict}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white active:scale-96 transition-all"
+              className="k-tool-button is-ink flex-1"
             >
               {batchMut.isPending ? "保存中…" : "保存"}
             </button>

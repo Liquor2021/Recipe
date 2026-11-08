@@ -1,0 +1,70 @@
+.recipe-page { min-height: 100%; padding-bottom: calc(100px + env(safe-area-inset-bottom)); background: var(--k-paper); color: var(--k-ink); }
+.recipe-heading { display: flex; align-items: center; gap: 12px; max-width: 640px; margin: auto; padding: 16px 20px 20px; }
+.recipe-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--k-line); border-radius: 6px; color: var(--k-muted); background: var(--k-card); flex: 0 0 auto; }
+.recipe-edit { margin-left: auto; }
+.recipe-number-stamp { padding: 6px 10px; border: 1px solid var(--k-red); color: var(--k-red); border-radius: 4px; transform: rotate(-2deg); font: 700 12px/1.6 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.recipe-body { max-width: 640px; margin: auto; padding: 0 20px 16px; }
+.recipe-polaroid { position: relative; padding: 9px 9px 15px; margin: 0 2px 18px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); box-shadow: var(--k-shadow); transform: rotate(-.6deg); }
+.recipe-tape { position: absolute; top: -10px; left: 50%; width: 102px; height: 21px; transform: translateX(-50%) rotate(-4deg); border-inline: 2px dashed color-mix(in srgb, var(--k-card) 60%, transparent); background: color-mix(in srgb, #c78f5b 32%, transparent); z-index: 1; }
+.recipe-photo { aspect-ratio: 1.75; padding: 5px; background: var(--k-paper); border: 1px solid var(--k-line); border-radius: 3px; overflow: hidden; }
+.recipe-photo > img { border-radius: 2px; }
+.recipe-photo-fallback { display: flex; height: 100%; align-items: center; justify-content: center; background: var(--k-kraft); font-size: 76px; }
+.recipe-photo-caption { min-height: 38px; display: flex; align-items: center; }
+.recipe-favorite { display: flex; align-items: center; gap: 7px; min-height: 44px; padding-inline: 4px; color: var(--k-muted); font-size: 11px; }
+.recipe-favorite.is-favorite { color: var(--k-red); }
+.recipe-title { padding-inline: 6px; margin: 0; font: 900 clamp(23px, 6vw, 31px)/1.4 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.recipe-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 8px 6px 0; color: var(--k-muted); font-size: 12px; }
+.recipe-difficulty { display: inline-flex; padding: 2px 6px; border: 1px solid currentColor; border-radius: 3px; color: var(--k-amber, #a36e27); transform: rotate(-2deg); }
+.recipe-difficulty-easy { color: var(--k-green); }
+.recipe-difficulty-hard { color: var(--k-red); }
+.recipe-tags { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 8px 6px 0; color: var(--k-muted); font-size: 11px; }
+.recipe-records-summary { margin: 0 0 22px; }
+.recipe-records-summary > summary { display: flex; align-items: center; gap: 9px; min-height: 44px; cursor: pointer; list-style: none; }
+.recipe-records-summary > summary::-webkit-details-marker { display: none; }
+.recipe-records-summary[open] > summary > svg { transform: rotate(180deg); }
+.recipe-mastery-stamp { flex: 0 0 auto; padding: 4px 7px; border: 1px solid var(--k-green); border-radius: 4px; color: var(--k-green); font: 700 12px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; transform: rotate(-2deg); }
+.recipe-dotline { flex: 1; min-width: 8px; border-bottom: 1px dotted var(--k-line); }
+.recipe-records-score { font-size: 11px; color: var(--k-muted); white-space: nowrap; }
+.recipe-records-expanded { margin-top: 10px; padding: 14px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); }
+.recipe-section-title { margin: 0 0 8px; color: var(--k-ink); font: 900 17px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.recipe-ingredients-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.recipe-ingredients-heading .recipe-section-title { margin: 0; }
+.recipe-portions { display: flex; gap: 4px; }
+.recipe-portion { min-width: 35px; min-height: 40px; padding: 5px 7px; border: 1px solid var(--k-line); border-radius: 4px; color: var(--k-muted); background: transparent; font-size: 12px; }
+.recipe-portion.is-selected { border-color: var(--k-ink); background: var(--k-ink); color: var(--k-paper); }
+.recipe-prep-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--k-muted); }
+.recipe-prep-meta button { min-height: 36px; padding: 3px 2px 3px 10px; color: var(--k-red); }
+.recipe-prep-note { margin: 0 0 12px; color: var(--k-muted); font-size: 11px; line-height: 1.7; }
+.recipe-ingredients-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; }
+.recipe-ingredient { position: relative; display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 46px; padding: 7px 0; cursor: pointer; font-size: 13px; }
+.recipe-ingredient input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.recipe-ingredient-box { display: flex; width: 17px; height: 17px; flex: 0 0 auto; align-items: center; justify-content: center; border: 1px solid var(--k-line); border-radius: 4px; color: var(--k-red); }
+.recipe-ingredient.is-ready .recipe-ingredient-box { border-color: var(--k-red); background: color-mix(in srgb, var(--k-red) 6%, transparent); }
+.recipe-ingredient-name { min-width: 0; overflow-wrap: anywhere; }
+.recipe-ingredient-amount { margin-left: auto; color: var(--k-muted); font-size: 11px; text-align: right; overflow-wrap: anywhere; max-width: 48%; }
+.recipe-ingredient.is-ready .recipe-ingredient-name { color: var(--k-muted); text-decoration: line-through; text-decoration-color: var(--k-line); }
+.recipe-ingredient:has(input:focus-visible) { outline: 2px solid var(--k-red); outline-offset: 3px; border-radius: 3px; }
+.recipe-step { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px dotted var(--k-line); }
+.recipe-step:last-child { border-bottom: 0; }
+.recipe-step > .flex-1 { min-width: 0; }
+.recipe-step-stamp { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 7px; background: var(--k-red); color: #fff9ef; font: 900 15px/1 "Kitchen Serif", "Songti SC", SimSun, serif; transform: rotate(-6deg); }
+.recipe-step:nth-child(even) .recipe-step-stamp { transform: rotate(4deg); }
+.recipe-step-text { padding-top: 2px; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.recipe-time-slip { display: inline-block; margin-top: 6px; padding: 2px 6px; border: 1px solid var(--k-line); border-radius: 3px; color: var(--k-muted); font-size: 11px; }
+.recipe-step-speak { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; color: var(--k-muted); border: 1px solid var(--k-line); border-radius: 5px; }
+.recipe-tip { padding: 16px 18px; margin: 0 0 24px; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-kraft); }
+.recipe-tip h2 { margin-bottom: 5px; font: 900 15px/1.6 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.recipe-tip p { color: var(--k-muted); font-size: 13px; line-height: 1.85; white-space: pre-line; }
+.recipe-plan-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 26px; }
+.recipe-plan-actions > button { min-height: 46px; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-card); color: var(--k-ink); font-size: 13px; }
+.recipe-cook-dock { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 210; width: calc(100% - 28px); max-width: 612px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 10px 11px 10px 16px; border: 1px solid var(--k-line); border-radius: 9px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.recipe-cook-summary { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 4px; }
+.recipe-cook-summary strong { font: 900 13px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.recipe-cook-summary span { color: var(--k-muted); font-size: 11px; }
+.recipe-cook-primary { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; padding: 10px 16px; border: 1px solid var(--k-ink); border-radius: 5px; background: var(--k-ink); color: var(--k-paper); box-shadow: 2px 3px 0 color-mix(in srgb, var(--k-ink) 15%, transparent); font: 700 14px/1.4 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.recipe-page button { cursor: pointer; transition: color 150ms, border-color 150ms, background-color 150ms; }
+.recipe-page button:disabled { cursor: default; opacity: .45; }
+.recipe-page button:focus-visible, .recipe-records-summary > summary:focus-visible { outline: 2px solid var(--k-red); outline-offset: 3px; }
+@media (hover: hover) { .recipe-icon-button:hover, .recipe-step-speak:hover, .recipe-portion:not(.is-selected):hover { border-color: var(--k-red); color: var(--k-red); } .recipe-cook-primary:hover { background: var(--k-red); border-color: var(--k-red); color: #fff9ef; } }
+@media (max-width: 360px) { .recipe-body { padding-inline: 16px; } .recipe-heading { padding-inline: 16px; } .recipe-ingredients-grid { column-gap: 12px; } .recipe-cook-summary strong { font-size: 12px; } .recipe-cook-primary { padding-inline: 12px; } .recipe-cook-summary span { font-size: 11px; } }
+@media (prefers-reduced-motion: reduce) { .recipe-page button { transition: none; } }

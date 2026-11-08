@@ -9,19 +9,19 @@ import { parsePortionScale, portionLabel, scaleAmount } from "@/lib/portions"
 import { getDishImageUrl, getDishEmoji, thumbUrl } from "@/lib/dishImage"
 import SafeImage from "@/components/SafeImage"
 import PhotoViewer from "@/components/PhotoViewer"
-import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import SectionHeader from "@/components/SectionHeader"
 import DishCard from "@/components/DishCard"
 import { cardShadow } from "@/components/Card"
 import type { Dish, DishRecordsStats } from "@/types"
 import toast from "react-hot-toast"
-import { Pencil, Star } from "lucide-react"
+import { ArrowLeft, Check, ChevronDown, Flame, Heart, Pencil, Star, Volume2 } from "lucide-react"
+import "@/styles/kitchen-recipe.css"
 
 function diffLabel(d: string) { return d === "easy" ? "简单" : d === "medium" ? "中等" : "困难" }
 function mealLabel(m: string) {
-  if (m === "lunch") return "🍳 午餐"
-  if (m === "dinner") return "🍲 晚餐"
-  return "🍳🍲 午餐+晚餐"
+  if (m === "lunch") return "午餐"
+  if (m === "dinner") return "晚餐"
+  return "午餐 / 晚餐"
 }
 
 const moodEmojiMap: Record<string, string> = { yum: "😋", ok: "😐", no: "😵", great: "😋", meh: "😕" }
@@ -47,12 +47,14 @@ function normalizeSteps(raw: unknown[]): Step[] {
   })
 }
 
-function IngredientCard({ ing, scale }: { ing: Ingredient; scale: number }) {
+function IngredientCard({ ing, scale, checked, onToggle }: { ing: Ingredient; scale: number; checked: boolean; onToggle: () => void }) {
   return (
-    <div className="bg-card p-2.5 rounded-[10px] text-center text-[13px] border border-border transition-all">
-      <div className="font-semibold mb-0.5">{ing.name}</div>
-      {ing.amount && <div className="text-[12px] text-text2">{scaleAmount(ing.amount, scale)}</div>}
-    </div>
+    <label className={`recipe-ingredient ${checked ? "is-ready" : ""}`}>
+      <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`备好${ing.name}`} />
+      <span className="recipe-ingredient-box" aria-hidden="true">{checked && <Check size={13} strokeWidth={2} />}</span>
+      <span className="recipe-ingredient-name">{ing.name}</span>
+      {ing.amount && <span className="recipe-ingredient-amount">{scaleAmount(ing.amount, scale)}</span>}
+    </label>
   )
 }
 
@@ -104,6 +106,9 @@ function DishDetailContent() {
   const dishId = Number(id)
   const requestedRecordId = Number(searchParams.get("record_id")) || 0
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+
+  const [preparation, setPreparation] = useState<{ scope: string; checked: Set<string> }>(() => ({ scope: "", checked: new Set() }))
+  useEffect(() => () => { if ("speechSynthesis" in window) speechSynthesis.cancel() }, [])
 
   const [portionChoice, setPortionChoice] = useState<number | null>(null)
   const [viewerPhotos, setViewerPhotos] = useState<string[]>([])
@@ -169,6 +174,7 @@ function DishDetailContent() {
       qc.invalidateQueries({ queryKey: ["achievements"] })
       toast.success(isFav ? "已取消收藏" : "❤ 已收藏")
     },
+    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "收藏更新失败")),
   })
 
   const recordMut = useMutation({
@@ -236,6 +242,20 @@ function DishDetailContent() {
 
   const ingredients: Ingredient[] = normalizeIngredients(asArray(dish.ingredients))
   const seasonings: Ingredient[] = normalizeIngredients(asArray(dish.seasonings))
+  // 勾选只对应这份配料和用量。后台刷新改变顺序、配料或计划份量时立即清空，不能把旧勾选套给新内容。
+  const preparationScope = JSON.stringify([dishId, recordId, portionScale, ingredients, seasonings])
+  const readyIngredients = preparation.scope === preparationScope ? preparation.checked : new Set<string>()
+  if (preparation.scope !== preparationScope) {
+    setPreparation({ scope: preparationScope, checked: new Set() })
+  }
+  function toggleIngredient(key: string) {
+    setPreparation((previous) => {
+      const checked = new Set(previous.scope === preparationScope ? previous.checked : [])
+      if (checked.has(key)) checked.delete(key)
+      else checked.add(key)
+      return { scope: preparationScope, checked }
+    })
+  }
   const steps: Step[] = normalizeSteps(asArray(dish.steps))
   const tasteTags = (dish.taste || "").split(",").map((t) => t.trim()).filter(Boolean)
   const dishTags = asArray<string>(dish.tags).filter(Boolean)
@@ -243,36 +263,32 @@ function DishDetailContent() {
   const hasMoodData = dishStats.yum_percent + dishStats.ok_percent + dishStats.no_percent > 0
 
   return (
-    <div className="min-h-screen bg-bg">
-      <PageHeader
-        title="菜品详情"
-        subtitle={dish.name}
-        onBack={() => navigate(-1)}
-        actions={
-          isLoggedIn && (
-            <HeaderIconButton onClick={() => navigate(`/admin/dishes/${dishId}`)} aria-label="编辑菜品">
-              <Pencil size={17} strokeWidth={2.3} />
-            </HeaderIconButton>
-          )
-        }
-      />
+    <div className="recipe-page">
+      <header className="recipe-heading">
+        <button type="button" className="recipe-icon-button" onClick={() => navigate(-1)} aria-label="返回"><ArrowLeft size={19} /></button>
+        <span className="recipe-number-stamp">私房菜 · 第 {dish.id} 道</span>
+        {isLoggedIn && <button type="button" className="recipe-icon-button recipe-edit" onClick={() => navigate(`/admin/dishes/${dishId}`)} aria-label="编辑菜品"><Pencil size={18} /></button>}
+      </header>
 
-      <div className="relative h-[260px] bg-gradient-to-br from-primary-light to-pink-light overflow-hidden">
-        <SafeImage
-          src={getDishImageUrl(dish)}
-          alt={dish.name}
-          className="w-full h-full object-cover"
-          eager
-          fallback={<div className="w-full h-full flex items-center justify-center text-[80px]">{getDishEmoji(dish)}</div>}
-        />
-        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-bg to-transparent" />
-        <button onClick={() => favMut.mutate()} className={`absolute bottom-4 right-5 w-11 h-11 rounded-full bg-card shadow-md flex items-center justify-center text-xl transition-all active:animate-heartbeat z-[1] ${isFav ? "text-primary" : ""}`}>
-          {isFav ? "❤" : "♡"}
-        </button>
-      </div>
-
-      <div className="px-5 py-5 max-w-[640px] mx-auto" style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom))" }}>
-        <div className="text-2xl font-extrabold mb-2">{dish.name}</div>
+      <div className="recipe-body">
+        <article className="recipe-polaroid">
+          <span className="recipe-tape" aria-hidden="true" />
+          <div className="recipe-photo">
+            <SafeImage src={getDishImageUrl(dish)} alt={dish.name} className="w-full h-full object-cover" eager fallback={<div className="recipe-photo-fallback">{getDishEmoji(dish)}</div>} />
+          </div>
+          <div className="recipe-photo-caption">
+            <button type="button" onClick={() => favMut.mutate()} disabled={favMut.isPending} className={`recipe-favorite ${isFav ? "is-favorite" : ""}`} aria-label={isFav ? "取消收藏" : "收藏这道菜"} aria-pressed={isFav}><Heart size={20} fill={isFav ? "currentColor" : "none"} /><span>{isFav ? "已收藏" : "收藏这道菜"}</span></button>
+          </div>
+          <h1 className="recipe-title">{dish.name}</h1>
+          <div className="recipe-meta">
+            <span>{dish.category}</span>
+            {dish.cook_time > 0 && <span>约 {dish.cook_time} 分钟</span>}
+            <span className={`recipe-difficulty recipe-difficulty-${dish.difficulty}`}>火候·{diffLabel(dish.difficulty)}</span>
+            {tasteTags.map((t) => <span key={t}>{t}</span>)}
+            <span>{mealLabel(dish.meal_type)}</span>
+          </div>
+          {dishTags.length > 0 && <div className="recipe-tags">{dishTags.map((t) => <span key={t}>#{t}</span>)}</div>}
+        </article>
         {linkedRecord && (
           <div className="mb-4 rounded-xl border border-primary/20 bg-primary-light p-3 text-[13px] text-text2">
             <div className="font-semibold text-primary">{linkedRecord.meal_date} · {linkedRecord.meal_type === "lunch" ? "午餐" : "晚餐"} · {linkedRecord.status === "completed" ? "已吃" : linkedRecord.status === "cancelled" ? "已取消" : "计划吃"}</div>
@@ -288,40 +304,10 @@ function DishDetailContent() {
             )}
           </div>
         )}
-        <div className="flex gap-2 flex-wrap mb-3">
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{dish.category}</span>
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-mint-light text-mint">{dish.cook_time}分钟</span>
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-primary-light text-primary">{diffLabel(dish.difficulty)}</span>
-          {tasteTags.map((t) => (
-            <span key={t} className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-pink-light text-pink">{t}</span>
-          ))}
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-purple-light text-purple">{mealLabel(dish.meal_type)}</span>
-        </div>
-
-        {dishTags.length > 0 && (
-          <div className="flex gap-1.5 flex-wrap mb-3">
-            {dishTags.map((t) => (
-              <span key={t} className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-bg text-text2 border border-border">#{t}</span>
-            ))}
-          </div>
-        )}
-
-        {dish.remark && (
-          <div className={`bg-yellow-light rounded-xl p-3.5 mb-5 border border-yellow/20 ${cardShadow}`}>
-            <div className="text-[13px] text-yellow font-semibold mb-1">💡 小贴士</div>
-            <div className="text-[13px] text-text leading-relaxed">{dish.remark}</div>
-          </div>
-        )}
-
         {dishStats.total_count > 0 && (
-          <div className={`bg-card rounded-2xl p-4 mb-5 border border-border ${cardShadow}`}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-base font-bold">做菜记录</span>
-                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${mastery.color}`}>{mastery.icon} {mastery.label}</span>
-              </div>
-              <span className="text-[12px] text-text3">做了 {dishStats.total_count} 次</span>
-            </div>
+          <details className="recipe-records-summary">
+            <summary><span className="recipe-mastery-stamp">做了 {dishStats.total_count} 次 · {mastery.label}</span><span className="recipe-dotline" /><span className="recipe-records-score">{hasMoodData ? `好吃率 ${dishStats.yum_percent}%` : "待评价"}</span><ChevronDown size={15} aria-hidden="true" /></summary>
+            <div className="recipe-records-expanded">
 
             <div className="grid grid-cols-3 gap-2 mb-3">
               <div className="text-center bg-bg rounded-lg py-2">
@@ -369,8 +355,10 @@ function DishDetailContent() {
                 <span className="text-[11px] font-semibold text-text">{dishStats.avg_rating.toFixed(1)}</span>
               </div>
             )}
-          </div>
+            </div>
+          </details>
         )}
+
 
         {dish.video_url && (
           <button onClick={() => window.open(dish.video_url, "_blank", "noopener,noreferrer")}
@@ -381,25 +369,25 @@ function DishDetailContent() {
 
         {(ingredients.length > 0 || seasonings.length > 0) && (
           <div className="mb-6">
-            <div className="flex items-center justify-between gap-2 mb-2.5">
-              <div className="text-[15px] font-bold flex items-center gap-2"><span className="text-base">🥬</span> 食材</div>
-              <div className="flex items-center bg-bg rounded-full p-1 border border-border" aria-label="菜谱份量">
+            <div className="recipe-ingredients-heading">
+              <h2 className="recipe-section-title">「食材」</h2>
+              <div className="recipe-portions" aria-label="菜谱份量">
                 {[0.5, 1, 2, 3, 4].map((s) => (
                   <button key={s} onClick={() => setPortionChoice(s)} disabled={portionMut.isPending || (!!linkedRecord && linkedRecord.status !== "planned")}
                     aria-label={portionLabel(s)} aria-pressed={portionScale === s}
-                    className={`min-w-10 h-9 px-1.5 rounded-full text-[12px] font-medium transition-all disabled:opacity-50 ${portionScale === s ? "bg-primary text-white" : "text-text3 active:bg-primary-light"}`}>
+                    className={`recipe-portion ${portionScale === s ? "is-selected" : ""}`}>
                     {s === 1 ? "原量" : `×${s}`}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="text-xs text-text3 mb-3">当前 {portionLabel(portionScale)}；加入计划或保存后同步买菜清单。“适量”等保持原文。</div>
+            <div className="recipe-prep-meta"><span>备好 {readyIngredients.size} / {ingredients.length + seasonings.length} 项</span><button type="button" disabled={readyIngredients.size === 0} onClick={() => setPreparation({ scope: preparationScope, checked: new Set() })}>重置勾选</button></div><p className="recipe-prep-note">勾选仅用于本次备菜；份量保存后同步买菜清单。</p>
             {ingredients.length > 0 && (
               <div className="mb-3">
                 <div className="text-[12px] text-text3 font-semibold mb-1.5">配料</div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="recipe-ingredients-grid">
                   {ingredients.map((ing, i) => (
-                    <IngredientCard key={`ing-${i}`} ing={ing} scale={portionScale} />
+                    <IngredientCard key={`ing-${i}`} ing={ing} scale={portionScale} checked={readyIngredients.has(`ing-${i}`)} onToggle={() => toggleIngredient(`ing-${i}`)} />
                   ))}
                 </div>
               </div>
@@ -407,9 +395,9 @@ function DishDetailContent() {
             {seasonings.length > 0 && (
               <div>
                 <div className="text-[12px] text-text3 font-semibold mb-1.5">调料</div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="recipe-ingredients-grid">
                   {seasonings.map((s, i) => (
-                    <IngredientCard key={`sea-${i}`} ing={s} scale={portionScale} />
+                    <IngredientCard key={`sea-${i}`} ing={s} scale={portionScale} checked={readyIngredients.has(`sea-${i}`)} onToggle={() => toggleIngredient(`sea-${i}`)} />
                   ))}
                 </div>
               </div>
@@ -419,14 +407,14 @@ function DishDetailContent() {
 
         {steps.length > 0 && (
           <div className="mb-6">
-            <div className="text-[15px] font-bold mb-2.5 flex items-center gap-2"><span className="text-base">📝</span> 制作步骤</div>
+            <h2 className="recipe-section-title">「做法」</h2>
             <div>
               {steps.map((s, i) => (
-                <div key={i} className="flex gap-3.5 py-3.5 border-b border-border last:border-0">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-[13px] font-bold">{i + 1}</div>
+                <div key={i} className="recipe-step">
+                  <span className="recipe-step-stamp">{i + 1}</span>
                   <div className="flex-1">
-                    <div className="text-sm leading-relaxed pt-1">{s.text}</div>
-                    {s.time && <div className="text-[11px] text-text3 mt-1">⏱ {s.time}分钟</div>}
+                    <div className="recipe-step-text">{s.text}</div>
+                    {s.time != null && s.time > 0 && <span className="recipe-time-slip">{s.time} 分钟</span>}
                     {s.image && (
                       <div className="mt-2 rounded-lg overflow-hidden border border-border">
                         <img src={s.image!} alt="" className="w-full max-h-40 object-cover" loading="lazy" />
@@ -443,15 +431,32 @@ function DishDetailContent() {
                         toast("🔊 正在播报...")
                       }
                     }}
-                    className="flex-shrink-0 w-8 h-8 rounded-full bg-mint-light text-mint flex items-center justify-center text-sm active:bg-mint active:text-white transition-all mt-1"
-                  >▶</button>
+                    className="recipe-step-speak" aria-label={`朗读第 ${i + 1} 步`} disabled={!("speechSynthesis" in window)}
+                  ><Volume2 size={17} /></button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {canCook && <button onClick={startCooking} disabled={portionMut.isPending} className="w-full py-3.5 px-7 rounded-full text-base font-semibold bg-primary text-white transition-all active:scale-96 hover:bg-primary-dark disabled:opacity-50 mb-6">🍳 开始做菜 · {portionLabel(portionScale)}</button>}
+        {dish.remark && <aside className="recipe-tip"><h2>小贴士</h2><p>{dish.remark}</p></aside>}
+        <section className="recipe-plan-actions" aria-label="用餐计划">
+          {linkedRecord ? (
+          <>
+            <button onClick={() => navigate("/history")} className="flex-1 py-2.5 rounded-full text-sm font-semibold border border-border2 text-text2 transition-all active:scale-96">查看用餐记录</button>
+            {linkedRecord.status === "planned" ? (
+              <button onClick={() => portionMut.mutate()} disabled={!portionChanged || portionMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">{portionMut.isPending ? "保存中…" : portionChanged ? "保存份量" : "份量已保存"}</button>
+            ) : (
+              <button onClick={() => navigate(`/dishes/${dishId}?portion_scale=${portionScale}`, { replace: true })} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96">重新选这道菜</button>
+            )}
+          </>
+        ) : (
+          <>
+            <button onClick={() => recordMut.mutate("lunch")} disabled={recordMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">🍳 午餐计划吃这个</button>
+            <button onClick={() => recordMut.mutate("dinner")} disabled={recordMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96 disabled:opacity-50">🍲 晚餐计划吃这个</button>
+          </>
+        )}
+        </section>
 
         {dishRecords.length > 0 && (
           <div className="mb-6">
@@ -477,11 +482,11 @@ function DishDetailContent() {
                   </div>
                   <div className="overflow-x-auto scrollbar-none scroll-fade-x">
                     <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="max-w-none">
-                      <polyline points={pts} fill="none" stroke="#E8734A" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                      <polyline points={pts} fill="none" stroke="var(--k-red)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
                       {rated.map((r, i) => (
                         <g key={i}>
-                          <circle cx={PAD + i * STEP} cy={yFor(r.rating)} r="3.5" fill="#fff" stroke="#E8734A" strokeWidth="1.5" />
-                          <text x={PAD + i * STEP} y={yFor(r.rating) - 9} textAnchor="middle" fontSize="9" fill="#9CA3AF">{r.rating}分</text>
+                          <circle cx={PAD + i * STEP} cy={yFor(r.rating)} r="3.5" fill="var(--k-card)" stroke="var(--k-red)" strokeWidth="1.5" />
+                          <text x={PAD + i * STEP} y={yFor(r.rating) - 9} textAnchor="middle" fontSize="9" fill="var(--k-muted)">{r.rating}分</text>
                         </g>
                       ))}
                     </svg>
@@ -595,22 +600,9 @@ function DishDetailContent() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-[210] bg-bg/92 backdrop-blur-xl px-5 py-3 flex gap-2.5 border-t border-border" style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}>
-        {linkedRecord ? (
-          <>
-            <button onClick={() => navigate("/history")} className="flex-1 py-2.5 rounded-full text-sm font-semibold border border-border2 text-text2 transition-all active:scale-96">查看用餐记录</button>
-            {linkedRecord.status === "planned" ? (
-              <button onClick={() => portionMut.mutate()} disabled={!portionChanged || portionMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">{portionMut.isPending ? "保存中…" : portionChanged ? "保存份量" : "份量已保存"}</button>
-            ) : (
-              <button onClick={() => navigate(`/dishes/${dishId}?portion_scale=${portionScale}`, { replace: true })} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96">重新选这道菜</button>
-            )}
-          </>
-        ) : (
-          <>
-            <button onClick={() => recordMut.mutate("lunch")} disabled={recordMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-50">🍳 午餐计划吃这个</button>
-            <button onClick={() => recordMut.mutate("dinner")} disabled={recordMut.isPending} className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96 disabled:opacity-50">🍲 晚餐计划吃这个</button>
-          </>
-        )}
+      <div className="recipe-cook-dock">
+        <div className="recipe-cook-summary"><strong>{portionLabel(portionScale)}{dish.cook_time > 0 ? ` · 约 ${dish.cook_time} 分钟` : ""}</strong><span>{canCook ? (portionChanged ? "开始前会保存当前份量" : "食材齐了，就开火吧") : linkedRecord?.status === "completed" ? "这道菜，已经吃过了" : "查看这份用餐计划"}</span></div>
+        {canCook ? <button type="button" onClick={startCooking} disabled={portionMut.isPending} className="recipe-cook-primary"><Flame size={18} />{portionMut.isPending ? "保存中…" : "开始做菜"}</button> : <button type="button" onClick={() => navigate("/history")} className="recipe-cook-primary">查看记录</button>}
       </div>
 
       {showViewer && viewerPhotos.length > 0 && createPortal(

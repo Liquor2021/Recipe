@@ -1,0 +1,58 @@
+.kitchen-cook { position: fixed; inset: 0; z-index: 300; display: flex; flex-direction: column; overflow: hidden; }
+.kitchen-cook-message { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; text-align: center; }
+.cook-heading { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: start; gap: 14px; width: 100%; max-width: 600px; margin-inline: auto; padding: calc(17px + env(safe-area-inset-top)) 20px 8px; flex: 0 0 auto; }
+.cook-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--k-line); border-radius: 6px; color: var(--k-muted); background: var(--k-card); }
+.cook-heading-title { min-width: 0; padding-top: 8px; }
+.cook-heading h1 { margin: 0; text-align: center; overflow-wrap: anywhere; font: 900 20px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.cook-progress { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px; margin: 10px auto 5px; max-width: 220px; }
+.cook-progress span { width: 7px; height: 6px; border-radius: 4px; background: var(--k-line); }
+.cook-progress span.is-current { width: 17px; background: var(--k-red); }
+.cook-linked-plan { color: var(--k-muted); text-align: center; font-size: 11px; padding-inline: 20px; }
+.cook-error { width: 100%; max-width: 560px; margin: 6px auto 0; padding: 0 20px; color: var(--k-muted); font-size: 12px; }
+.cook-error > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+.cook-error button { min-height: 40px; padding: 6px 10px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 4px; color: var(--k-red); }
+.cook-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 22px; }
+.cook-plan-choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 12px auto; }
+.cook-ingredients { max-width: 500px; margin: 16px auto 8px; background: var(--k-kraft); border: 1px solid var(--k-line); border-radius: 6px; }
+.cook-ingredients summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 11px 14px; cursor: pointer; list-style: none; }
+.cook-ingredients summary::-webkit-details-marker { display: none; }
+.cook-ingredients summary strong { font: 700 14px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.cook-ingredients summary > span { color: var(--k-muted); font-size: 11px; }
+.cook-ingredients summary > span::after { content: " +"; }
+.cook-ingredients[open] summary > span::after { content: " −"; }
+.cook-ingredient-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; padding: 0 14px 16px; font-size: 12px; }
+.cook-ingredient-grid > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.cook-ingredient-grid > div > span:last-child { color: var(--k-muted); font-size: 11px; }
+.cook-step-content { display: flex; flex-direction: column; align-items: center; padding: 12px 0 18px; text-align: center; }
+.cook-step-caption { color: var(--k-muted); font-size: 12px; letter-spacing: .12em; }
+.cook-step-number { margin: 5px 0 9px; color: var(--k-red); font: 900 64px/1.2 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.cook-step-instruction { max-width: 500px; margin: 0 auto 18px; font: 900 clamp(22px, 5.7vw, 29px)/1.85 "Kitchen Serif", "Songti SC", SimSun, serif; text-wrap: pretty; overflow-wrap: anywhere; }
+.cook-timer { position: relative; display: flex; width: 190px; height: 190px; margin: 8px auto 18px; align-items: center; justify-content: center; border: 2px dashed var(--k-line); border-radius: 50%; }
+.cook-timer-ring { position: absolute; inset: 12px; width: calc(100% - 24px); height: calc(100% - 24px); transform: rotate(-90deg); overflow: visible; }
+.cook-timer-track { fill: none; stroke: var(--k-line); stroke-width: 4; }
+.cook-timer-progress { fill: none; stroke: var(--k-red); stroke-width: 4; stroke-linecap: round; transition: stroke-dashoffset .25s linear; }
+.cook-timer-label { position: relative; }
+.cook-timer-digits { font: 900 37px/1.3 "Kitchen Serif", "Songti SC", SimSun, serif; font-variant-numeric: tabular-nums; letter-spacing: .025em; }
+.cook-timer-digits.is-elapsed { color: var(--k-red); }
+.cook-timer-status { margin-top: 4px; color: var(--k-muted); font-size: 11px; }
+.cook-no-timer { max-width: 280px; margin: 20px 0 35px; color: var(--k-muted); font-size: 13px; line-height: 1.8; }
+.cook-controls { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: clamp(9px, 3.2vw, 21px); width: 100%; padding: 14px 14px calc(25px + env(safe-area-inset-bottom)); }
+.cook-round { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; flex: 0 0 auto; width: 50px; height: 50px; border: 1px solid var(--k-line); border-radius: 50%; color: var(--k-muted); background: var(--k-card); }
+.cook-round > span { font-size: 11px; line-height: 1; }
+.cook-round-primary { width: 70px; height: 70px; border-color: var(--k-red); color: #fff9ef; background: var(--k-red); box-shadow: 2px 3px 0 color-mix(in srgb, var(--k-ink) 15%, transparent); }
+.cook-round-primary > span { font-size: 11px; }
+.cook-action { min-height: 46px; padding: 10px 16px; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-card); color: var(--k-ink); font-size: 14px; }
+.cook-action-primary, .cook-action.is-selected { background: var(--k-ink); border-color: var(--k-ink); color: var(--k-paper); }
+.cook-finished { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow-y: auto; padding: 30px 25px; text-align: center; background: var(--k-paper); }
+.cook-finished-stamp { width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; border: 2px solid var(--k-red); border-radius: 8px; transform: rotate(-8deg); color: var(--k-red); font: 900 26px/1.3 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.cook-finished h1 { font: 900 24px/1.6 "Kitchen Serif", "Songti SC", SimSun, serif; }
+.cook-finished > p { max-width: 330px; margin: 10px 0 30px; color: var(--k-muted); font-size: 13px; line-height: 1.8; }
+.cook-finished-actions { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 320px; }
+.cook-return { min-height: 44px; color: var(--k-muted); font-size: 13px; }
+.kitchen-cook button, .kitchen-cook-message button { cursor: pointer; transition: border-color 150ms, color 150ms, background-color 150ms; }
+.kitchen-cook button:disabled, .kitchen-cook-message button:disabled { opacity: .4; cursor: default; }
+.kitchen-cook button:focus-visible, .kitchen-cook-message button:focus-visible, .cook-ingredients summary:focus-visible { outline: 2px solid var(--k-red); outline-offset: 4px; }
+@media (hover: hover) { .cook-icon:hover, .cook-round:not(.cook-round-primary):hover, .cook-action:not(.cook-action-primary):hover { border-color: var(--k-red); color: var(--k-red); } .cook-round-primary:hover { filter: brightness(1.08); } }
+@media (max-width: 360px) { .cook-controls { gap: 9px; padding-inline: 10px; } .cook-round { width: 45px; height: 45px; } .cook-round-primary { width: 62px; height: 62px; } .cook-heading { padding-inline: 16px; } .cook-scroll { padding-inline: 18px; } .cook-step-instruction { font-size: 22px; } }
+@media (min-height: 850px) { .cook-step-content { padding-top: 22px; } .cook-step-number { margin-bottom: 18px; } .cook-step-instruction { margin-bottom: 24px; } .cook-timer { width: 210px; height: 210px; } }
+@media (prefers-reduced-motion: reduce) { .kitchen-cook button, .cook-timer-progress { transition: none; } }

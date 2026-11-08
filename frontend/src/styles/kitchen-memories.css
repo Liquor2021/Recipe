@@ -1,0 +1,161 @@
+/* 手账里的日历、相册和私人菜库，共用纸色与朱砂印记。 */
+.kitchen-memory-body { max-width: 640px; margin: 0 auto; padding: 12px 20px 28px; }
+.kitchen-history, .kitchen-photo-wall, .kitchen-favorites { min-height: 100%; color: var(--k-ink); background: var(--k-paper); }
+.kitchen-memory-body button, .kitchen-memory-body summary { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kitchen-memory-body button:disabled { cursor: default; opacity: .5; }
+.kitchen-memory-body :is(button, input, select, summary):focus-visible { outline: 2px solid var(--k-red); outline-offset: 3px; }
+.memory-ink-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 15px; border: 1px solid var(--k-ink); border-radius: 5px; color: var(--k-paper); background: var(--k-ink); box-shadow: 2px 2px 0 var(--k-line); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 13px; font-weight: 700; white-space: nowrap; transition: transform 150ms ease; }
+.memory-ink-button:active { transform: translateY(1px); box-shadow: none; }
+.memory-error { padding: 18px; margin-bottom: 20px; border: 1px dashed var(--k-line); border-radius: 6px; background: var(--k-card); font-size: 13px; }
+.memory-error p { color: var(--k-muted); margin: 5px 0; }
+.memory-error button { min-height: 44px; color: var(--k-red); font-weight: 600; }
+.memory-dot-leader { min-width: 14px; flex: 1; border-bottom: 1px dotted var(--k-line); align-self: center; }
+.memory-mood-stamp { position: relative; display: inline-flex; align-items: center; gap: 4px; min-height: 29px; border: 1px solid var(--k-red); border-radius: 40% 12% 37% 13% / 35% 36% 30% 29%; background: var(--k-card); padding: 3px 8px; color: var(--k-red); font-size: 11px; white-space: nowrap; transform: rotate(-3deg); }
+
+/* 日历上的红圈和点、圈具有不同含义，选中状态另用浅纸色表示。 */
+.history-view-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.history-view-tabs button { min-height: 42px; padding: 0 16px; border: 1px solid var(--k-line); border-radius: 5px; color: var(--k-muted); background: transparent; font-size: 13px; }
+.history-view-tabs button[aria-pressed="true"] { color: var(--k-paper); background: var(--k-ink); border-color: var(--k-ink); box-shadow: none; }
+.history-calendar { padding: 13px 12px 9px; margin-bottom: 18px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.history-calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+.history-calendar-heading h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 700; font-size: 17px; }
+.history-calendar-heading button { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; color: var(--k-muted); border-radius: 5px; }
+.history-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; }
+.history-calendar-day { position: relative; display: flex; align-items: center; justify-content: center; min-height: 43px; border-radius: 5px; color: var(--k-ink); background: transparent; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 13px; border: 1px solid transparent; }
+.history-calendar-day:disabled { opacity: .35; }
+.history-calendar-day.is-selected { background: var(--k-kraft); font-weight: 900; }
+.history-calendar-day.is-today { color: var(--k-red); }
+.history-calendar-day.is-today::before { content: ""; position: absolute; inset: 5px 2px; border: 1.5px solid var(--k-red); border-radius: 42% 45% 38% 46%; transform: rotate(-7deg); pointer-events: none; }
+.history-date-marks { display: flex; gap: 3px; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); }
+.history-date-marks span { display: block; width: 4px; height: 4px; border: 1px solid var(--k-red); border-radius: 50%; }
+.history-date-marks .is-eaten { background: var(--k-red); }
+.history-day-ledger { margin-bottom: 20px; overflow: hidden; }
+.history-day-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 0 9px; color: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 700; }
+.history-day-heading > div::before { content: "「"; color: var(--k-red); margin-right: -6px; }
+.history-day-heading > div::after { content: "」"; color: var(--k-red); margin-left: -6px; }
+.history-today-note { font-size: 12px; color: var(--k-red); font-weight: 500; }
+.history-day-rating { flex-shrink: 0; min-height: 40px; border: 1px solid var(--k-red); border-radius: 5px; background: var(--k-card); color: var(--k-red); padding: 0 10px; font-size: 11px; font-family: inherit; transform: rotate(-2deg); }
+.history-ledger-row { padding: 10px 0 6px; background: var(--k-paper); border-bottom: 1px dotted var(--k-line); }
+.history-ledger-main { display: flex; align-items: center; gap: 9px; min-height: 40px; }
+.history-dish-link { display: flex; min-width: 0; align-items: center; flex: 1; gap: 8px; min-height: 44px; text-align: left; }
+.history-dish-link strong { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 15px; font-weight: 900; overflow-wrap: anywhere; }
+.history-dish-link strong.is-cancelled { color: var(--k-faint); text-decoration: line-through; }
+.history-meal-label { font-size: 11px; color: var(--k-faint); white-space: nowrap; }
+.history-status-stamp { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 2px 7px; border: 1px solid currentColor; border-radius: 3px; font-size: 11px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; transform: rotate(-4deg); color: var(--k-green); }
+.history-status-stamp.is-planned { color: var(--k-amber, #a77730); border-style: dashed; transform: rotate(3deg); }
+.history-status-stamp.is-cancelled { color: var(--k-faint); transform: none; }
+.history-row-footnote { display: flex; justify-content: space-between; align-items: center; min-height: 24px; font-size: 11px; color: var(--k-faint); gap: 8px; }
+.history-rating-button { display: flex; gap: 6px; align-items: center; justify-content: center; min-height: 36px; min-width: 44px; padding: 0 6px; color: var(--k-muted); font-size: 12px; }
+.history-overdue { font-size: 11px; color: var(--k-amber, #a77730); margin: 4px 0; }
+.history-record-remark { font-family: "KaiTi", "STKaiti", "Kitchen Serif", serif; font-size: 13px; color: var(--k-muted); margin: 7px 0; overflow-wrap: anywhere; }
+.history-row-actions summary { display: flex; align-items: center; justify-content: flex-end; gap: 5px; width: fit-content; min-height: 36px; margin-left: auto; color: var(--k-muted); font-size: 11px; list-style: none; }
+.history-row-actions summary::-webkit-details-marker { display: none; }
+.history-row-actions[open] summary svg { transform: rotate(180deg); }
+.history-action-content { display: flex; gap: 10px; padding: 10px 0 5px; border-top: 1px dashed var(--k-line); }
+.history-action-photo { display: flex; width: 48px; height: 48px; flex-shrink: 0; padding: 3px; border: 1px solid var(--k-line); background: var(--k-card); font-size: 24px; justify-content: center; align-items: center; border-radius: 3px; overflow: hidden; }
+.history-action-buttons { display: flex; flex: 1; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.history-action-buttons button { min-height: 44px; padding: 0 11px; border: 1px solid var(--k-line); background: var(--k-card); border-radius: 5px; color: var(--k-muted); font-size: 12px; }
+.history-action-buttons button.is-primary { background: var(--k-ink); color: var(--k-paper); border-color: var(--k-ink); }
+.history-kraft-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 24px; }
+.history-kraft-stats > div { border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-kraft); padding: 13px 15px; min-height: 78px; }
+.history-kraft-stats dt { color: var(--k-muted); font-size: 11px; margin-bottom: 5px; }
+.history-kraft-stats dd { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
+.history-recent-heading { margin-bottom: 8px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 700; }
+.history-swipe-card { border-bottom: 1px dotted var(--k-line); }
+/* 旧评价逻辑原样保留，表单容器换成贴边的纸抽屉。 */
+.kitchen-memory-sheet { position: relative; border: 1px solid var(--k-line); border-bottom: 0; border-radius: 13px 13px 0 0; background: var(--k-card); color: var(--k-ink); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.kitchen-memory-sheet::before { content: ""; display: block; width: 78px; height: 13px; margin: 6px auto 4px; background: color-mix(in srgb, var(--k-kraft) 85%, transparent); border-inline: 1px dashed var(--k-line); transform: rotate(-3deg); }
+.kitchen-memory-sheet button { min-height: 40px; border-radius: 5px; }
+.kitchen-memory-sheet textarea { background: var(--k-paper); }
+.kitchen-memory-sheet [class*="text-base"][class*="font-bold"] { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; }
+
+/* 相册不再给每一天加一层卡片，让照片直接贴在纸面上。 */
+.memory-album-intro { margin: 1px 0 24px; text-align: center; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 13px; color: var(--k-muted); }
+.memory-timeline { position: relative; }
+.memory-timeline::before { content: ""; position: absolute; left: 5px; top: 12px; bottom: 14px; border-left: 1px dotted var(--k-line); }
+.memory-day { position: relative; padding: 0 0 30px 24px; }
+.memory-timeline-dot { position: absolute; top: 9px; left: 0; width: 11px; height: 11px; border: 1.5px solid var(--k-red); border-radius: 50%; background: var(--k-paper); }
+.memory-date-row { display: flex; flex-wrap: wrap; gap: 5px 8px; align-items: center; min-height: 30px; margin-bottom: 13px; }
+.memory-date { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 19px; font-weight: 900; white-space: nowrap; }
+.memory-weekday { font-size: 11px; color: var(--k-faint); }
+.memory-moods { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.memory-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; padding: 2px 2px 8px; }
+.memory-photos.is-single { grid-template-columns: minmax(0, 230px); }
+.memory-polaroid { min-width: 0; display: block; padding: 5px 5px 0; border: 1px solid var(--k-line); border-radius: 3px; background: var(--k-card); box-shadow: var(--k-shadow); text-align: center; transform-origin: center; transition: filter 150ms ease; }
+.memory-photo-frame { display: block; position: relative; overflow: hidden; aspect-ratio: 1; background: var(--k-kraft); border-radius: 2px; }
+.memory-photos.is-single .memory-photo-frame { aspect-ratio: 4 / 3; }
+.memory-photo-caption { display: block; padding: 7px 1px 9px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 10px; color: var(--k-muted); white-space: nowrap; }
+.memory-more-photos { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; color: #fff7e9; background: rgb(30 23 16 / 52%); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 25px; font-weight: 700; }
+.memory-day-quote { margin: 12px 0 13px; font-family: "KaiTi", "STKaiti", "Kitchen Serif", serif; font-size: 14px; font-style: italic; color: var(--k-muted); line-height: 1.85; overflow-wrap: anywhere; }
+.memory-meal-ledger { display: flex; flex-direction: column; margin-top: 8px; }
+.memory-meal-row { display: flex; gap: 7px; align-items: center; width: 100%; min-height: 44px; text-align: left; }
+.memory-meal-type { flex-shrink: 0; color: var(--k-red); font-size: 11px; }
+.memory-meal-row strong { min-width: 0; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.memory-meal-mood { display: flex; flex-shrink: 0; align-items: center; gap: 3px; color: var(--k-muted); }
+
+/* 私人菜库：扉页、三格牛皮纸索引、点线清单。 */
+.collection-title-leaf { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--k-line); border-radius: 7px; padding: 18px 17px; margin-bottom: 13px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.collection-title-leaf p { font-size: 11px; color: var(--k-muted); }
+.collection-title-leaf .collection-label { letter-spacing: .12em; color: var(--k-faint); margin-bottom: 3px; }
+.collection-title-leaf h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 36px; font-weight: 900; line-height: 1.3; margin-bottom: 5px; }
+.collection-title-leaf h2 span { font-size: 15px; margin-left: 6px; }
+.collection-index { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--k-line); background: var(--k-kraft); border-radius: 6px; margin-bottom: 15px; overflow: hidden; }
+.collection-index button { position: relative; padding: 12px 6px 13px; color: var(--k-ink); text-align: center; }
+.collection-index button + button::before { content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; border-left: 1px dotted var(--k-line); }
+.collection-index strong { display: block; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 14px; font-weight: 700; }
+.collection-index small { display: block; margin-top: 4px; color: var(--k-muted); font-size: 11px; white-space: nowrap; }
+.collection-index button[aria-pressed="true"] { background: var(--k-card); box-shadow: inset 0 -2px var(--k-red); color: var(--k-red); }
+.collection-categories { display: flex; gap: 8px; margin-bottom: 13px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
+.collection-categories button { flex-shrink: 0; min-height: 40px; padding: 0 12px; border: 1px solid var(--k-line); border-radius: 5px; color: var(--k-muted); background: transparent; font-size: 12px; }
+.collection-categories button[aria-pressed="true"] { background: var(--k-ink); border-color: var(--k-ink); color: var(--k-paper); }
+.collection-search { display: flex; align-items: center; gap: 8px; border: 1px dashed var(--k-line); border-radius: 5px; padding: 0 12px; color: var(--k-faint); background: var(--k-card); margin-bottom: 16px; }
+.collection-search input { width: 100%; min-width: 0; min-height: 44px; outline: none; background: transparent; color: var(--k-ink); font-size: 13px; }
+.collection-search input::placeholder { color: var(--k-faint); }
+.collection-search button { display: flex; align-items: center; justify-content: center; width: 36px; min-height: 44px; margin-right: -8px; }
+.collection-search:focus-within { border-color: var(--k-red); }
+.collection-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.collection-list-heading h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 700; font-size: 15px; }
+.collection-sort select { min-height: 38px; max-width: 110px; font-size: 11px; background: transparent; color: var(--k-muted); cursor: pointer; border-radius: 3px; }
+.collection-sort option { background: var(--k-card); }
+.collection-result-count { display: flex; align-items: center; justify-content: space-between; min-height: 26px; gap: 5px; font-size: 11px; color: var(--k-muted); }
+.collection-result-count button { color: var(--k-red); min-height: 36px; padding: 0 5px; }
+.collection-row { position: relative; display: flex; align-items: flex-start; border-bottom: 1px dotted var(--k-line); padding: 13px 0; gap: 4px; }
+.collection-dish-link { display: flex; align-items: center; min-width: 0; flex: 1; gap: 13px; text-align: left; }
+.collection-polaroid { display: block; flex-shrink: 0; width: 69px; padding: 4px 4px 7px; border: 1px solid var(--k-line); border-radius: 3px; background: var(--k-card); box-shadow: var(--k-shadow); transform: rotate(-2deg); }
+.collection-row:nth-child(even) .collection-polaroid { transform: rotate(1.5deg); }
+.collection-photo { display: flex; width: 100%; aspect-ratio: 1; overflow: hidden; background: var(--k-kraft); border-radius: 1px; }
+.collection-dish-copy { min-width: 0; flex: 1; }
+.collection-dish-copy > strong { display: block; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 16px; font-weight: 900; line-height: 1.6; overflow-wrap: anywhere; }
+.collection-meta, .collection-taste { display: block; margin-top: 3px; color: var(--k-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.collection-taste:empty { display: none; }
+.collection-last-eaten { display: block; margin-top: 5px; color: var(--k-muted); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 11px; }
+.collection-heart { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 44px; margin-right: -8px; margin-top: 0; color: var(--k-red); border-radius: 5px; }
+.collection-empty { padding: 35px 20px; text-align: center; border: 1px solid var(--k-line); background: var(--k-card); border-radius: 7px; }
+.collection-empty > svg { margin: 0 auto 18px; color: var(--k-red); }
+.collection-empty h2, .collection-no-results h3 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 20px; font-weight: 700; }
+.collection-empty p, .collection-no-results p { margin: 10px auto 22px; max-width: 280px; font-size: 13px; line-height: 1.85; color: var(--k-muted); }
+.collection-no-results { padding: 35px 15px; text-align: center; border-bottom: 1px dotted var(--k-line); }
+.collection-no-results h3 { font-size: 17px; }
+.collection-skeleton { display: flex; flex-direction: column; gap: 14px; }
+@media (max-width: 359px) {
+  .kitchen-memory-body { padding-inline: 16px; }
+  .memory-photos { gap: 7px; }
+  .memory-photo-caption { font-size: 9px; }
+  .memory-weekday { font-size: 10px; }
+  .memory-day { padding-left: 21px; }
+  .memory-date-row { column-gap: 5px; }
+  .memory-moods { width: 100%; margin-left: 0; justify-content: flex-start; }
+  .collection-average { display: none; }
+  .collection-polaroid { width: 58px; }
+  .collection-dish-link { gap: 10px; }
+  .collection-index small { font-size: 10px; }
+}
+@media (hover: hover) {
+  .history-calendar-heading button:hover, .history-calendar-day:not(:disabled):hover { background: var(--k-kraft); }
+  .history-rating-button:hover, .history-row-actions summary:hover, .collection-heart:hover { color: var(--k-red); background: transparent; }
+  .collection-dish-link:hover strong, .memory-meal-row:hover strong { color: var(--k-red); }
+  .memory-polaroid:hover { filter: brightness(1.025); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-ink-button, .memory-polaroid { transition: none; }
+}
