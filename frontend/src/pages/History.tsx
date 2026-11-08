@@ -13,7 +13,7 @@ import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import InventoryHistorySheet from "@/components/InventoryHistorySheet"
 import ReschedulePlanSheet from "@/components/ReschedulePlanSheet"
 import toast from "react-hot-toast"
-import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, Star } from "lucide-react"
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, NotebookPen, Star } from "lucide-react"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import "@/styles/kitchen-memories.css"
 import { thumbUrl } from "@/lib/dishImage"
@@ -1006,8 +1006,9 @@ export default function History() {
             ) : monthError ? (
               <button onClick={() => void refetchMonth()} className="w-full min-h-11 px-4 py-3 text-[13px] text-primary">记录读取失败，点此重试</button>
             ) : selectedRecords.length === 0 ? (
-              <div className="py-5 px-4 text-center text-[13px] text-text3">
-                {selectedDateKey === todayStr() ? "今天还没有记录哦~" : selectedIsFuture ? "这天还没有安排" : "这天没有记录"}
+              <div className="kitchen-empty history-empty">
+                <NotebookPen size={28} strokeWidth={1.3} aria-hidden="true" />
+                <p>{selectedDateKey === todayStr() ? "今天还没有记录哦~" : selectedIsFuture ? "这天还没有安排" : "这天没有记录"}</p>
               </div>
             ) : (
               selectedRecords.map((r) => (

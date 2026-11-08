@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { RefreshCw, Scissors } from "lucide-react"
 import { dishesApi } from "@/api"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
+import { wheelLabelRotation } from "@/lib/wheelLabel"
 import type { Dish } from "@/types"
 import "@/styles/kitchen-wheel.css"
 
@@ -22,6 +23,11 @@ const WHEEL_SIZE = 240
 const WHEEL_CENTER = WHEEL_SIZE / 2
 const WHEEL_RADIUS = WHEEL_CENTER - 1
 
+function orientLabel(node: SVGTextElement, angle: number, rotation: number) {
+  const transform = `rotate(${wheelLabelRotation(angle, rotation)} 76 0)`
+  if (node.getAttribute("transform") !== transform) node.setAttribute("transform", transform)
+}
+
 function pointAt(angle: number) {
   const radians = angle * Math.PI / 180
   return [WHEEL_CENTER + WHEEL_RADIUS * Math.cos(radians), WHEEL_CENTER + WHEEL_RADIUS * Math.sin(radians)]
@@ -38,6 +44,7 @@ export default function KitchenWheel({ ref, theme, active, onPick }: KitchenWhee
   const headingId = useId()
   const descriptionId = useId()
   const wheelRef = useRef<HTMLDivElement>(null)
+  const labelRefs = useRef(new Map<number, { node: SVGTextElement; angle: number }>())
   const spinLock = useRef(false)
   const rotation = useRef(0)
   const [spinning, setSpinning] = useState(false)
@@ -62,10 +69,15 @@ export default function KitchenWheel({ ref, theme, active, onPick }: KitchenWhee
   const selectedDish = dishes.find((dish) => dish.id === selectedId)
   const busy = spinning || isFetching
 
+  function syncLabelOrientations() {
+    labelRefs.current.forEach(({ node, angle }) => orientLabel(node, angle, rotation.current))
+  }
+
   useGSAP(() => {
     const wheel = wheelRef.current
     if (!wheel) return
     gsap.set(wheel, { rotation: rotation.current, transformOrigin: "50% 50%" })
+    syncLabelOrientations()
     return () => {
       gsap.killTweensOf(wheel)
       spinLock.current = false
@@ -85,13 +97,19 @@ export default function KitchenWheel({ ref, theme, active, onPick }: KitchenWhee
     const stopWithinTurn = (360 - (selectedIndex + 0.5) * segment) % 360
     const start = Number(gsap.getProperty(wheel, "rotation")) || 0
     const target = Math.floor(start / 360) * 360 + 360 * 5 + stopWithinTurn
-    rotation.current = target
     gsap.to(wheel, {
       rotation: target,
       duration: motionDuration(3),
       ease: "power4.out",
       overwrite: true,
+      // 以屏幕上的实际角度翻转文字；动画帧只更新 ref 和 SVG，不触发 React 渲染。
+      onUpdate: () => {
+        rotation.current = Number(gsap.getProperty(wheel, "rotation")) || 0
+        syncLabelOrientations()
+      },
       onComplete: () => {
+        rotation.current = target
+        syncLabelOrientations()
         spinLock.current = false
         setSpinning(false)
         setSelectedId(selected.id)
@@ -105,6 +123,7 @@ export default function KitchenWheel({ ref, theme, active, onPick }: KitchenWhee
     setSelectedId(null)
     rotation.current = 0
     if (wheelRef.current) gsap.set(wheelRef.current, { rotation: 0 })
+    syncLabelOrientations()
     void refetch()
   }
 
@@ -137,16 +156,20 @@ export default function KitchenWheel({ ref, theme, active, onPick }: KitchenWhee
             {dishes.length <= 1 && <circle cx={WHEEL_CENTER} cy={WHEEL_CENTER} r={WHEEL_RADIUS} className="kitchen-wheel-paper paper-0" />}
             {dishes.map((dish, index) => {
               const angle = (index + 0.5) * 360 / dishes.length - 90
-              const reverse = angle > 90 && angle < 270
               const label = dish.name.length > 7 ? `${dish.name.slice(0, 6)}…` : dish.name
               return (
                 <g key={dish.id}>
                   {dishes.length > 1 && <path d={sectorPath(index, dishes.length)} className={`kitchen-wheel-paper paper-${index % 4}`} />}
                   <g transform={`translate(${WHEEL_CENTER} ${WHEEL_CENTER}) rotate(${angle})`}>
                     <text
+                      ref={(node) => {
+                        if (!node) return
+                        labelRefs.current.set(dish.id, { node, angle })
+                        orientLabel(node, angle, rotation.current)
+                        return () => { labelRefs.current.delete(dish.id) }
+                      }}
                       x={76}
                       y={0}
-                      transform={reverse ? "rotate(180 76 0)" : undefined}
                       textAnchor="middle"
                       dominantBaseline="central"
                       className="kitchen-wheel-dish-label"

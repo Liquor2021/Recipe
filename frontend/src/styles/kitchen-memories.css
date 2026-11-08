@@ -30,6 +30,8 @@
 .history-date-marks span { display: block; width: 4px; height: 4px; border: 1px solid var(--k-red); border-radius: 50%; }
 .history-date-marks .is-eaten { background: var(--k-red); }
 .history-day-ledger { margin-bottom: 20px; overflow: hidden; }
+.history-empty { min-height: 160px; padding: 24px 18px; text-align: center; font-size: 13px; }
+.history-empty > svg { color: var(--k-red); }
 .history-day-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 0 9px; color: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 700; }
 .history-day-heading > div::before { content: "「"; color: var(--k-red); margin-right: -6px; }
 .history-day-heading > div::after { content: "」"; color: var(--k-red); margin-left: -6px; }

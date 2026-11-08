@@ -6,8 +6,6 @@
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.045' filter='url(%23n)'/%3E%3C/svg%3E");
   font-size: 14px;
 }
-.kitchen-shell [data-tab-scroll="/"] { scrollbar-width: none; }
-.kitchen-shell [data-tab-scroll="/"]::-webkit-scrollbar { display: none; }
 .kitchen-home button, .kitchen-sheet button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .kitchen-home button:disabled, .kitchen-sheet button:disabled { cursor: default; opacity: .55; }
 .kitchen-home button:focus-visible, .kitchen-sheet button:focus-visible {
@@ -132,7 +130,6 @@
 .kitchen-urgent > button:first-child { flex: 1; min-width: 0; text-align: left; padding: 6px 0; }
 .kitchen-urgent strong { font-size: 12px; display: block; color: var(--k-red); }
 .kitchen-urgent span { font-size: 11px; display: flex; align-items: center; gap: 4px; color: var(--k-muted); margin-top: 4px; }
-.kitchen-empty { display: grid; place-items: center; min-height: 280px; align-content: center; gap: 12px; color: var(--k-muted); border: 1px dashed var(--k-line); background: var(--k-card); }
 @media (hover: hover) {
   .kitchen-photo-link:hover img { transform: scale(1.025); }
   .kitchen-icon-button:hover { background: var(--k-kraft); }

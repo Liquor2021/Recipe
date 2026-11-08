@@ -43,11 +43,11 @@
 .kitchen-wheel-dish-label { fill: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 11.5px; font-weight: 900; }
 .kitchen-wheel-red-dot { position: absolute; top: 50%; left: 50%; width: 5px; height: 5px; border-radius: 50%; background: var(--k-red); opacity: .8; }
 .kitchen-wheel-bookmark { position: absolute; top: 1px; left: calc(50% - 12px); width: 24px; height: 32px; background: var(--k-red); clip-path: polygon(0 0,100% 0,100% 60%,50% 100%,0 60%); }
-.kitchen-wheel-seal { position: absolute; top: calc(50% - 31px); left: calc(50% - 31px); width: 62px; height: 62px; border-radius: 48% 51% 46% 53%; border: 2px dashed var(--wheel-paper-0); background: #c2492f; box-shadow: 0 2px 3px rgb(60 32 18 / 12%); color: #fff5e3; transform: rotate(-7deg); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 27px; font-weight: 900; }
+.kitchen-wheel-seal { position: absolute; top: calc(50% - 31px); left: calc(50% - 31px); width: 62px; height: 62px; border-radius: 48% 51% 46% 53%; border: 2px dashed var(--wheel-paper-0); background: var(--k-red); box-shadow: 0 2px 3px rgb(60 32 18 / 12%); color: #fff5e3; transform: rotate(-7deg); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 27px; font-weight: 900; }
 .kitchen-wheel-seal span { display: inline-block; transform: rotate(7deg); }
 .kitchen-paper-wheel-caption { margin: 0 auto 14px; padding: 0 5px; max-width: 340px; min-height: 22px; text-align: center; color: var(--k-muted); font-size: 11px; line-height: 1.8; }
 @media (hover: hover) {
-  .kitchen-wheel-seal:not(:disabled):hover { background: #ad3e29; }
+  .kitchen-wheel-seal:not(:disabled):hover { background: color-mix(in srgb, var(--k-red) 86%, #000); }
 }
 @media (max-width: 320px) {
   .kitchen-paper-wheel { transform: scale(.96); transform-origin: center; margin-block: 10px; }
