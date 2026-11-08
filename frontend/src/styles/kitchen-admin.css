@@ -1,0 +1,68 @@
+.kitchen-admin { font-size: 14px; }
+.kitchen-admin :where(.rounded-2xl, .rounded-xl) { border-radius: 7px; }
+.kitchen-admin :where(h1, h2, h3, .font-bold, .font-extrabold) { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; }
+.kitchen-admin :where(.bg-primary.text-white) { background: var(--k-ink); color: var(--k-card); }
+.k-admin-header, .k-admin-nav { flex-shrink: 0; background: var(--k-paper); }
+.k-admin-header-inner { display: flex; align-items: center; gap: 10px; max-width: 640px; margin: auto; padding: 16px 20px 9px; }
+.k-admin-brand, .k-admin-login-seal { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 38px; border-radius: 3px; background: var(--k-red); color: var(--k-paper); font: 900 27px "Kitchen Serif", SimSun, serif; transform: rotate(-5deg); }
+.k-admin-header h1 { flex: 1; min-width: 0; font-size: 18px; font-weight: 900; line-height: 1.4; overflow-wrap: anywhere; }
+.k-admin-header h1 span { white-space: nowrap; font-size: 14px; }
+.k-admin-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-card); color: var(--k-muted); }
+.k-admin-nav { border-bottom: 1px solid var(--k-line); }
+.k-admin-nav-inner { display: flex; gap: 5px; max-width: 640px; margin: auto; padding: 6px 20px 12px; overflow-x: auto; overscroll-behavior-x: contain; }
+.k-admin-nav a { position: relative; display: grid; place-items: center; min-width: 42px; min-height: 40px; flex: 1 0 auto; padding: 5px 10px; border: 1px solid transparent; border-radius: 4px; color: var(--k-muted); font-size: 12px; }
+.k-admin-nav a[aria-current="page"] { background: var(--k-ink); color: var(--k-card); font-weight: 700; }
+.k-admin-nav a[aria-current="page"]::after { content: ""; position: absolute; bottom: -6px; left: calc(50% - 4px); width: 8px; height: 11px; background: var(--k-red); clip-path: polygon(0 0,100% 0,100% 100%,50% 77%,0 100%); }
+.k-admin-content { min-height: 0; scrollbar-width: none; }
+.k-admin-content::-webkit-scrollbar { display: none; }
+.k-admin-stats > div { padding: 15px 12px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-kraft); box-shadow: none; text-align: left; }
+.k-admin-stats > div > div:first-child { margin-bottom: 5px; color: var(--k-ink); font: 900 25px/1.2 "Kitchen Serif", SimSun, serif; font-variant-numeric: tabular-nums; }
+.k-admin-dashboard :where(.shadow-sm) { box-shadow: var(--k-shadow); }
+.k-admin-security { padding: 14px 15px; border: 1px dashed var(--k-line); border-left: 3px solid var(--k-red); border-radius: 5px; background: var(--k-card); }
+.k-admin-security-title { display: flex; gap: 7px; align-items: flex-start; margin-bottom: 5px; color: var(--k-red); font-weight: 700; font-size: 13px; }
+.k-admin-security-title > svg { flex-shrink: 0; margin-top: 1px; }
+.k-admin-login { display: grid; place-items: center; min-height: 100%; padding: 32px 20px; }
+.k-admin-login-paper { position: relative; width: 100%; max-width: 360px; padding: 30px 24px 20px; background: var(--k-card); border: 1px solid var(--k-line); border-radius: 7px; box-shadow: var(--k-shadow); }
+.k-admin-login-paper::before { content: ""; position: absolute; left: calc(50% - 40px); top: -8px; width: 80px; height: 16px; background: color-mix(in srgb, var(--k-kraft) 85%, transparent); border-inline: 1px dashed var(--k-line); transform: rotate(-3deg); }
+.k-admin-login-seal { margin: 0 auto 17px; width: 42px; height: 46px; font-size: 32px; }
+.k-admin-login h1 { text-align: center; font-size: 23px; line-height: 1.5; font-weight: 900; overflow-wrap: anywhere; }
+.k-admin-login-note { margin: 8px 0 25px; text-align: center; color: var(--k-muted); font-size: 12px; }
+.k-admin-login-input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-paper); color: var(--k-ink); font-size: 14px; }
+.k-admin-login-submit { width: 100%; min-height: 46px; padding: 10px; background: var(--k-ink); color: var(--k-card); border: 1px solid var(--k-ink); border-radius: 5px; font-weight: 700; }
+.k-admin-login-submit:disabled { opacity: .5; }
+.k-admin-login-cancel { width: 100%; min-height: 44px; margin-top: 8px; color: var(--k-muted); font-size: 13px; }
+.k-admin-dish-list { display: flex; flex-direction: column; gap: 10px; }
+.k-admin-dish-row { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: center; gap: 8px 12px; padding: 12px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); }
+.k-admin-dish-row.is-selected { border-color: var(--k-red); background: color-mix(in srgb, var(--k-red) 6%, var(--k-card)); }
+.k-admin-dish-row.is-batch { grid-template-columns: 28px 54px minmax(0, 1fr); }
+.k-admin-dish-select { display: grid; place-items: center; width: 28px; min-height: 44px; color: var(--k-muted); }
+.k-admin-dish-select > span { display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--k-line); border-radius: 3px; }
+.k-admin-dish-select[aria-pressed="true"] > span { background: var(--k-ink); border-color: var(--k-ink); color: var(--k-card); }
+.k-admin-dish-photo { display: grid; place-items: center; width: 54px; height: 59px; padding: 4px 4px 9px; border: 1px solid var(--k-line); border-radius: 2px; background: var(--k-paper); box-shadow: var(--k-shadow); transform: rotate(-3deg); overflow: hidden; font-size: 24px; }
+.k-admin-dish-photo img { width: 100%; height: 100%; object-fit: cover; }
+.k-admin-dish-row:nth-child(even) .k-admin-dish-photo { transform: rotate(2deg); }
+.k-admin-dish-copy { display: block; min-width: 0; text-align: left; }
+.k-admin-dish-copy > strong { display: block; font: 900 16px/1.5 "Kitchen Serif", SimSun, serif; overflow-wrap: anywhere; }
+.k-admin-dish-copy > span { display: block; margin-top: 4px; color: var(--k-muted); font-size: 11px; line-height: 1.6; }
+.k-admin-dish-row.is-disabled :is(.k-admin-dish-photo, .k-admin-dish-copy) { opacity: .55; }
+.k-admin-dish-actions { grid-column: 2; display: flex; align-items: center; gap: 6px; }
+.k-admin-dish-action { display: grid; place-items: center; min-width: 36px; min-height: 40px; border: 1px solid var(--k-line); border-radius: 4px; color: var(--k-muted); background: var(--k-card); }
+.k-admin-dish-stamp { min-width: 36px; min-height: 40px; color: var(--k-faint); }
+.k-admin-dish-stamp > span { display: inline-grid; place-items: center; width: 25px; height: 29px; border: 1px solid currentColor; border-radius: 3px; transform: rotate(4deg); font: 700 14px "Kitchen Serif", SimSun, serif; }
+.k-admin-dish-stamp[aria-pressed="true"] { color: var(--k-green); }
+.k-admin-dish-stamp[aria-pressed="true"] > span { transform: rotate(-4deg); }
+.k-admin-dish-action.is-delete { color: var(--k-red); }
+@media (min-width: 600px) {
+  .k-admin-dish-row:not(.is-batch) { grid-template-columns: 54px minmax(0, 1fr) auto; }
+  .k-admin-dish-actions { grid-column: auto; }
+}
+@media (max-width: 360px) {
+  .k-admin-header-inner { gap: 7px; padding-inline: 16px; }
+  .k-admin-header h1 { font-size: 16px; }
+  .k-admin-nav-inner { padding-inline: 16px; gap: 3px; }
+  .k-admin-nav a { padding-inline: 6px; }
+}
+@media (hover: hover) {
+  .k-admin-icon-button:hover, .k-admin-dish-action:hover { border-color: var(--k-red); color: var(--k-red); }
+  .k-admin-nav a:not([aria-current="page"]):hover { background: var(--k-kraft); }
+}

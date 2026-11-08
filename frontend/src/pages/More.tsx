@@ -156,30 +156,33 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
   // 今天及以后的菜单可以点开换菜（日期是 YYYY-MM-DD，可以直接按字符串比较）
   const canOpen = day.date >= todayStr && (day.lunch.length > 0 || day.dinner.length > 0)
   return (
-    <div
-      onClick={() => { if (canOpen) onCardClick() }}
-      className={`bg-card rounded-2xl p-3.5 px-4 shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border border-border ${canOpen ? "cursor-pointer active:scale-98" : ""}`}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-bold">
+    <article className="k-week-card">
+      <div className="k-week-card-heading">
+        <h3>
           {day.day_name}{" "}
           {day.date === todayStr ? <span className="text-primary text-xs">今天</span> : day.date === tomorrowStr ? <span className="text-mint text-xs">明天</span> : null}
-        </div>
-        <div className="text-[11px] text-text2">{day.date.slice(5)}{canOpen && <span className="ml-1 text-text3">›</span>}</div>
+        </h3>
+        <time dateTime={day.date}>{day.date.slice(5)}</time>
       </div>
+      {canOpen && (
+        <button type="button" className="k-week-open" aria-label={`查看或更换${day.date}的菜单`} onClick={onCardClick}>
+          <span>查看 / 换菜 <ChevronRight size={15} aria-hidden="true" /></span>
+        </button>
+      )}
       <div className="flex flex-col gap-1.5">
         {day.lunch.length > 0 && (
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-primary font-semibold w-8 shrink-0">午餐</span>
             <div className="flex flex-wrap gap-1.5">
               {day.lunch.map((dish) => (
-                <div
+                <button
                   key={dish.id}
-                  onClick={(e) => { e.stopPropagation(); navigate(`/dishes/${dish.id}`) }}
-                  className="px-2.5 py-1 rounded-[8px] text-xs bg-primary-light text-primary font-medium cursor-pointer active:scale-95 transition-all"
+                  type="button"
+                  onClick={() => navigate(`/dishes/${dish.id}`)}
+                  className="k-week-dish is-lunch"
                 >
                   {dish.name}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -189,13 +192,14 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
             <span className="text-[11px] text-mint font-semibold w-8 shrink-0">晚餐</span>
             <div className="flex flex-wrap gap-1.5">
               {day.dinner.map((dish) => (
-                <div
+                <button
                   key={dish.id}
-                  onClick={(e) => { e.stopPropagation(); navigate(`/dishes/${dish.id}`) }}
-                  className="px-2.5 py-1 rounded-[8px] text-xs bg-mint-light text-mint font-medium cursor-pointer active:scale-95 transition-all"
+                  type="button"
+                  onClick={() => navigate(`/dishes/${dish.id}`)}
+                  className="k-week-dish is-dinner"
                 >
                   {dish.name}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -204,7 +208,7 @@ function WeekDayCard({ day, todayStr, tomorrowStr, navigate, onCardClick }: {
           <div className="text-xs text-text3 py-1">暂无菜品</div>
         )}
       </div>
-    </div>
+    </article>
   )
 }
 

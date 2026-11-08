@@ -7,7 +7,7 @@ import { getDishImageUrl, thumbUrl } from "@/lib/dishImage"
 import SafeImage from "@/components/SafeImage"
 import type { Dish } from "@/types"
 import toast from "react-hot-toast"
-import { Search } from "lucide-react"
+import { Copy, Pencil, Search, Trash2 } from "lucide-react"
 
 const categoryEmojis: Record<string, string> = {
   川菜: "🌶", 粤菜: "🐟", 家常菜: "🍳", 快手菜: "⚡",
@@ -140,6 +140,8 @@ export default function AdminDishes() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setShowSearch(!showSearch)}
+            aria-label={showSearch ? "收起菜品搜索" : "展开菜品搜索"}
+            aria-expanded={showSearch}
             className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${showSearch || search ? "bg-primary text-white" : "bg-card border border-border text-text2"}`}
           >
             <Search size={15} />
@@ -169,7 +171,7 @@ export default function AdminDishes() {
               className="flex-1 min-w-0 py-2 px-2.5 bg-transparent text-sm outline-none"
             />
             {search && (
-              <button onClick={() => { setSearch(""); setPage(1) }} className="flex-shrink-0 px-2.5 text-text3 text-xs hover:text-primary transition-colors">✕</button>
+              <button aria-label="清空搜索" onClick={() => { setSearch(""); setPage(1) }} className="flex-shrink-0 px-2.5 text-text3 text-xs hover:text-primary transition-colors">✕</button>
             )}
           </div>
         </div>
@@ -239,42 +241,45 @@ export default function AdminDishes() {
         {isLoading ? (
           <div className="py-12 text-center text-text2">加载中...</div>
         ) : (
-          <div className="bg-card rounded-2xl overflow-hidden shadow-sm border border-border">
+          <div className="k-admin-dish-list">
             {dishes.map((d: Dish) => (
-              <div
+              <article
                 key={d.id}
-                onClick={() => { if (!batchMode) navigate(`/admin/dishes/${d.id}`) }}
-                className={`flex items-center gap-3 px-4 py-3 border-b border-border last:border-0 transition-all ${!d.enabled ? "opacity-50" : ""} ${batchMode ? "cursor-default" : "active:bg-bg cursor-pointer"} ${selected.has(d.id) ? "bg-primary-light/50" : ""}`}
+                className={`k-admin-dish-row${!d.enabled ? " is-disabled" : ""}${batchMode ? " is-batch" : ""}${selected.has(d.id) ? " is-selected" : ""}`}
               >
                 {batchMode && (
                   <button
                     onClick={() => toggleSelect(d.id)}
-                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${selected.has(d.id) ? "bg-primary border-primary text-white" : "border-border2"}`}
+                    aria-label={`选择${d.name}`}
+                    aria-pressed={selected.has(d.id)}
+                    className="k-admin-dish-select"
                   >
-                    {selected.has(d.id) && <span className="text-xs">✓</span>}
+                    <span aria-hidden="true">{selected.has(d.id) ? "✓" : ""}</span>
                   </button>
                 )}
-                <div className="w-10 h-10 rounded-[10px] bg-primary-light flex items-center justify-center text-xl flex-shrink-0">
-                  <SafeImage src={thumbUrl(getDishImageUrl(d))} alt="" className="w-full h-full object-cover rounded-[10px]" fallback={getEmoji(d)} />
-                </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <div className="text-sm font-semibold truncate">{d.name}</div>
-                  <div className="text-[11px] text-text2 truncate">{d.category} · {d.cook_time}分钟 · {diffLabel(d.difficulty)} · {d.meal_type === "lunch" ? "午餐" : d.meal_type === "dinner" ? "晚餐" : "通用"}</div>
-                </div>
+                <button type="button" className="k-admin-dish-photo" aria-label={batchMode ? `选择${d.name}` : `编辑${d.name}`} onClick={() => batchMode ? toggleSelect(d.id) : navigate(`/admin/dishes/${d.id}`)}>
+                  <SafeImage src={thumbUrl(getDishImageUrl(d))} alt="" className="w-full h-full object-cover" fallback={getEmoji(d)} />
+                </button>
+                <button type="button" className="k-admin-dish-copy" onClick={() => batchMode ? toggleSelect(d.id) : navigate(`/admin/dishes/${d.id}`)}>
+                  <strong>{d.name}</strong>
+                  <span>{d.category} · {d.cook_time}分钟 · 火候·{diffLabel(d.difficulty)} · {d.meal_type === "lunch" ? "午餐" : d.meal_type === "dinner" ? "晚餐" : "通用"}</span>
+                </button>
                 {!batchMode && (
-                  <div className="flex gap-1 flex-shrink-0">
+                  <div className="k-admin-dish-actions">
                     <button
-                      onClick={(e) => { e.stopPropagation(); toggleMut.mutate(d.id) }}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 transition-all active:scale-95 ${d.enabled ? "bg-mint-light text-mint" : "bg-bg text-text3"}`}
+                      onClick={() => toggleMut.mutate(d.id)}
+                      aria-label={`${d.enabled ? "停用" : "启用"}${d.name}`}
+                      aria-pressed={d.enabled}
+                      className="k-admin-dish-stamp"
                     >
-                      {d.enabled ? "开" : "关"}
+                      <span>{d.enabled ? "启" : "停"}</span>
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); cloneMut.mutate(d.id) }} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs bg-bg transition-all active:bg-primary-light flex-shrink-0">📋</button>
-                    <button onClick={(e) => { e.stopPropagation(); navigate(`/admin/dishes/${d.id}`) }} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs bg-bg transition-all active:bg-primary-light flex-shrink-0">✎</button>
-                    <button onClick={(e) => { e.stopPropagation(); if (confirm(`确定删除「${d.name}」吗？`)) deleteMut.mutate(d.id) }} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs bg-bg transition-all active:bg-red-50 active:text-red-500 flex-shrink-0">🗑</button>
+                    <button onClick={() => navigate(`/admin/dishes/${d.id}`)} aria-label={`编辑${d.name}`} className="k-admin-dish-action"><Pencil size={15} aria-hidden="true" /></button>
+                    <button onClick={() => cloneMut.mutate(d.id)} aria-label={`复制${d.name}`} className="k-admin-dish-action"><Copy size={15} aria-hidden="true" /></button>
+                    <button onClick={() => { if (confirm(`确定删除「${d.name}」吗？`)) deleteMut.mutate(d.id) }} aria-label={`删除${d.name}`} className="k-admin-dish-action is-delete"><Trash2 size={15} aria-hidden="true" /></button>
                   </div>
                 )}
-              </div>
+              </article>
             ))}
             {dishes.length === 0 && (
               <div className="py-12 text-center text-sm text-text3">{hasFilters ? "没有匹配的菜品" : "还没有菜品，去添加第一道菜吧"}</div>

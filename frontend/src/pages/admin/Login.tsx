@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useId } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMutation } from "@tanstack/react-query"
 import { authApi } from "@/api"
@@ -11,6 +11,7 @@ export default function AdminLogin() {
   const { isLoggedIn, login } = useAuthStore()
   const appName = useAppInfoStore((s) => s.appName)
   const [password, setPassword] = useState("")
+  const passwordId = useId()
 
   useEffect(() => {
     if (isLoggedIn) navigate("/admin/dashboard", { replace: true })
@@ -27,24 +28,31 @@ export default function AdminLogin() {
   })
 
   return (
-    <div className="min-h-screen bg-bg flex items-center justify-center px-5">
-      <div className="w-full max-w-[360px]">
-        <h3 className="text-xl font-bold mb-1 text-center">🔒 {appName} 管理模式</h3>
-        <p className="text-[13px] text-text2 text-center mb-5">输入管理密码进入菜品管理</p>
+    <div className="k-admin-login">
+      <form className="k-admin-login-paper" onSubmit={(event) => {
+        event.preventDefault()
+        if (password && !loginMut.isPending) loginMut.mutate()
+      }}>
+        <div className="k-admin-login-seal" aria-hidden="true">灶</div>
+        <h1>{appName} · 管理</h1>
+        <p className="k-admin-login-note">输入管理密码，翻开厨房手账</p>
         <div className="mb-4">
-          <label className="block text-[13px] font-semibold mb-1.5 text-text2">管理密码</label>
+          <label htmlFor={passwordId} className="block text-[13px] font-semibold mb-1.5 text-text2">管理密码</label>
           <input
+            id={passwordId}
+            name="password"
             type="password"
+            autoComplete="current-password"
+            required
             placeholder="请输入密码"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && loginMut.mutate()}
-            className="w-full py-2.5 px-3.5 rounded-[10px] border-[1.5px] border-border bg-bg text-sm transition-all focus:border-primary focus:shadow-[0_0_0_3px_rgba(232,115,74,.1)] outline-none"
+            className="k-admin-login-input"
           />
         </div>
-        <button onClick={() => loginMut.mutate()} disabled={loginMut.isPending} className="w-full py-2.5 px-5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 hover:bg-primary-dark disabled:opacity-50">进入管理</button>
-        <button onClick={() => navigate("/")} className="w-full py-2.5 px-5 rounded-full text-sm font-medium text-text2 mt-2">取消</button>
-      </div>
+        <button type="submit" disabled={loginMut.isPending} className="k-admin-login-submit">{loginMut.isPending ? "正在进入…" : "进入管理"}</button>
+        <button type="button" onClick={() => navigate("/")} className="k-admin-login-cancel">返回厨房</button>
+      </form>
     </div>
   )
 }

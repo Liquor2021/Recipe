@@ -107,6 +107,15 @@
 .k-more-entry > svg { color: var(--k-faint); flex-shrink: 0; transition: transform 150ms ease; }
 .k-more-entry > svg.is-expanded { transform: rotate(90deg); }
 .k-more-week-content, .k-more-shopping-content { padding-top: 19px; }
+.k-week-card { position: relative; padding: 14px 16px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.k-week-card-heading { padding-right: 100px; margin-bottom: 12px; }
+.k-week-card-heading h3 { font: 700 16px/1.5 "Kitchen Serif", SimSun, serif; }
+.k-week-card-heading time { color: var(--k-muted); font-size: 11px; }
+.k-week-open { position: absolute; inset: 0; width: 100%; border-radius: inherit; text-align: right; }
+.k-week-open > span { position: absolute; top: 13px; right: 12px; display: inline-flex; align-items: center; gap: 3px; min-height: 36px; padding: 4px 7px; border: 1px dashed var(--k-line); border-radius: 4px; color: var(--k-red); background: var(--k-paper); font-size: 11px; }
+.k-week-dish { position: relative; min-height: 40px; padding: 5px 10px; border: 1px solid var(--k-line); border-radius: 4px; background: var(--k-paper); font-size: 12px; text-align: left; }
+.k-week-dish.is-lunch { color: var(--k-red); }
+.k-week-dish.is-dinner { color: var(--k-green); }
 .k-more-shopping-paper { margin-bottom: 20px; overflow: hidden; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); }
 .k-more-shopping-category { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 15px; font-weight: 900; color: var(--k-muted); margin-bottom: 8px; }
 .k-more-settings { padding-top: 24px; }

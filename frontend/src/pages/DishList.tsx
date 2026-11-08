@@ -377,6 +377,8 @@ function DishListPage({ today, generation }: { today: string; generation: number
                 ref={tasteRef}
                 onScroll={(event) => saveDishListSession(today, { tasteScrollLeft: event.currentTarget.scrollLeft })}
                 className="kitchen-taste-tabs scrollbar-none"
+                role="group"
+                aria-label="按口味筛选"
               >
                 {tastes.map((t) => (
                   <button

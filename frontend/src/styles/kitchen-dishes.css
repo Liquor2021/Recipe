@@ -11,9 +11,9 @@
 .kitchen-category-tabs button { min-height: 38px; padding: 7px 13px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 5px; font-size: 13px; color: var(--k-muted); }
 .kitchen-category-tabs button[aria-current="true"] { background: var(--k-ink); border-color: var(--k-ink); color: var(--k-card); font-weight: 700; }
 .kitchen-taste-wrap { padding: 0 20px 5px; }
-.kitchen-taste-tabs { display: flex; align-items: center; gap: 15px; overflow-x: auto; }
-.kitchen-taste-tabs button { flex-shrink: 0; min-height: 36px; color: var(--k-muted); border-bottom: 1px solid transparent; font-size: 12px; }
-.kitchen-taste-tabs button.is-active { color: var(--k-red); border-color: var(--k-red); }
+.kitchen-taste-tabs { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 3px 1px 7px; }
+.kitchen-taste-tabs button { flex-shrink: 0; min-height: 40px; min-width: 40px; padding: 5px 12px; color: var(--k-muted); border: 1px dashed var(--k-line); border-radius: 999px; background: var(--k-card); font-size: 12px; }
+.kitchen-taste-tabs button.is-active { color: var(--k-card); background: var(--k-ink); border-color: var(--k-ink); border-style: solid; }
 .kitchen-dishes-scroll { padding-inline: 20px; }
 .kitchen-dish-group { display: flex; align-items: center; gap: 5px; padding: 9px 0 2px; font: 700 13px "Kitchen Serif", SimSun, serif; color: var(--k-muted); }
 .kitchen-dish-group > span:first-child { color: var(--k-red); }

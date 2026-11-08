@@ -1,15 +1,18 @@
-import { Outlet, useNavigate, useLocation } from "react-router-dom"
+import { Link, Outlet, useNavigate, useLocation } from "react-router-dom"
 import { useEffect } from "react"
+import { LogOut, Moon, Sun } from "lucide-react"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
+import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
+import "@/styles/kitchen-admin.css"
 
 const navItems = [
-  { path: "/admin/dashboard", icon: "📊", label: "概览" },
-  { path: "/admin/dishes", icon: "🍳", label: "菜品" },
-  { path: "/admin/records", icon: "📋", label: "记录" },
-  { path: "/admin/quotes", icon: "💬", label: "语录" },
-  { path: "/admin/achievements", icon: "🏆", label: "成就" },
-  { path: "/admin/settings", icon: "⚙", label: "设置" },
+  { path: "/admin/dashboard", label: "概览" },
+  { path: "/admin/dishes", label: "菜品" },
+  { path: "/admin/records", label: "记录" },
+  { path: "/admin/quotes", label: "语录" },
+  { path: "/admin/achievements", label: "成就" },
+  { path: "/admin/settings", label: "设置" },
 ]
 
 export default function AdminLayout() {
@@ -17,6 +20,8 @@ export default function AdminLayout() {
   const location = useLocation()
   const { isLoggedIn, logout } = useAuthStore()
   const appName = useAppInfoStore((s) => s.appName)
+  const { theme, toggleTheme } = useKitchenTheme()
+  useEffect(watchKitchenTheme, [])
 
   useEffect(() => {
     if (location.pathname !== "/admin/login" && !isLoggedIn) {
@@ -32,31 +37,35 @@ export default function AdminLayout() {
   const isActive = (path: string) => location.pathname === path || (path !== "/admin/dashboard" && location.pathname.startsWith(path))
 
   return (
-    <div className="h-dvh bg-bg flex flex-col overflow-hidden">
+    <div className={`h-dvh flex flex-col overflow-hidden kitchen-shell kitchen-surface kitchen-${theme} kitchen-admin`} data-kitchen-theme={theme}>
       {location.pathname !== "/admin/login" && (
         <>
-          <header className="sticky top-0 z-10 bg-bg/88 backdrop-blur-xl px-5 py-3 flex items-center gap-3 border-b border-border flex-shrink-0">
-            <button onClick={() => navigate("/")} className="w-9 h-9 rounded-full flex items-center justify-center text-lg bg-card shadow-sm">←</button>
-            <div className="flex-1 font-bold text-base">{appName} 管理</div>
-            <button onClick={handleLogout} className="w-9 h-9 rounded-full flex items-center justify-center text-lg">🔓</button>
+          <header className="k-admin-header">
+            <div className="k-admin-header-inner">
+              <Link to="/" className="k-admin-brand" aria-label="返回首页">灶</Link>
+              <h1>{appName}<span> · 管理</span></h1>
+              <button type="button" onClick={toggleTheme} className="k-admin-icon-button" aria-label={theme === "day" ? "切换到深夜厨房" : "切换到白日厨房"}>
+                {theme === "day" ? <Moon size={17} aria-hidden="true" /> : <Sun size={17} aria-hidden="true" />}
+              </button>
+              <button type="button" onClick={handleLogout} className="k-admin-icon-button" aria-label="退出管理登录"><LogOut size={17} aria-hidden="true" /></button>
+            </div>
           </header>
-          <nav className="bg-bg/88 backdrop-blur-xl border-b border-border flex-shrink-0">
-            <div className="flex px-3 py-2 gap-1 max-w-[640px] mx-auto overflow-x-auto overscroll-x-contain scrollbar-none" style={{ WebkitOverflowScrolling: "touch" }}>
+          <nav className="k-admin-nav" aria-label="管理导航">
+            <div className="k-admin-nav-inner scrollbar-none">
               {navItems.map((item) => (
-                <button
+                <Link
                   key={item.path}
-                  onClick={() => navigate(item.path)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 transition-all ${isActive(item.path) ? "bg-primary text-white" : "text-text2 hover:bg-card"}`}
+                  to={item.path}
+                  aria-current={isActive(item.path) ? "page" : undefined}
                 >
-                  <span>{item.icon}</span>
                   <span>{item.label}</span>
-                </button>
+                </Link>
               ))}
             </div>
           </nav>
         </>
       )}
-      <div className="flex-1 overflow-y-auto overscroll-y-contain">
+      <div className="k-admin-content flex-1 overflow-y-auto overscroll-y-contain">
         <Outlet />
       </div>
     </div>

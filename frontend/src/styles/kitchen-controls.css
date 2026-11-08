@@ -16,3 +16,11 @@
 @media (hover: hover) { .kitchen-header-button:hover { color: var(--k-red); border-color: var(--k-red); } }
 @media (max-width: 360px) { .kitchen-page-header-inner { gap: 8px; padding-inline: 16px; } .kitchen-page-title { font-size: 24px; } .kitchen-page-meta { max-width: 115px; } }
 @media (prefers-reduced-motion: reduce) { .kitchen-header-button { transition: none; } }
+
+/* 独立 scale 与纸卡、印章的旋转/位移叠加，不覆盖它们的 transform。 */
+@media (prefers-reduced-motion: no-preference) {
+  :is(.kitchen-shell, .kitchen-surface) :where(button:enabled, a[href]):not([aria-disabled="true"]):active { scale: .97; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.kitchen-shell, .kitchen-surface) :where(button:enabled, a[href]):not([aria-disabled="true"]):active { scale: none; }
+}

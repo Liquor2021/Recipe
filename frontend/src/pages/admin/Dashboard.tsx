@@ -30,9 +30,9 @@ export default function AdminDashboard() {
   const trendEmpty = trend.length === 0 || trend.every((w) => w.count === 0)
 
   return (
-    <div className="px-5 py-4 max-w-[640px] mx-auto pb-20">
+    <div className="k-admin-dashboard px-5 py-4 max-w-[640px] mx-auto pb-20">
       <div className="mb-4 empty:hidden"><SecurityNotice /></div>
-      <div className="grid grid-cols-3 gap-2.5 mb-5">
+      <div className="k-admin-stats grid grid-cols-3 gap-2.5 mb-5">
         <div className="bg-card rounded-2xl p-3 shadow-sm text-center">
           <div className="text-xl font-extrabold">{d?.total_dishes || 0}</div>
           <div className="text-[11px] text-text2">菜品总数</div>
@@ -47,7 +47,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5 mb-5">
+      <div className="k-admin-stats grid grid-cols-2 gap-2.5 mb-5">
         <div className="bg-card rounded-2xl p-3 shadow-sm text-center">
           <div className="text-xl font-extrabold">{d?.today_records || 0}</div>
           <div className="text-[11px] text-text2">今日点菜</div>
