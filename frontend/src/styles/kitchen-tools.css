@@ -50,8 +50,11 @@
 .k-fridge-recipe-title { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 16px; font-weight: 900; overflow-wrap: anywhere; }
 .k-fridge-recipe-coverage { color: var(--k-muted); font-size: 11px; }
 .k-fridge-recipe-stock { color: var(--k-green); font-size: 11px; overflow-wrap: anywhere; }
+.k-fridge-recipe-substitute { color: var(--k-amber); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .k-fridge-recipe-actions { display: flex; flex-direction: column; align-items: center; gap: 9px; flex-shrink: 0; }
 .k-fridge-recipe-actions .k-tool-button { font-size: 12px; padding-inline: 9px; }
+.k-fridge-editor .k-tool-field { border-style: solid; background: var(--k-paper); }
+.k-fridge-editor .kitchen-date-input:focus-visible { outline: 2px solid var(--k-red); outline-offset: 2px; }
 
 /* Tomorrow: one menu leaf. The optional editing tools stay on the leaf. */
 .k-plan-paper { padding: 22px 18px 8px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }

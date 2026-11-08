@@ -5,11 +5,12 @@ import { isAxiosError } from "axios"
 import { fridgeApi, shoppingListApi } from "@/api"
 import { getUploadErrorMessage } from "@/api/client"
 import PageHeader from "@/components/PageHeader"
-import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
+import KitchenSheet from "@/components/KitchenSheet"
 import DishImage from "@/components/DishImage"
 import { cardShadow } from "@/components/Card"
 import type { FridgeMatch, InventoryBatch } from "@/types"
 import { fridgeDaysLeft, matchesFridgeFilter, parseFridgeFilter, searchFridge, type FridgeFilter } from "@/lib/fridgeFilters"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 import { Search, X, ShoppingBasket, Pencil, TriangleAlert } from "lucide-react"
 import toast from "react-hot-toast"
 import "@/styles/kitchen-tools.css"
@@ -38,12 +39,15 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
   const matched = match.matched || []
   const missing = match.missing || []
   const urgent = match.using_urgent || []
-  // 写冰箱里的真实名字：冰箱里是五花肉、菜谱写瘦肉 → "五花肉（当瘦肉用）"
-  const haveText = match.have
-    ? match.have.map((h) => (h.substitute ? `${h.stock}（当${h.recipe}用）` : h.stock)).join("、")
+  const have = match.have || []
+  const substitutions = have.filter((item) => item.substitute)
+  const haveText = have.length > 0
+    ? [...new Set(have.map((item) => item.stock))].join("、")
     : matched.join("、")
-  // 只有 100% 才叫"可以做"，其余是部分匹配，不夸大
-  const badgeText = match.coverage === 100 ? "可以做" : `匹配 ${match.coverage}%`
+  // 推荐按食材大类匹配，不代表不同部位可以直接替换，也不校验份量。
+  // 旧离线响应没有 have，无法确认是否涉及替代，保留中性的匹配提示。
+  const badgeText = substitutions.length > 0 ? "需确认替代"
+    : match.coverage === 100 && missing.length === 0 && have.length > 0 ? "食材种类齐全" : `种类匹配 ${match.coverage}%`
   return (
     <article className="k-fridge-recipe">
       <button type="button" onClick={onClick} className="k-fridge-recipe-open">
@@ -52,6 +56,11 @@ function MatchCard({ match, onClick, onAddMissing, addingMissing }: { match: Fri
           <span className="k-fridge-recipe-title">{match.dish.name}</span>
           <span className="k-fridge-recipe-coverage">{badgeText}{missing.length > 0 && ` · 缺 ${missing.slice(0, 3).join("、")}${missing.length > 3 ? "…" : ""}`}</span>
           <span className="k-fridge-recipe-stock">有 {haveText}</span>
+          {substitutions.length > 0 && (
+            <span className="k-fridge-recipe-substitute">
+              {substitutions.map((item) => `菜谱要${item.recipe}，库存是${item.stock}`).join("；")}
+            </span>
+          )}
         </span>
       </button>
       <div className="k-fridge-recipe-actions">
@@ -75,6 +84,7 @@ const EXPIRY_PRESETS = [
 
 export default function Fridge() {
   const navigate = useNavigate()
+  const theme = useKitchenTheme(s => s.theme)
   const [searchParams, setSearchParams] = useSearchParams()
   const search = searchParams.get("q") || ""
   const filter = parseFridgeFilter(searchParams.get("filter"))
@@ -494,7 +504,9 @@ export default function Fridge() {
               <h2 className="k-tool-section-title">「清冰箱推荐」</h2>
               <span className="text-[11px] text-text3">临期批次会优先用掉</span>
             </div>
-            {hasFilters && <div className="-mt-1 mb-3 text-xs text-text2">推荐基于全部可用库存</div>}
+            <p className="-mt-1 mb-3 text-xs leading-relaxed text-text2">
+              {hasFilters && "推荐基于全部可用库存。"}按食材种类匹配，份量与替代请在做菜前核对。
+            </p>
             {matchesError && (
               <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-6 text-center mb-3`}>
                 <div className="text-sm font-bold mb-1">清冰箱推荐加载失败</div>
@@ -533,8 +545,26 @@ export default function Fridge() {
 
       {/* 批次编辑弹层 */}
       {editing && (
-        <AnimatedBottomSheet onClose={() => { editSession.current++; setEditing(null) }} className="rounded-t-3xl p-5 max-h-[90dvh] overflow-y-auto">
-          <div className="text-lg font-extrabold mb-0.5">{editing.item_name}</div>
+        <KitchenSheet
+          title={`${editing.item_name} · 编辑批次`}
+          theme={theme}
+          icon={<Pencil size={18} />}
+          className="k-fridge-editor"
+          closeDisabled={batchBusy}
+          onClose={() => {
+            if (batchWriteInFlight.current) return
+            editSession.current++
+            setEditing(null)
+          }}
+          footer={<>
+            <button type="button" onClick={() => removeBatch(editing.id)} disabled={batchBusy || editConflict}>
+              {removeBatchMut.isPending ? "移出中…" : "移出该批"}
+            </button>
+            <button type="button" onClick={saveBatch} disabled={batchBusy || editConflict} className="is-ink">
+              {batchMut.isPending ? "保存中…" : "保存"}
+            </button>
+          </>}
+        >
           <div className="text-xs text-text3 mb-4">编辑这一批的数量和保质期</div>
           {editConflict && (
             <div role="alert" className="mb-4 rounded-xl border border-border bg-bg p-3 text-sm">
@@ -554,14 +584,18 @@ export default function Fridge() {
               )}
             </div>
           )}
-          <input
-            value={editQuantity}
-            disabled={batchBusy}
-            onChange={(e) => setEditQuantity(e.target.value)}
-            placeholder="数量（可选），如：3个、半袋"
-            className="k-tool-field w-full mb-3"
-          />
-          <div className="grid grid-cols-4 gap-2 mb-3">
+          <label className="block mb-4 text-xs text-text2">
+            数量（可选）
+            <input
+              value={editQuantity}
+              disabled={batchBusy}
+              onChange={(e) => setEditQuantity(e.target.value)}
+              placeholder="如：3个、半袋"
+              className="k-tool-field block w-full mt-2"
+            />
+          </label>
+          <div className="mb-2 text-xs text-text2">从今天起保鲜</div>
+          <div className="kitchen-date-shortcuts">
             {EXPIRY_PRESETS.map((p) => {
               const val = todayStr(p.days)
               const active = editDate === val
@@ -572,42 +606,27 @@ export default function Fridge() {
                   disabled={batchBusy}
                   onClick={() => setEditDate(val)}
                   aria-pressed={active}
-                  className={`k-tool-chip ${active ? "is-active" : ""}`}
                 >
                   {p.label}
                 </button>
               )
             })}
           </div>
-          <label className="flex items-center gap-2 text-xs text-text3 mb-4">
-            或选具体日期
+          <label className="block text-xs text-text2">
+            到期日期（可选）
             <input
               type="date"
               disabled={batchBusy}
               value={editDate}
               onChange={(e) => setEditDate(e.target.value)}
-              className="flex-1 h-9 rounded-xl border border-border bg-bg px-2.5 text-sm text-text font-medium outline-none focus:border-primary"
+              className="kitchen-date-input mt-2"
             />
           </label>
-          <div className="flex gap-2.5">
-            <button
-              type="button"
-              onClick={() => removeBatch(editing.id)}
-              disabled={batchBusy || editConflict}
-              className="k-tool-button"
-            >
-              {removeBatchMut.isPending ? "移出中…" : "移出该批"}
-            </button>
-            <button
-              type="button"
-              onClick={saveBatch}
-              disabled={batchBusy || editConflict}
-              className="k-tool-button is-ink flex-1"
-            >
-              {batchMut.isPending ? "保存中…" : "保存"}
-            </button>
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <span className="kitchen-sheet-hint">留空表示暂不设置到期提醒</span>
+            <button type="button" className="k-tool-text-button shrink-0" disabled={batchBusy || !editDate} onClick={() => setEditDate("")}>清除日期</button>
           </div>
-        </AnimatedBottomSheet>
+        </KitchenSheet>
       )}
     </div>
   )

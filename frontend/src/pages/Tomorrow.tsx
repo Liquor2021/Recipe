@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { dishesApi, pickApi, recordsApi } from "@/api"
 import type { Dish, MealRecord } from "@/types"
 import { launchConfetti } from "@/lib/confetti"
@@ -379,6 +379,7 @@ function DishPickerModal({
   const [keyword, setKeyword] = useState("")
   const [category, setCategory] = useState("全部")
   const categoryStripRef = useRef<HTMLDivElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
   const meta = mealMeta[meal]
   const theme = useKitchenTheme(s => s.theme)
   const selectedCount = [...selectedMealById.values()].filter(selectedMeal => selectedMeal === meal).length
@@ -390,20 +391,36 @@ function DishPickerModal({
     return () => window.clearTimeout(timer)
   }, [search])
 
-  // 关键词和分类交给后端过滤：在全部菜品里搜（含食材、别名、拼音、口味、标签），
-  // 而不是只在前 100 道里找——菜库有 600+ 道，过去排在后面的菜永远搜不到
-  const { data, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ["dishes", "tomorrow-picker", meal, keyword, category],
-    queryFn: () => {
-      const params: Record<string, string> = { enabled: "true", meal_type: meal, pageSize: "100", sort: "sort_order", order: "asc" }
+  // 按餐次、关键词和分类独立分页，所有候选菜均可继续浏览。
+  const { data, isPending, isFetching, isError, isFetchingNextPage, isFetchNextPageError, hasNextPage, fetchNextPage, refetch } = useInfiniteQuery({
+    queryKey: ["dishes", "tomorrow-picker-infinite", meal, keyword, category],
+    queryFn: async ({ pageParam }) => {
+      const params: Record<string, string> = { enabled: "true", meal_type: meal, page: String(pageParam), pageSize: "40", sort: "sort_order", order: "asc" }
       if (keyword) params.search = keyword
       if (category !== "全部") params.category = category
-      return dishesApi.list(params)
+      const page = await dishesApi.list(params)
+      return { ...page, items: page.items ?? [] }
     },
-    placeholderData: keepPreviousData,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, pages, lastPageParam) => {
+      const loaded = pages.reduce((count, page) => count + page.items.length, 0)
+      return lastPage.items.length > 0 && loaded < lastPage.total ? lastPageParam + 1 : undefined
+    },
   })
-  const filtered = data?.items || []
-  const total = data?.total ?? 0
+  const filtered = useMemo(() => {
+    // 菜品排序可能在翻页间变动，保留首次出现的位置，避免重复行。
+    const unique = new Map<number, Dish>()
+    for (const page of data?.pages ?? []) {
+      for (const dish of page.items) if (!unique.has(dish.id)) unique.set(dish.id, dish)
+    }
+    return [...unique.values()]
+  }, [data])
+  const total = data?.pages[0]?.total ?? 0
+  const searchPending = search.trim() !== keyword
+
+  useLayoutEffect(() => {
+    if (resultsRef.current) resultsRef.current.scrollTop = 0
+  }, [meal, keyword, category])
 
   const { data: categoryCounts } = useQuery({
     queryKey: ["dishes", "category-counts"],
@@ -417,7 +434,9 @@ function DishPickerModal({
   return (
     <KitchenSheet title={`挑选${meta.shortLabel}`} theme={theme} onClose={onClose} className="k-plan-picker" icon={<Search size={19} />} footer={<button className="is-ink" onClick={onClose}>选好了 · 本餐 {selectedCount} 道</button>}>
         <div className="shrink-0 pt-2">
-          <p className="mb-3 text-[12px] text-text3">{total} 道可选</p>
+          <p className="mb-3 text-[12px] text-text3" role="status">
+            {searchPending || isPending ? "正在找菜…" : data ? `${total} 道可选` : "暂时无法读取菜品"}
+          </p>
           <p className="k-plan-picker-count" role="status" aria-live="polite">
             本餐已选 {selectedCount} / {maxPerMeal} 道
             {mealFull && <span> · 已满，移除一道后可继续添加</span>}
@@ -429,6 +448,7 @@ function DishPickerModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜索菜名、分类、配料"
+              aria-label="搜索菜名、分类、配料"
               className="k-tool-field w-full pl-10"
             />
           </label>
@@ -447,14 +467,23 @@ function DishPickerModal({
           </HorizontalFilterStrip>
         </div>
 
-        <div className="k-plan-picker-results min-h-0 flex-1 overflow-y-auto pb-4">
-          {isLoading ? (
+        <div ref={resultsRef} className="k-plan-picker-results min-h-0 flex-1 overflow-y-auto pb-4" aria-busy={isFetching || searchPending}>
+          {isError && !isFetchNextPageError && (
+            <div className="kitchen-empty my-3" role="alert">
+              <strong>{data ? "菜品更新失败" : "菜品加载失败"}</strong>
+              <p>{data ? "已加载的菜仍可查看，请稍后重试。" : "请检查网络后再试。"}</p>
+              <button type="button" className="k-tool-button mt-3" disabled={isFetching || searchPending} onClick={() => { void refetch() }}>
+                {isFetching ? "正在重试…" : "重新加载"}
+              </button>
+            </div>
+          )}
+          {isPending ? (
             <div className="space-y-2 py-3">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="h-16 rounded-2xl skeleton" />
               ))}
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && !isError ? (
             <div className="py-14 text-center">
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-bg text-text3">
                 <Search size={23} strokeWidth={2.35} />
@@ -463,7 +492,7 @@ function DishPickerModal({
               <div className="mt-1 text-[12px] text-text3">换个关键词或分类试试</div>
             </div>
           ) : (
-            <div className={`divide-y divide-border/70 transition-opacity ${isPlaceholderData ? "opacity-60" : ""}`}>
+            <div className={`divide-y divide-border/70 transition-opacity ${searchPending ? "opacity-60" : ""}`}>
               {filtered.map((dish) => {
                 const selectedMeal = selectedMealById.get(dish.id)
                 const selectedHere = selectedMeal === meal
@@ -491,6 +520,7 @@ function DishPickerModal({
                     ) : selectedHere ? (
                       <button
                         onClick={() => onRemove(meal, dish.id)}
+                        disabled={searchPending}
                         className="k-tool-button shrink-0"
                       >
                         <X size={13} strokeWidth={2.5} />
@@ -499,7 +529,7 @@ function DishPickerModal({
                     ) : (
                       <button
                         onClick={() => onAdd(dish)}
-                        disabled={mealFull}
+                        disabled={mealFull || searchPending}
                         title={mealFull ? `每餐最多 ${maxPerMeal} 道，移除一道后可继续添加` : `加入${dish.name}`}
                         className="k-tool-button is-ink shrink-0"
                       >
@@ -510,8 +540,16 @@ function DishPickerModal({
                   </div>
                 )
               })}
-              {total > filtered.length && (
-                <div className="py-4 text-center text-[12px] text-text3">只显示前 {filtered.length} 道，输入菜名或食材缩小范围</div>
+              {filtered.length > 0 && (
+                <div className="py-4 text-center text-[12px] text-text3">
+                  <p role="status">已显示 {filtered.length} / {total} 道{!hasNextPage && " · 已到底"}</p>
+                  {isFetchNextPageError && <p role="alert" className="mt-2">后面的菜暂时没加载出来，已显示的菜还在。</p>}
+                  {(hasNextPage || isFetchNextPageError) && (
+                    <button type="button" className="k-tool-button mt-3" disabled={isFetching || searchPending} onClick={() => { if (!isFetching && !searchPending) void fetchNextPage({ cancelRefetch: false }) }}>
+                      {isFetchingNextPage ? "正在加载…" : isFetchNextPageError ? "重试加载更多" : "加载更多菜品"}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
