@@ -24,6 +24,7 @@ node --test scripts/*.test.*
 | `dish-editor-session.test.mjs` | 编辑器上传乱序、替换失败、离开页面隔离、上传与保存互斥、服务器版本识别 |
 | `meal-selection.test.mjs` | 点菜请求互斥、跨页面等待、不同菜独立更新、失败恢复与并发刷新交接 |
 | `list-scroll.test.mjs` | 列表返回位置、隐藏容器等待布局、缓存失效后的分页补齐、结果缩短及滚动赋值失败 |
+| `dish-virtual.test.mjs` | 虚拟行分组与稳定键、分页插入、动态行高快照恢复、键盘焦点跨渲染边界 |
 
 逻辑测试直接导入 TypeScript helper；认证测试使用项目已安装的 TypeScript 编译并加载实际客户端源码，模拟网络和存储。所有测试均不读写真实用户数据。
 

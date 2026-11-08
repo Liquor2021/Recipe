@@ -1,10 +1,12 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient, useMutationState } from "@tanstack/react-query"
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual"
 import { dishesApi, favoritesApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
 import { readDishListSession, saveDishListSession, useDishListSession } from "@/lib/dishListSession"
 import { restoreListScroll } from "@/lib/listScroll"
+import { buildDishVirtualRows, includeFocusedNeighbours, resetDishMeasurements } from "@/lib/dishVirtualRows"
 import { hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, pendingMealSelectionKey, reconcileMealSelection } from "@/lib/mealSelection"
 import KitchenTodayMenu from "@/components/KitchenTodayMenu"
 import HorizontalFilterStrip from "@/components/HorizontalFilterStrip"
@@ -54,6 +56,7 @@ export default function DishList() {
 }
 
 function DishListPage({ today, generation }: { today: string; generation: number }) {
+  "use no memo" // TanStack Virtual exposes a live instance; compiler memoization would freeze its reads.
   const navigate = useNavigate()
   const location = useLocation()
   const qc = useQueryClient()
@@ -63,6 +66,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const [activeCategory, setActiveCategory] = useState(session.activeCategory)
   const [activeTaste, setActiveTaste] = useState(session.activeTaste)
   const [showTodayModal, setShowTodayModal] = useState(false)
+  const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null)
   // Tab pages remain mounted: dismiss the portal when browser navigation leaves.
   const [menuPath, setMenuPath] = useState(location.pathname)
   if (menuPath !== location.pathname) {
@@ -73,6 +77,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const sidebarRef = useRef<HTMLDivElement>(null)
   const tasteRef = useRef<HTMLDivElement>(null)
   const restoreScrollRef = useRef<number | null>(session.scrollTop)
+  const measuredWidthRef = useRef<number | null>(session.virtualSnapshot?.width ?? null)
   const leavingListRef = useRef(false)
   const mealEditLocks = useRef(new Set<string>())
   const pendingMealKeys = useMutationState({
@@ -148,6 +153,74 @@ function DishListPage({ today, generation }: { today: string; generation: number
     if (hasNextPage && !isFetching) void fetchNextPage({ cancelRefetch: false })
   }, [fetchNextPage, hasNextPage, isFetching])
 
+  const showGrouped = activeCategory === "全部" && activeTaste === "全部" && !search
+  const virtualRows = useMemo(() => buildDishVirtualRows(allDishes, showGrouped), [allDishes, showGrouped])
+  const focusedIndex = useMemo(() => virtualRows.findIndex(row => row.key === focusedRowKey), [virtualRows, focusedRowKey])
+  // This component explicitly opts out of the compiler above and reads the
+  // mutable instance directly on every render, without memoizing its output.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: virtualRows.length,
+    getScrollElement: () => listRef.current,
+    getItemKey: useCallback((index: number) => virtualRows[index].key, [virtualRows]),
+    estimateSize: useCallback((index: number) => virtualRows[index].kind === "category" ? 31 : 138, [virtualRows]),
+    overscan: 5,
+    initialOffset: session.scrollTop,
+    initialMeasurementsCache: session.virtualSnapshot?.measurements,
+    // New pages can add dishes to earlier categories. Keep the current recipe
+    // in view when those insertions move its index; never follow new items.
+    anchorTo: "end",
+    followOnAppend: false,
+    rangeExtractor: useCallback(range => includeFocusedNeighbours(defaultRangeExtractor(range), focusedIndex, range.count), [focusedIndex]),
+  })
+
+  const saveVirtualPosition = useCallback((container: HTMLDivElement) => {
+    if (useDishListSession.getState().generation !== generation || restoreScrollRef.current !== null) return
+    const anchor = virtualizer.getVirtualItemForOffset(container.scrollTop)
+    saveDishListSession(today, {
+      scrollTop: container.scrollTop,
+      virtualSnapshot: {
+        width: container.clientWidth,
+        measurements: virtualizer.takeSnapshot(),
+        anchor: anchor ? { key: String(anchor.key), offset: container.scrollTop - anchor.start } : null,
+      },
+    })
+  }, [generation, today, virtualizer])
+
+  useLayoutEffect(() => {
+    const container = listRef.current
+    if (container) return () => saveVirtualPosition(container)
+  }, [saveVirtualPosition])
+
+  useLayoutEffect(() => {
+    const container = listRef.current
+    if (!container) return
+    const updateWidth = () => {
+      if (container.clientWidth <= 0 || virtualRows.length === 0) return
+      if (measuredWidthRef.current === null) measuredWidthRef.current = container.clientWidth
+      if (container.clientWidth === measuredWidthRef.current) return
+      const item = virtualizer.getVirtualItemForOffset(container.scrollTop)
+      const savedAnchor = restoreScrollRef.current !== null ? session.virtualSnapshot?.anchor : null
+      const key = savedAnchor?.key ?? item?.key
+      const offset = savedAnchor?.offset ?? (item ? container.scrollTop - item.start : 0)
+      measuredWidthRef.current = container.clientWidth
+      // Off-screen rows also need fresh estimates after text reflows.
+      // Surviving DOM nodes keep the same ref, so clearing the cache alone
+      // would leave their new heights unmeasured until another resize.
+      resetDishMeasurements(virtualizer, Array.from(container.querySelectorAll<HTMLDivElement>(".kitchen-dishes-virtual-row"), node => ({ index: Number(node.dataset.index), size: node.offsetHeight })))
+      const index = virtualizer.options.count > 0 ? virtualRows.findIndex(row => row.key === key) : -1
+      if (index >= 0) {
+        const start = virtualizer.getOffsetForIndex(index, "start")?.[0] ?? 0
+        if (restoreScrollRef.current !== null) restoreScrollRef.current = start + offset
+        virtualizer.scrollToOffset(start + offset)
+      }
+    }
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [session.virtualSnapshot, virtualizer, virtualRows])
+
   const paramsKey = JSON.stringify(queryParams)
   const previousParamsRef = useRef(paramsKey)
   useLayoutEffect(() => {
@@ -160,8 +233,8 @@ function DishListPage({ today, generation }: { today: string; generation: number
     if (previousParamsRef.current !== paramsKey) {
       previousParamsRef.current = paramsKey
       restoreScrollRef.current = null
-      container.scrollTop = 0
-      saveDishListSession(today, { scrollTop: 0 })
+      virtualizer.scrollToOffset(0)
+      saveDishListSession(today, { scrollTop: 0, virtualSnapshot: undefined })
     }
     if (!dishesData || location.pathname !== "/dishes" || leavingListRef.current) return
     const restore = () => {
@@ -179,7 +252,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
     const observer = new ResizeObserver(restore)
     observer.observe(container)
     return () => observer.disconnect()
-  }, [dishesData, hasNextPage, isError, loadMore, location.pathname, paramsKey, today])
+  }, [dishesData, hasNextPage, isError, loadMore, location.pathname, paramsKey, today, virtualizer])
 
   useEffect(() => {
     saveDishListSession(today, { search, activeCategory, activeTaste })
@@ -306,23 +379,6 @@ function DishListPage({ today, generation }: { today: string; generation: number
     }
   }
 
-  const groupedByCategory = useMemo(() => {
-    const map = new Map<string, Dish[]>()
-    for (const d of allDishes) {
-      const cat = d.category || "其他"
-      if (!map.has(cat)) map.set(cat, [])
-      map.get(cat)!.push(d)
-    }
-    return map
-  }, [allDishes])
-
-  const categoryRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-
-  const categoryRefCallback = useCallback((cat: string) => (el: HTMLDivElement | null) => {
-    if (el) categoryRefs.current.set(cat, el)
-    else categoryRefs.current.delete(cat)
-  }, [])
-
   function scrollToCategory(cat: string) {
     restoreScrollRef.current = null
     setActiveCategory(cat)
@@ -335,7 +391,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
     // 点击后立即保存，避免路由卸载前尚未派发的 scroll 事件漏掉最后一段位置。
     const container = listRef.current
     if (container && restoreScrollRef.current === null) {
-      saveDishListSession(today, { scrollTop: container.scrollTop })
+      saveVirtualPosition(container)
     }
     leavingListRef.current = true
     navigate(path)
@@ -357,7 +413,6 @@ function DishListPage({ today, generation }: { today: string; generation: number
     todayRecords.filter(r => r.meal_type === "dinner" && r.meal_date === today),
     [todayRecords, today]
   )
-  const showGrouped = activeCategory === "全部" && activeTaste === "全部" && !search
 
   return (
     <div className="kitchen-dishes animate-fadeUp flex flex-col h-full">
@@ -414,10 +469,28 @@ function DishListPage({ today, generation }: { today: string; generation: number
               ))}
             </HorizontalFilterStrip>
 
+            {isError && dishesData && !isFetchNextPageError && (
+              <div role="alert" className="py-3 text-center text-[12px] text-text2">
+                <span>更新菜品失败，正在显示上次加载的内容</span>
+                <button onClick={() => void refetch()} disabled={isFetching} className="ml-2 px-2 py-1 text-primary disabled:opacity-50">重试</button>
+              </div>
+            )}
             <div
               ref={listRef}
               role="region"
               aria-label="菜品列表"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.altKey || event.metaKey || virtualRows.length === 0) return
+                if (event.key === "Home" || event.key === "End") {
+                  event.preventDefault()
+                  virtualizer.scrollToIndex(event.key === "Home" ? 0 : virtualRows.length - 1, { align: event.key === "Home" ? "start" : "end" })
+                }
+              }}
+              onFocusCapture={(event) => setFocusedRowKey((event.target as HTMLElement).closest<HTMLElement>("[data-virtual-key]")?.dataset.virtualKey ?? null)}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusedRowKey(null)
+              }}
               onScroll={(event) => {
                 if (location.pathname === "/dishes" && !leavingListRef.current && restoreScrollRef.current === null && event.currentTarget.clientHeight > 0) {
                   saveDishListSession(today, { scrollTop: event.currentTarget.scrollTop })
@@ -425,12 +498,6 @@ function DishListPage({ today, generation }: { today: string; generation: number
               }}
               className="kitchen-dishes-scroll flex-1 overflow-y-auto scrollbar-none overscroll-y-contain"
             >
-              {isError && dishesData && !isFetchNextPageError && (
-                <div role="alert" className="py-3 text-center text-[12px] text-text2">
-                  <span>更新菜品失败，正在显示上次加载的内容</span>
-                  <button onClick={() => void refetch()} disabled={isFetching} className="ml-2 px-2 py-1 text-primary disabled:opacity-50">重试</button>
-                </div>
-              )}
               {isPending ? (
                 <div className="space-y-3">
                   {Array.from({ length: 5 }).map((_, i) => (
@@ -455,51 +522,36 @@ function DishListPage({ today, generation }: { today: string; generation: number
                   <div className="text-base font-semibold mb-1.5">没有找到菜品</div>
                   <div className="text-[13px] text-text2">换个关键词试试？</div>
                 </div>
-              ) : showGrouped ? (
-                Array.from(groupedByCategory.entries()).map(([cat, dishes]) => (
-                  <div key={cat} ref={categoryRefCallback(cat)} data-category={cat}>
-                    <div className="kitchen-dish-group">
-                       <span aria-hidden="true">「</span>
-                       {cat}
-                       <span className="text-[11px] text-text3 font-normal">{categoryCountMap.get(cat) ?? dishes.length}道</span>
-                    </div>
-                    {dishes.map((d) => (
-                      <DishRow
-                        key={d.id}
-                        dish={d}
-                        isFav={favIds.has(d.id)}
-                        isLunch={todayLunchIds.has(d.id)}
-                        isDinner={todayDinnerIds.has(d.id)}
-                        lunchPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "lunch", dish_id: d.id }))}
-                        dinnerPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "dinner", dish_id: d.id }))}
-                        mealDisabled={mealStateUnavailable}
-                        onToggleFav={() => favMut.mutate({ id: d.id, active: favIds.has(d.id) })}
-                        // The ref is read only when this click callback runs, never during render.
-                        // eslint-disable-next-line react-hooks/refs
-                        onToggleMeal={(mt) => toggleMeal(d, mt)}
-                        onClick={() => openDish(`/dishes/${d.id}`)}
-                      />
-                    ))}
-                  </div>
-                ))
               ) : (
-                allDishes.map((d) => (
-                  <DishRow
-                    key={d.id}
-                    dish={d}
-                    isFav={favIds.has(d.id)}
-                    isLunch={todayLunchIds.has(d.id)}
-                    isDinner={todayDinnerIds.has(d.id)}
-                    lunchPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "lunch", dish_id: d.id }))}
-                    dinnerPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "dinner", dish_id: d.id }))}
-                    mealDisabled={mealStateUnavailable}
-                    onToggleFav={() => favMut.mutate({ id: d.id, active: favIds.has(d.id) })}
-                    // The ref is read only when this click callback runs, never during render.
-                    // eslint-disable-next-line react-hooks/refs
-                    onToggleMeal={(mt) => toggleMeal(d, mt)}
-                    onClick={() => openDish(`/dishes/${d.id}`)}
-                  />
-                ))
+                <div className="kitchen-dishes-virtual" data-loaded-count={allDishes.length} style={{ height: virtualizer.getTotalSize() }}>
+                  {virtualizer.getVirtualItems().map(item => {
+                    const row = virtualRows[item.index]
+                    return <div key={row.key} data-index={item.index} data-virtual-key={row.key}
+                      ref={virtualizer.measureElement} className="kitchen-dishes-virtual-row"
+                      style={{ transform: `translateY(${item.start}px)` }}>
+                      {row.kind === "category" ? (
+                        <div className="kitchen-dish-group" role="heading" aria-level={2}>
+                          <span aria-hidden="true">「</span>{row.category}
+                          <span className="text-[11px] text-text3 font-normal">{categoryCountMap.get(row.category) ?? row.count}道</span>
+                        </div>
+                      ) : (
+                        <DishRow
+                          dish={row.dish}
+                          alternate={row.alternate}
+                          isFav={favIds.has(row.dish.id)}
+                          isLunch={todayLunchIds.has(row.dish.id)}
+                          isDinner={todayDinnerIds.has(row.dish.id)}
+                          lunchPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "lunch", dish_id: row.dish.id }))}
+                          dinnerPending={pendingMeals.has(mealSelectionKey({ meal_date: today, meal_type: "dinner", dish_id: row.dish.id }))}
+                          mealDisabled={mealStateUnavailable}
+                          onToggleFav={() => favMut.mutate({ id: row.dish.id, active: favIds.has(row.dish.id) })}
+                          onToggleMeal={(mt) => toggleMeal(row.dish, mt)}
+                          onClick={() => openDish(`/dishes/${row.dish.id}`)}
+                        />
+                      )}
+                    </div>
+                  })}
+                </div>
               )}
 
               {hasNextPage && (
@@ -552,6 +604,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
 
 interface DishRowProps {
   dish: Dish
+  alternate: boolean
   isFav: boolean
   isLunch: boolean
   isDinner: boolean
@@ -563,9 +616,9 @@ interface DishRowProps {
   onClick: () => void
 }
 
-function DishRow({ dish, isFav, isLunch, isDinner, lunchPending, dinnerPending, mealDisabled, onToggleFav, onToggleMeal, onClick }: DishRowProps) {
+function DishRow({ dish, alternate, isFav, isLunch, isDinner, lunchPending, dinnerPending, mealDisabled, onToggleFav, onToggleMeal, onClick }: DishRowProps) {
   return (
-    <article className="kitchen-dish-row">
+    <article className={`kitchen-dish-row${alternate ? " is-alternate" : ""}`}>
       <button type="button" onClick={onClick} className="kitchen-dish-photo" aria-label={`查看${dish.name}的做法`}>
         <DishImage dish={dish} className="w-full h-full" emojiSize="text-[28px]" />
       </button>

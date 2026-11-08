@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { useAuthStore } from "@/store/useAuthStore"
+import type { DishVirtualSnapshot } from "./dishVirtualRows"
 
 export interface DishListSession {
   date: string
@@ -9,6 +10,7 @@ export interface DishListSession {
   scrollTop: number
   categoryScrollTop: number
   tasteScrollLeft: number
+  virtualSnapshot?: DishVirtualSnapshot
 }
 
 function emptySession(date: string): DishListSession {
