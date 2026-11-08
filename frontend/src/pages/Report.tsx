@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Download, Share2 } from "lucide-react"
+import { Download, Share2, Trophy, Salad, Flame, Utensils, Heart } from "lucide-react"
 import toast from "react-hot-toast"
 import { reportApi } from "@/api"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
-import { cardShadow } from "@/components/Card"
 import { renderReportImage } from "@/lib/reportImage"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import type { DietBalance, DietReport, ReportShare } from "@/types"
+import "@/styles/kitchen-report.css"
 
-const MOOD_EMOJI: Record<string, string> = { yum: "😋", ok: "😐", no: "😒" }
-const MOOD_LABEL: Record<string, string> = { yum: "吃得美滋滋", ok: "还行", no: "不太满意" }
+const MOOD_EMOJI: Record<string, string> = { great: "😋", yum: "😋", ok: "😐", meh: "😕", no: "😒" }
+const MOOD_LABEL: Record<string, string> = { great: "超满足", yum: "吃得美滋滋", ok: "还行", meh: "不太行", no: "不太满意" }
 
 function ShareBars({ shares, tone }: { shares: ReportShare[]; tone: "primary" | "mint" }) {
   const max = Math.max(...shares.map((s) => s.count), 1)
@@ -40,7 +40,7 @@ function ShareBars({ shares, tone }: { shares: ReportShare[]; tone: "primary" | 
 // 荤素搭配三段的配色（与分享长图一致）
 const BALANCE_SEGMENTS = [
   { key: "mixed_count", label: "有荤有素", color: "bg-mint" },
-  { key: "veg_count", label: "没有荤", color: "bg-[#C8A23C]" },
+  { key: "veg_count", label: "没有荤", color: "report-tone-amber" },
   { key: "meat_count", label: "全是荤", color: "bg-primary" },
 ] as const
 
@@ -49,8 +49,8 @@ function BalanceCard({ balance }: { balance?: DietBalance }) {
   const vegetables = balance?.vegetables || []
   const shown = vegetables.slice(0, 12)
   return (
-    <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-3`}>
-      <div className="text-[15px] font-bold mb-3">🥗 荤素搭配</div>
+    <section className="report-paper-card">
+      <h2 className="report-section-title"><Salad size={17} aria-hidden="true" />荤素搭配</h2>
       {!balance || total === 0 ? (
         <div className="py-3 text-center text-xs text-text3">这个周期还没有做饭记录</div>
       ) : (
@@ -73,10 +73,10 @@ function BalanceCard({ balance }: { balance?: DietBalance }) {
             {vegetables.length > 0 && <>，一共 <span className="font-bold text-text">{vegetables.length}</span> 种</>}
           </div>
           {shown.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2.5">
+            <div className="report-vegetables">
               {shown.map((v) => (
-                <span key={v.name} className="px-2.5 py-1 rounded-full text-xs font-medium bg-mint-light text-[#2E8577]">
-                  {v.name}{v.count > 1 && <span className="ml-0.5 text-[#2E8577]/70">×{v.count}</span>}
+                <span key={v.name} className="report-vegetable-chip">
+                  {v.name}{v.count > 1 && <span className="ml-0.5 opacity-75">×{v.count}</span>}
                 </span>
               ))}
               {vegetables.length > shown.length && (
@@ -85,14 +85,14 @@ function BalanceCard({ balance }: { balance?: DietBalance }) {
             </div>
           )}
           {balance.meals >= 4 && balance.meals_with_veg * 2 < balance.meals && (
-            <div className="mt-3 rounded-xl bg-yellow-light px-3 py-2 text-xs text-[#8A6D1C]">
+            <div className="report-advice">
               有一半以上的顿没吃到蔬菜，下次点菜可以加一道青菜
             </div>
           )}
           <div className="text-[11px] text-text3 mt-2.5">按菜谱主料算；蛋和豆腐不算荤，葱姜蒜、香菜、干辣椒不算一份蔬菜</div>
         </>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -230,24 +230,13 @@ export default function Report() {
   const activityDelta = (report?.cook_days ?? 0) - (report?.prev_cook_days ?? 0)
 
   return (
-    <div className="animate-fadeUp">
+    <div className="animate-fadeUp kitchen-report">
       <PageHeader
         title="饮食报告"
         subtitle="看看这段时间吃得怎么样"
         onBack={() => navigate(-1)}
         actions={
           <div className="flex items-center gap-2">
-            <div className="flex rounded-full bg-bg border border-border p-0.5">
-              {(["week", "month"] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRange(r)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${range === r ? "bg-primary text-white" : "text-text2"}`}
-                >
-                  {r === "week" ? "本周" : "本月"}
-                </button>
-              ))}
-            </div>
             {/* report 未加载完时禁用，避免空数据生成 */}
             <HeaderIconButton
               onClick={() => setShareOpen(true)}
@@ -262,13 +251,23 @@ export default function Report() {
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto pb-24">
+        <div className="report-period-row">
+          <div className="report-period-switch" role="group" aria-label="报告周期">
+            {(["week", "month"] as const).map((r) => (
+              <button type="button" key={r} onClick={() => setRange(r)} aria-pressed={range === r}>
+                {r === "week" ? "本周" : "本月"}
+              </button>
+            ))}
+          </div>
+          {report && <span className="report-date-range">{report.start_date} — {report.end_date}</span>}
+        </div>
         {isPending && (
-          <div role="status" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 mb-3 text-center`}>
+          <div role="status" className="report-paper-card text-center">
             <div className="text-sm text-text3">正在读取{range === "week" ? "本周" : "本月"}饮食报告…</div>
           </div>
         )}
         {isError && (
-          <div role="alert" className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 mb-3 text-center`}>
+          <div role="alert" className="report-paper-card text-center">
             <div className="text-[15px] font-bold mb-1">{report ? "报告暂时无法更新" : "饮食报告加载失败"}</div>
             <div className="text-xs text-text2">{report ? "下方保留上次读取的报告，可以重试更新。" : "请检查网络后重试，做饭记录不会丢失。"}</div>
             <button type="button" disabled={isFetching} onClick={() => { void refetch() }} className="text-sm font-bold text-primary mt-3 disabled:opacity-50">
@@ -279,36 +278,35 @@ export default function Report() {
         {report && (
           <>
             {/* 做饭活跃度 */}
-            <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-5 mb-3`}>
+            <section className="report-paper-card report-hero">
               <div className="flex items-end justify-between mb-1">
                 <div>
                   <div className="text-[13px] text-text2 mb-0.5">这个{range === "week" ? "周" : "月"}下厨</div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-[34px] font-extrabold tracking-tight leading-none">{report.cook_days}</span>
+                    <span className="report-cook-days">{report.cook_days}</span>
                     <span className="text-sm font-semibold text-text2">天</span>
                   </div>
                 </div>
-                <div className={`text-right text-xs font-semibold px-2.5 py-1 rounded-full ${activityDelta > 0 ? "bg-mint-light text-mint" : activityDelta < 0 ? "bg-bg text-text3" : "bg-bg text-text3"}`}>
-                  {activityDelta > 0 ? `↑ 比上期多 ${activityDelta} 天` : activityDelta < 0 ? `↓ 比上期少 ${-activityDelta} 天` : "和上期持平"}
+                <div className={`report-delta-stamp ${activityDelta > 0 ? "is-up" : ""}`}>
+                  {activityDelta > 0 ? `↑ 比上${range === "week" ? "周" : "月"}多 ${activityDelta} 天` : activityDelta < 0 ? `↓ 比上${range === "week" ? "周" : "月"}少 ${-activityDelta} 天` : `和上${range === "week" ? "周" : "月"}持平`}
                 </div>
               </div>
               <div className="text-[11px] text-text3 mt-1.5">
                 共 {report.total_meals} 顿（午 {report.lunch_count} · 晚 {report.dinner_count}）· 做了 {report.distinct_dishes} 道不同的菜
               </div>
-            </div>
+            </section>
 
-            {/* 四项指标 */}
-            <div className="grid grid-cols-3 gap-2.5 mb-5">
-              <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-3.5 text-center`}>
+            <div className="report-paper-card report-stats">
+              <div>
                 <div className="text-xl font-extrabold text-primary">{report.repeat_rate}%</div>
                 <div className="text-[11px] text-text2 mt-0.5">复做率</div>
               </div>
-              <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-3.5 text-center`}>
+              <div>
                 <div className="text-xl font-extrabold text-mint">{report.new_dish_rate}%</div>
                 <div className="text-[11px] text-text2 mt-0.5">新菜尝试</div>
               </div>
-              <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-3.5 text-center`}>
-                <div className="flex items-center justify-center gap-1 text-xl font-extrabold text-[#C8A23C]">
+              <div>
+                <div className="report-rating text-xl font-extrabold">
                   {report.avg_rating > 0 ? report.avg_rating.toFixed(1) : "-"}
                 </div>
                 <div className="text-[11px] text-text2 mt-0.5">平均评分</div>
@@ -316,56 +314,58 @@ export default function Report() {
             </div>
 
             {/* 家常菜 Top */}
-            <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-3`}>
-              <div className="text-[15px] font-bold mb-3">🏆 最常做的菜</div>
+            <section className="report-paper-card">
+              <h2 className="report-section-title"><Trophy size={17} aria-hidden="true" />最常做的菜</h2>
               {report.top_dishes.length === 0 ? (
                 <div className="py-3 text-center text-xs text-text3">这个周期还没有做饭记录</div>
               ) : (
                 <div className="flex flex-col">
                   {report.top_dishes.map((d, i) => (
-                    <div
+                    <button
+                      type="button"
                       key={d.dish_id}
                       onClick={() => navigate(`/dishes/${d.dish_id}`)}
-                      className="flex items-center gap-3 py-2 cursor-pointer active:opacity-60 transition-opacity"
+                      className="report-top-dish"
                     >
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${i < 3 ? "bg-primary text-white" : "bg-bg text-text3"}`}>
+                      <span className={`report-rank ${i < 3 ? "is-top" : ""}`}>
                         {i + 1}
-                      </div>
-                      <span className="flex-1 text-sm font-medium truncate">{d.dish_name}</span>
-                      <span className="text-xs font-bold text-primary">{d.count} 次</span>
-                    </div>
+                      </span>
+                      <span className="report-dish-name">{d.dish_name}</span>
+                      <span className="report-dot-leader" aria-hidden="true" />
+                      <span className="text-xs font-bold text-primary shrink-0">{d.count} 次</span>
+                    </button>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
 
             <BalanceCard balance={report.balance} />
 
             {/* 口味 & 分类分布 */}
-            <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-3`}>
-              <div className="text-[15px] font-bold mb-3">👅 口味偏好</div>
+            <section className="report-paper-card">
+              <h2 className="report-section-title"><Flame size={17} aria-hidden="true" />口味偏好</h2>
               <ShareBars shares={report.taste_shares} tone="primary" />
-            </div>
+            </section>
 
-            <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4 mb-3`}>
-              <div className="text-[15px] font-bold mb-3">🍽 菜系分布</div>
+            <section className="report-paper-card">
+              <h2 className="report-section-title"><Utensils size={17} aria-hidden="true" />菜系分布</h2>
               <ShareBars shares={report.category_shares} tone="mint" />
-            </div>
+            </section>
 
             {/* 心情 */}
             {report.mood_shares.length > 0 && (
-              <div className={`bg-card rounded-2xl border border-border ${cardShadow} p-4`}>
-                <div className="text-[15px] font-bold mb-3">💛 吃饭心情</div>
-                <div className="flex gap-2.5">
+              <section className="report-paper-card">
+                <h2 className="report-section-title"><Heart size={17} aria-hidden="true" />吃饭心情</h2>
+                <div className="report-moods">
                   {report.mood_shares.map((m) => (
-                    <div key={m.name} className="flex-1 rounded-xl bg-bg py-3 text-center">
-                      <div className="text-2xl mb-0.5">{MOOD_EMOJI[m.name] || "🍽"}</div>
+                    <div key={m.name} className="report-mood">
+                      <div className="report-mood-icon" aria-hidden="true">{MOOD_EMOJI[m.name] || "🍽"}</div>
                       <div className="text-[11px] font-semibold text-text2">{MOOD_LABEL[m.name] || m.name}</div>
                       <div className="text-[11px] text-text3">{m.count} 天</div>
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
           </>
         )}

@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery } from "@tanstack/react-query"
 import { achievementsApi } from "@/api"
 import type { Achievement } from "@/types"
+import AchievementCelebration from "@/components/AchievementCelebration"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 
 const STORAGE_KEY = "ninimenu_known_unlocked_achievements"
 const INSTANCE_KEY = "__ninimenu_achievement_overlay_active"
-const colors = ["#E8734A", "#6EC6B8", "#F5D76E", "#F4A8A0", "#8B5CF6", "#FFFFFF"]
 
 function loadKnownCodes() {
   try {
@@ -28,24 +29,8 @@ function sortUnlocked(a: Achievement, b: Achievement) {
   return a.id - b.id
 }
 
-function confettiStyle(i: number): React.CSSProperties {
-  const left = 8 + ((i * 17) % 84)
-  const drift = ((i % 7) - 3) * 18
-  const delay = (i % 9) * 70
-  const duration = 1500 + (i % 5) * 180
-  const size = 6 + (i % 4) * 2
-  return {
-    left: `${left}%`,
-    width: `${size}px`,
-    height: `${Math.max(4, size - 2)}px`,
-    background: colors[i % colors.length],
-    ["--drift" as string]: `${drift}px`,
-    ["--fall-delay" as string]: `${delay}ms`,
-    ["--fall-duration" as string]: `${duration}ms`,
-  }
-}
-
 export default function AchievementUnlockOverlay() {
+  const theme = useKitchenTheme((state) => state.theme)
   const initializedRef = useRef(false)
   const knownCodesRef = useRef<Set<string> | null>(null)
   const [activeInstance, setActiveInstance] = useState(false)
@@ -165,22 +150,6 @@ export default function AchievementUnlockOverlay() {
   if (!display) return null
 
   return (
-    <div className={`achievement-unlock-layer ${leaving ? "is-leaving" : ""}`}>
-      <div className="achievement-confetti-field" aria-hidden="true">
-        {Array.from({ length: 32 }).map((_, i) => (
-          <span key={i} className="achievement-confetti-piece" style={confettiStyle(i)} />
-        ))}
-      </div>
-      <div className="achievement-unlock-card">
-        <div className="achievement-glow-ring" aria-hidden="true" />
-        <div className="achievement-icon-wrap">
-          <span className="achievement-icon">{display.icon || "🏆"}</span>
-        </div>
-        <div className="achievement-kicker">成就已解锁</div>
-        <div className="achievement-title">{display.name}</div>
-        <div className="achievement-desc">{display.description}</div>
-        {queueLen > 0 && <div className="achievement-chain">连续解锁中 · 还剩 {queueLen} 个</div>}
-      </div>
-    </div>
+    <AchievementCelebration key={display.code} achievement={display} leaving={leaving} queueLen={queueLen} theme={theme} />
   )
 }

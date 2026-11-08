@@ -22,8 +22,8 @@ const C = {
 const FONT_STACK = `-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`
 
 // 心情映射，与 Report.tsx 保持一致
-const MOOD_EMOJI: Record<string, string> = { yum: "😋", ok: "😐", no: "😒" }
-const MOOD_LABEL: Record<string, string> = { yum: "吃得美滋滋", ok: "还行", no: "不太满意" }
+const MOOD_EMOJI: Record<string, string> = { great: "😋", yum: "😋", ok: "😐", meh: "😕", no: "😒" }
+const MOOD_LABEL: Record<string, string> = { great: "超满足", yum: "吃得美滋滋", ok: "还行", meh: "不太行", no: "不太满意" }
 
 // 布局常量
 const PAD = 48 // 页面左右留白

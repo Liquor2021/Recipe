@@ -6,6 +6,7 @@ import { asArray } from "@/lib/utils"
 import { readDishListSession, saveDishListSession, useDishListSession } from "@/lib/dishListSession"
 import { hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, pendingMealSelectionKey, reconcileMealSelection } from "@/lib/mealSelection"
 import KitchenTodayMenu from "@/components/KitchenTodayMenu"
+import HorizontalFilterStrip from "@/components/HorizontalFilterStrip"
 import DishImage from "@/components/DishImage"
 import type { Dish, MealRecord } from "@/types"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
@@ -365,33 +366,32 @@ function DishListPage({ today, generation }: { today: string; generation: number
                 onChange={(e) => { setSearch(e.target.value); setActiveCategory("全部"); setActiveTaste("全部") }} />
               {search && <button type="button" aria-label="清空搜索" onClick={() => setSearch("")}><X size={17} /></button>}
             </div>
-            <div ref={sidebarRef} role="navigation" aria-label="菜品分类"
+            <HorizontalFilterStrip scrollRef={sidebarRef} role="navigation" label="菜品分类" itemCount={sidebarCats.length}
               onScroll={(event) => saveDishListSession(today, { categoryScrollTop: event.currentTarget.scrollLeft })}
               className="kitchen-category-tabs scrollbar-none">
               {sidebarCats.map((cat) => <button key={cat} onClick={() => scrollToCategory(cat)} aria-current={activeCategory === cat ? "true" : undefined}>
                 {cat}
               </button>)}
-            </div>
-            <div className="kitchen-taste-wrap">
-              <div
-                ref={tasteRef}
-                onScroll={(event) => saveDishListSession(today, { tasteScrollLeft: event.currentTarget.scrollLeft })}
-                className="kitchen-taste-tabs scrollbar-none"
-                role="group"
-                aria-label="按口味筛选"
-              >
-                {tastes.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setActiveTaste(t)}
-                    className={activeTaste === t ? "is-active" : undefined}
-                    aria-pressed={activeTaste === t}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
+            </HorizontalFilterStrip>
+            <HorizontalFilterStrip
+              scrollRef={tasteRef}
+              itemCount={tastes.length}
+              onScroll={(event) => saveDishListSession(today, { tasteScrollLeft: event.currentTarget.scrollLeft })}
+              className="kitchen-taste-tabs scrollbar-none"
+              role="group"
+              label="按口味筛选"
+            >
+              {tastes.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setActiveTaste(t)}
+                  className={activeTaste === t ? "is-active" : undefined}
+                  aria-pressed={activeTaste === t}
+                >
+                  {t}
+                </button>
+              ))}
+            </HorizontalFilterStrip>
 
             <div
               ref={listRef}

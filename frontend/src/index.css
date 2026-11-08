@@ -41,7 +41,6 @@ body {
   overscroll-behavior: none;
   overscroll-behavior-x: none;
   margin: 0;
-  touch-action: pan-y;
 }
 
 @keyframes fadeUp {
@@ -134,7 +133,7 @@ body {
 .animate-glow { animation: glow 1.5s infinite; }
 .animate-countdown-pulse { animation: countdown-pulse .5s ease infinite; }
 
-.achievement-unlock-layer {
+.achievement-unlock-layer.kitchen-surface {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -144,13 +143,13 @@ body {
   padding: 24px;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 44%, rgba(232,115,74,.26), transparent 28%),
-    rgba(26,26,46,.58);
+    radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--k-red) 32%, transparent), transparent 42%),
+    rgb(43 31 20 / 65%);
   backdrop-filter: blur(8px);
   animation: achievement-layer-in .22s ease-out both;
 }
 
-.achievement-unlock-layer.is-leaving {
+.achievement-unlock-layer.kitchen-surface.is-leaving {
   animation: achievement-layer-out .34s ease-in both;
 }
 
@@ -173,14 +172,16 @@ body {
   width: min(86vw, 360px);
   min-height: 278px;
   padding: 28px 24px 24px;
-  border-radius: 28px;
-  border: 1px solid rgba(255,255,255,.55);
+  border-radius: 14px;
+  border: 1px solid #d7c9b3;
   background:
-    linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.9)),
-    var(--color-card);
-  box-shadow: 0 24px 80px rgba(26,26,46,.28), 0 2px 6px rgba(0,0,0,.06);
+    repeating-linear-gradient(0deg, transparent 0 27px, rgb(119 105 87 / 5%) 27px 28px),
+    #fbf8f1;
+  color: #2b2520;
+  color-scheme: light;
+  box-shadow: 0 24px 80px rgb(43 31 20 / 35%), 0 2px 6px rgb(64 45 25 / 10%);
   text-align: center;
-  overflow: hidden;
+  isolation: isolate;
   animation: achievement-card-in .58s cubic-bezier(.2,.84,.26,1.12) both;
 }
 
@@ -195,7 +196,9 @@ body {
   width: 178px;
   height: 178px;
   border-radius: 999px;
-  border: 2px solid rgba(232,115,74,.32);
+  border: 2px solid color-mix(in srgb, var(--k-red) 45%, transparent);
+  pointer-events: none;
+  z-index: -1;
   animation: achievement-ring 1.4s ease-out infinite;
 }
 
@@ -208,10 +211,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary-light), var(--color-yellow-light));
-  border: 1px solid rgba(232,115,74,.18);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 12px 28px rgba(232,115,74,.18);
+  background: linear-gradient(135deg, #f5e1cb, #f4ead4);
+  border: 1px dashed #c3a785;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%), 0 12px 28px color-mix(in srgb, var(--k-red) 18%, transparent);
 }
+
+.achievement-glow-ring.is-amber { border-color: color-mix(in srgb, var(--k-amber) 45%, transparent); }
 
 .achievement-icon {
   display: block;
@@ -227,9 +232,8 @@ body {
   justify-content: center;
   min-height: 22px;
   padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
+  border-block: 1px solid #d7c9b3;
+  color: #c2492f;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0;
@@ -241,7 +245,8 @@ body {
   font-size: 24px;
   line-height: 1.18;
   font-weight: 900;
-  color: var(--color-text);
+  color: #2b2520;
+  font-family: 'Kitchen Serif', 'Noto Serif SC', serif;
 }
 
 .achievement-desc {
@@ -251,7 +256,7 @@ body {
   min-height: 22px;
   font-size: 14px;
   line-height: 1.55;
-  color: var(--color-text2);
+  color: #776957;
 }
 
 .achievement-chain {
@@ -259,11 +264,19 @@ body {
   display: inline-flex;
   margin-top: 16px;
   padding: 5px 11px;
-  border-radius: 999px;
-  background: var(--color-mint-light);
-  color: var(--color-mint);
+  border: 1px dashed #9bae8f;
+  border-radius: 3px;
+  background: #edf0e5;
+  color: #536d47;
   font-size: 11px;
   font-weight: 800;
+}
+
+.achievement-tape { position: absolute; top: -12px; left: calc(50% - 44px); width: 88px; height: 25px; background: rgb(211 184 138 / 75%); transform: rotate(-4deg); border-inline: 1px dashed rgb(119 105 87 / 25%); }
+.achievement-corner-stamp { position: absolute; top: 19px; right: 17px; padding: 5px 3px; border: 2px solid currentColor; border-radius: 3px; color: #c2492f; font-family: 'Kitchen Serif', serif; font-size: 13px; font-weight: 800; writing-mode: vertical-rl; transform: rotate(10deg); }
+@media (prefers-reduced-motion: reduce) {
+  .achievement-unlock-layer, .achievement-unlock-card, .achievement-icon { animation: none !important; }
+  .achievement-confetti-field, .achievement-glow-ring { display: none; }
 }
 
 .skeleton {

@@ -7,10 +7,13 @@
 .kitchen-dishes-search:focus-within { border-color: var(--k-red); outline: 2px solid color-mix(in srgb, var(--k-red) 15%, transparent); }
 .kitchen-dishes-search input::-webkit-search-cancel-button { display: none; }
 .kitchen-dishes-search button { width: 40px; height: 40px; display: grid; place-items: center; }
-.kitchen-category-tabs { display: flex; gap: 8px; overflow-x: auto; flex-shrink: 0; padding: 1px 20px 9px; }
+.kitchen-filter-strip { display: flex; align-items: flex-start; gap: 5px; flex-shrink: 0; padding-inline: 20px; }
+.kitchen-filter-strip > [role] { flex: 1; min-width: 0; overscroll-behavior-x: contain; }
+.kitchen-filter-arrow { display: grid; place-items: center; width: 26px; height: 38px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 4px; background: var(--k-card); color: var(--k-muted); }
+.kitchen-filter-arrow:disabled { opacity: .3; }
+.kitchen-category-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 1px 1px 9px; }
 .kitchen-category-tabs button { min-height: 38px; padding: 7px 13px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 5px; font-size: 13px; color: var(--k-muted); }
 .kitchen-category-tabs button[aria-current="true"] { background: var(--k-ink); border-color: var(--k-ink); color: var(--k-card); font-weight: 700; }
-.kitchen-taste-wrap { padding: 0 20px 5px; }
 .kitchen-taste-tabs { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 3px 1px 7px; }
 .kitchen-taste-tabs button { flex-shrink: 0; min-height: 40px; min-width: 40px; padding: 5px 12px; color: var(--k-muted); border: 1px dashed var(--k-line); border-radius: 999px; background: var(--k-card); font-size: 12px; }
 .kitchen-taste-tabs button.is-active { color: var(--k-card); background: var(--k-ink); border-color: var(--k-ink); border-style: solid; }

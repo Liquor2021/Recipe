@@ -237,7 +237,7 @@ export default function MainLayout() {
   }, [navigate])
 
   return (
-    <div className="h-dvh overflow-hidden kitchen-shell" data-kitchen-theme={kitchenTheme} style={{ touchAction: "pan-y" }}>
+    <div className="h-dvh overflow-hidden kitchen-shell" data-kitchen-theme={kitchenTheme}>
       <div className="h-full overflow-hidden">
         <div
           ref={stripRef}

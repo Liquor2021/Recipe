@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { achievementsApi } from "@/api"
 import PageHeader from "@/components/PageHeader"
 import type { Achievement } from "@/types"
+import "@/styles/kitchen-achievements.css"
 
 function formatUnlockedAt(value?: string | null) {
   if (!value) return ""
@@ -36,10 +37,10 @@ export default function Achievements() {
       />
 
       <div className="px-5 py-4 max-w-[640px] mx-auto">
-        <div className="bg-card rounded-2xl border border-border p-4 mb-4 shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)]">
+        <section className="achievement-progress-card">
           <div className="flex items-end justify-between mb-2.5">
             <div>
-              <div className="text-[13px] text-text2 mb-0.5">成就进度</div>
+              <h2 className="text-[13px] text-text2 mb-0.5">成就进度</h2>
               <div className="text-2xl font-extrabold tracking-tight">{progress}%</div>
             </div>
             <div className="text-right text-xs text-text2 leading-relaxed">
@@ -47,29 +48,28 @@ export default function Achievements() {
               <div>手动 {manualCount}</div>
             </div>
           </div>
-          <div className="h-2 rounded-full bg-bg overflow-hidden">
+          <div className="h-2 rounded-full bg-bg overflow-hidden" role="progressbar" aria-label="成就进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
           </div>
-        </div>
+        </section>
 
         <div className="grid grid-cols-3 gap-3">
           {sortedAchievements.map((a: Achievement) => (
-            <div
+            <article
               key={a.id}
-              className={`bg-card rounded-2xl p-3.5 pt-4 text-center shadow-[0_1px_3px_rgba(0,0,0,.04),0_4px_12px_rgba(0,0,0,.04)] border transition-all relative overflow-hidden ${a.is_unlocked ? "border-primary/20" : "border-border opacity-45 grayscale-[.9]"}`}
+              className={`achievement-wall-card ${a.is_unlocked ? "is-unlocked" : "is-locked"}`}
             >
-              {a.is_unlocked && <div className="absolute top-0 left-0 right-0 h-[3px] bg-primary" />}
-              <span className="text-[32px] block mb-1.5">{a.icon}</span>
-              <div className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</div>
-              <div className="text-[11px] text-text2 leading-snug min-h-[28px]">{a.description}</div>
-              <div className={`mt-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${a.is_unlocked ? "bg-primary-light text-primary" : "bg-bg text-text3"}`}>
+              <span className="achievement-wall-icon" aria-hidden="true">{a.icon}</span>
+              <h3 className="text-xs font-semibold mb-0.5 line-clamp-2 leading-4 min-h-[32px]">{a.name}</h3>
+              <p className="text-[11px] text-text2 leading-snug min-h-[28px]">{a.description}</p>
+              <div className="achievement-wall-status">
                 {a.is_unlocked ? `已解锁 ${formatUnlockedAt(a.unlocked_at)}` : a.condition === "auto" ? "自动检测" : "手动成就"}
               </div>
-            </div>
+            </article>
           ))}
         </div>
         {achievements.length === 0 && (
-          <div className="py-16 text-center text-sm text-text3">还没有成就</div>
+          <div className="kitchen-empty text-sm">还没有成就</div>
         )}
       </div>
     </div>

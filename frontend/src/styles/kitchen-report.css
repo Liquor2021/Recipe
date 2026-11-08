@@ -1,0 +1,30 @@
+.report-paper-card { margin-bottom: 14px; padding: 16px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.report-section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-family: 'Kitchen Serif', 'Noto Serif SC', serif; font-size: 15px; font-weight: 800; }
+.report-section-title svg { color: var(--k-muted); }
+.report-period-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 22px; }
+.report-period-switch { display: flex; gap: 6px; }
+.report-period-switch button { min-height: 36px; padding: 5px 13px; border: 1px solid var(--k-line); border-radius: 4px; color: var(--k-muted); font-size: 12px; font-weight: 700; }
+.report-period-switch button[aria-pressed="true"] { border-color: var(--k-red); background: var(--color-primary-light); color: var(--k-red); }
+.report-date-range { font-size: 10px; color: var(--k-muted); font-variant-numeric: tabular-nums; }
+.report-hero { position: relative; padding: 22px 18px 17px; }
+.report-hero::before { content: ''; position: absolute; top: -9px; left: calc(50% - 32px); width: 64px; height: 18px; background: color-mix(in srgb, var(--k-kraft) 86%, transparent); transform: rotate(-4deg); border-inline: 1px dashed var(--k-line); }
+.report-cook-days { position: relative; display: inline-block; margin: 5px 0 10px; font-family: 'Kitchen Serif', serif; font-size: 44px; line-height: 1; font-weight: 900; }
+.report-cook-days::after { content: ''; position: absolute; bottom: -5px; left: -2px; right: -3px; height: 5px; border-bottom: 2px solid var(--k-red); border-radius: 50%; transform: rotate(-5deg); }
+.report-delta-stamp { padding: 4px 6px; margin-bottom: 13px; border: 1px solid currentColor; border-radius: 2px; color: var(--k-muted); font-size: 11px; font-weight: 600; transform: rotate(-5deg); }
+.report-delta-stamp.is-up { color: var(--k-green); }
+.report-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 15px 0; }
+.report-stats > div { min-width: 0; padding: 0 8px; text-align: center; }
+.report-stats > div + div { border-left: 1px dashed var(--k-line); }
+.report-rating { color: var(--k-amber); }
+.report-top-dish { display: flex; align-items: center; width: 100%; min-width: 0; gap: 10px; padding: 10px 0; text-align: left; }
+.report-rank { display: grid; place-items: center; flex-shrink: 0; width: 23px; height: 23px; border: 1px solid var(--k-line); border-radius: 3px; color: var(--k-muted); font-size: 11px; font-weight: 800; transform: rotate(-5deg); }
+.report-rank.is-top { color: var(--k-red); border-color: currentColor; background: var(--color-primary-light); }
+.report-dish-name { min-width: 0; max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.report-dot-leader { min-width: 8px; flex: 1; align-self: center; margin-top: 6px; border-bottom: 1px dotted var(--k-line); }
+.report-tone-amber { background: var(--k-amber); }
+.report-vegetables { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.report-vegetable-chip { padding: 3px 8px; border: 1px dashed color-mix(in srgb, var(--k-green) 55%, var(--k-line)); border-radius: 3px; background: var(--color-mint-light); color: var(--k-green); font-size: 12px; }
+.report-advice { margin-top: 12px; padding: 10px 12px; border-left: 2px solid var(--k-amber); background: var(--k-kraft); color: var(--k-ink); font-size: 12px; line-height: 1.7; }
+.report-moods { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 10px; }
+.report-mood { padding: 5px 0; text-align: center; }
+.report-mood-icon { display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 8px; border: 1px dashed var(--k-line); border-radius: 50%; font-size: 24px; }

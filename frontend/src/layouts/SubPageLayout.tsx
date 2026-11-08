@@ -6,7 +6,7 @@ export default function SubPageLayout() {
   const theme = useKitchenTheme((state) => state.theme)
   useEffect(watchKitchenTheme, [])
   return (
-    <div className={`h-dvh kitchen-surface kitchen-${theme} overflow-y-auto overscroll-y-contain`} style={{ touchAction: "pan-y" }}>
+    <div className={`h-dvh kitchen-surface kitchen-${theme} overflow-y-auto overscroll-y-contain`}>
       <Outlet />
     </div>
   )

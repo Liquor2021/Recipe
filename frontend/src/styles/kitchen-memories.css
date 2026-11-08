@@ -53,10 +53,10 @@
 .history-row-actions summary { display: flex; align-items: center; justify-content: flex-end; gap: 5px; width: fit-content; min-height: 36px; margin-left: auto; color: var(--k-muted); font-size: 11px; list-style: none; }
 .history-row-actions summary::-webkit-details-marker { display: none; }
 .history-row-actions[open] summary svg { transform: rotate(180deg); }
-.history-action-content { display: flex; gap: 10px; padding: 10px 0 5px; border-top: 1px dashed var(--k-line); }
-.history-action-photo { display: flex; width: 48px; height: 48px; flex-shrink: 0; padding: 3px; border: 1px solid var(--k-line); background: var(--k-card); font-size: 24px; justify-content: center; align-items: center; border-radius: 3px; overflow: hidden; }
-.history-action-buttons { display: flex; flex: 1; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-.history-action-buttons button { min-height: 44px; padding: 0 11px; border: 1px solid var(--k-line); background: var(--k-card); border-radius: 5px; color: var(--k-muted); font-size: 12px; }
+.history-action-content { display: flex; align-items: center; gap: 8px; padding: 8px 0 5px; border-top: 1px dashed var(--k-line); }
+.history-action-photo { display: flex; width: 34px; height: 36px; flex-shrink: 0; padding: 2px; border: 1px solid var(--k-line); background: var(--k-card); font-size: 20px; justify-content: center; align-items: center; border-radius: 3px; overflow: hidden; }
+.history-action-buttons { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.history-action-buttons button { min-height: 34px; padding: 5px 7px; border: 1px solid var(--k-line); background: var(--k-card); border-radius: 4px; color: var(--k-muted); font-size: 11px; line-height: 1.5; }
 .history-action-buttons button.is-primary { background: var(--k-ink); color: var(--k-paper); border-color: var(--k-ink); }
 .history-kraft-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 24px; }
 .history-kraft-stats > div { border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-kraft); padding: 13px 15px; min-height: 78px; }
