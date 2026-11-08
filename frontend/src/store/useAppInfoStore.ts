@@ -9,9 +9,15 @@ interface AppInfoState {
 }
 
 const APP_NAME_KEY = "ninimenu_app_name"
+export const DEFAULT_APP_NAME = "小灶手账"
+
+export function appDisplayName(name: string): string {
+  const value = name.trim()
+  return !value || value === "NiniMenu" ? DEFAULT_APP_NAME : value
+}
 
 function getStoredName(): string {
-  return localStorage.getItem(APP_NAME_KEY) || "NiniMenu"
+  return appDisplayName(localStorage.getItem(APP_NAME_KEY) || "")
 }
 
 export const useAppInfoStore = create<AppInfoState>((set) => ({
@@ -21,7 +27,7 @@ export const useAppInfoStore = create<AppInfoState>((set) => ({
     try {
       const res = await axios.get("/api/app-info")
       if (res.data?.code === 0 && res.data?.data?.app_name) {
-        const name = res.data.data.app_name as string
+        const name = appDisplayName(res.data.data.app_name as string)
         localStorage.setItem(APP_NAME_KEY, name)
         set({ appName: name, loaded: true })
         document.title = name
@@ -32,7 +38,8 @@ export const useAppInfoStore = create<AppInfoState>((set) => ({
       set({ loaded: true })
     }
   },
-  setAppName: (name: string) => {
+  setAppName: (value: string) => {
+    const name = appDisplayName(value)
     localStorage.setItem(APP_NAME_KEY, name)
     set({ appName: name })
     document.title = name

@@ -283,9 +283,9 @@ func DeleteAchievement(c *gin.Context) {
 
 func GetAppInfo(c *gin.Context) {
 	var setting models.Setting
-	appName := "NiniMenu"
+	appName := "小灶手账"
 	if err := database.DB.Where("`key` = ?", "app_name").First(&setting).Error; err == nil {
-		if v := strings.TrimSpace(setting.Value); v != "" {
+		if v := strings.TrimSpace(setting.Value); v != "" && v != "NiniMenu" {
 			appName = v
 		}
 	}

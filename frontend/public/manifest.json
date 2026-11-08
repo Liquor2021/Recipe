@@ -1,7 +1,7 @@
 {
-  "name": "NiniMenu",
-  "short_name": "NiniMenu",
-  "description": "今天吃什么？让 NiniMenu 帮你决定",
+  "name": "小灶手账",
+  "short_name": "小灶手账",
+  "description": "好好吃饭，记下家常的一餐",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FFF8F0",

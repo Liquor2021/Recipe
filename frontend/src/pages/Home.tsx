@@ -299,7 +299,7 @@ export default function Home() {
   const moodDishes = moodPick?.dishes
   const date = new Date(todayKey + "T12:00:00")
   const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日 · 周${"日一二三四五六"[date.getDay()]}`
-  const brand = appName === "NiniMenu" ? "小灶手账" : appName
+  const brand = appName
   const isPlanned = (dish: Dish, meal: "lunch" | "dinner") => todayRecords.some(
     (r) => r.status !== "cancelled" && r.dish_id === dish.id && r.meal_type === meal && r.meal_date === todayKey
   )
@@ -542,7 +542,7 @@ export default function Home() {
 
         <footer className="kitchen-page-footer">
           <span>一餐一饭，都是生活。</span>
-          <span>小灶手账 · {date.getFullYear()}</span>
+          <span>{appName} · {date.getFullYear()}</span>
         </footer>
       </main>
 

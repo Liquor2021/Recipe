@@ -1,0 +1,111 @@
+.kitchen-login {
+  height: 100dvh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--k-muted) 12%, transparent) .65px, transparent .65px);
+  background-size: 6px 6px;
+}
+.kitchen-login::-webkit-scrollbar { display: none; }
+
+.kitchen-login-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+}
+
+.kitchen-login-cover {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 392px;
+  min-height: 636px;
+  padding: 48px 34px 22px 48px;
+  border: 1px solid var(--k-line);
+  border-radius: 8px 22px 22px 8px;
+  background: var(--k-paper);
+  box-shadow: 3px 3px 0 var(--k-card), 4px 4px 0 var(--k-line), 0 18px 44px rgb(64 45 25 / 12%);
+  text-align: center;
+}
+
+.kitchen-login-spine { position: absolute; inset: 0 auto 0 0; width: 17px; border-right: 1px solid var(--k-line); border-radius: 7px 0 0 7px; background: var(--k-kraft); }
+.kitchen-login-spine::after { content: ""; position: absolute; inset: 0 4px 0 auto; border-left: 1px dashed var(--k-muted); opacity: .5; }
+.kitchen-login-margin { position: absolute; right: 13px; top: 82px; writing-mode: vertical-rl; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 10px; letter-spacing: 4px; color: var(--k-muted); }
+.kitchen-login-theme { position: absolute; right: 14px; top: 9px; display: flex; align-items: center; gap: 5px; min-height: 36px; padding: 4px 7px; border-radius: 5px; color: var(--k-muted); font-size: 11px; }
+.kitchen-login-theme:hover { color: var(--k-red); background: color-mix(in srgb, var(--k-red) 7%, transparent); }
+.kitchen-login :is(button, input):focus-visible { outline: 2px solid var(--k-red); outline-offset: 4px; }
+.kitchen-login-heading { display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+.kitchen-login-polaroid { position: relative; width: 104px; padding: 6px 6px 5px; border: 1px solid var(--k-line); border-radius: 3px; background: var(--k-card); box-shadow: var(--k-shadow); transform: rotate(-3deg); }
+.kitchen-login-polaroid::before { content: ""; position: absolute; z-index: 1; top: -7px; left: 25px; width: 52px; height: 14px; background: color-mix(in srgb, #c48b53 40%, transparent); transform: rotate(-4deg); }
+.kitchen-login-picture { display: grid; place-items: center; height: 67px; color: var(--k-red); background: var(--k-kraft); background-image: radial-gradient(circle at 75% 20%, var(--k-paper), transparent 65%); }
+.kitchen-login-polaroid > span { display: block; padding-top: 4px; font-size: 9px; color: var(--k-muted); }
+.kitchen-login-seal { display: grid; place-items: center; width: 53px; height: 56px; margin-top: 26px; border: 1px solid color-mix(in srgb, var(--k-red) 85%, var(--k-ink)); outline: 1px solid color-mix(in srgb, var(--k-paper) 65%, transparent); outline-offset: -5px; border-radius: 4px 3px 5px 2px; background: var(--k-red); color: var(--k-card); font: 900 33px/1 "Kitchen Serif", "Songti SC", SimSun, serif; transform: rotate(-5deg); box-shadow: 2px 2px 0 rgb(56 34 18 / 14%); }
+.kitchen-login-heading h1 { max-width: 100%; margin: 15px 0 0; color: var(--k-ink); font: 900 30px/1.4 "Kitchen Serif", "Songti SC", SimSun, serif; letter-spacing: .06em; overflow-wrap: anywhere; }
+.kitchen-login-subtitle { margin: 7px 0 0; font-size: 11px; color: var(--k-muted); }
+.kitchen-login-date { display: inline-block; margin-top: 16px; padding: 2px 10px; border: 1px solid var(--k-faint); color: var(--k-muted); font-size: 11px; transform: rotate(1.5deg); }
+
+.kitchen-login-form { width: 100%; max-width: 258px; margin-top: 31px; text-align: left; }
+.kitchen-login-field label { display: block; color: var(--k-muted); font-size: 11px; font-weight: 600; letter-spacing: .13em; }
+.kitchen-login-field input { display: block; width: 100%; min-width: 0; min-height: 48px; padding: 10px 2px 7px; border: 0; border-bottom: 1.5px dashed var(--k-faint); border-radius: 0; background: transparent; color: var(--k-ink); font-size: 16px; transition: border-color 160ms ease; }
+.kitchen-login-field input::placeholder { color: var(--k-muted); opacity: .8; font-size: 13px; }
+.kitchen-login-field input:focus { border-bottom-style: solid; border-bottom-color: var(--k-red); }
+.kitchen-login-field input:focus-visible { outline: none; box-shadow: 0 1px 0 var(--k-red); }
+.kitchen-login-field input[aria-invalid="true"] { border-bottom-color: var(--k-red); }
+.kitchen-login-submit { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 47px; margin-top: 24px; padding: 11px 15px; border-radius: 7px; background: var(--k-ink); color: var(--k-paper); font: 900 15px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; transition: background-color 160ms ease, transform 160ms ease; }
+.kitchen-login-submit::after { content: ""; position: absolute; right: 14px; top: -7px; width: 12px; height: 20px; background: var(--k-red); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%); }
+.kitchen-login-submit:hover:not(:disabled) { background: color-mix(in srgb, var(--k-ink) 85%, var(--k-red)); }
+.kitchen-login-submit:active:not(:disabled) { transform: translateY(1px); }
+.kitchen-login-submit:disabled { cursor: not-allowed; opacity: .55; }
+.kitchen-login-message { min-height: 56px; padding-top: 13px; }
+.kitchen-login-error { display: flex; align-items: center; gap: 7px; margin: 0; padding: 8px 10px; border: 1px dashed var(--k-red); border-radius: 5px; background: color-mix(in srgb, var(--k-red) 7%, var(--k-paper)); color: var(--k-red); font-size: 12px; line-height: 1.6; }
+.kitchen-login-error > svg { flex-shrink: 0; }
+.kitchen-login-footer { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 10px; margin-top: auto; padding-top: 16px; font-size: 10px; color: var(--k-muted); }
+.kitchen-login-spinner { animation: kitchen-login-spin 900ms linear infinite; }
+.kitchen-login-field.is-shaking { animation: kitchen-login-shake 240ms ease; }
+@keyframes kitchen-login-spin { to { transform: rotate(360deg); } }
+@keyframes kitchen-login-shake { 0%, 100% { transform: translateX(0); } 25%, 75% { transform: translateX(-4px); } 50% { transform: translateX(4px); } }
+
+.kitchen-login.kitchen-night { background-image: radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--k-red) 8%, transparent), transparent 65%); background-size: auto; }
+.kitchen-night .kitchen-login-cover { background-image: radial-gradient(ellipse at 50% 15%, color-mix(in srgb, var(--k-red) 14%, transparent), transparent 60%); box-shadow: 3px 3px 0 var(--k-card), 4px 4px 0 var(--k-line), 0 18px 44px rgb(0 0 0 / 30%); }
+.kitchen-night .kitchen-login-margin { opacity: .75; }
+.kitchen-login-lamp { position: relative; height: 103px; width: 78px; margin-top: -48px; margin-bottom: 30px; }
+.kitchen-login-lamp::before { content: ""; display: block; width: 2px; height: 71px; margin: auto; background: var(--k-line); }
+.kitchen-login-lamp > span { position: relative; display: block; width: 78px; height: 30px; border-radius: 4px 4px 50% 50%; background: var(--k-red); box-shadow: 0 12px 40px color-mix(in srgb, var(--k-red) 35%, transparent); }
+.kitchen-login-lamp > span::after { content: ""; position: absolute; width: 13px; height: 8px; left: calc(50% - 6.5px); bottom: -5px; border-radius: 0 0 50% 50%; background: #ffd9a8; box-shadow: 0 0 18px #ffd9a866; }
+.kitchen-login-night-label { margin: 0 0 5px; color: var(--k-red); font: 700 12px/1.5 "Kitchen Serif", "Songti SC", SimSun, serif; letter-spacing: .25em; }
+.kitchen-night .kitchen-login-heading h1 { margin-top: 8px; padding: 13px 15px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); font-size: 28px; text-shadow: 0 0 22px color-mix(in srgb, var(--k-red) 25%, transparent); }
+.kitchen-night .kitchen-login-subtitle { margin-top: 13px; }
+.kitchen-night .kitchen-login-date { margin-top: 19px; }
+.kitchen-night .kitchen-login-form { margin-top: 41px; }
+.kitchen-night .kitchen-login-submit { background: var(--k-red); color: var(--k-paper); box-shadow: 0 6px 20px color-mix(in srgb, var(--k-red) 13%, transparent); }
+.kitchen-night .kitchen-login-submit::after { display: none; }
+.kitchen-night .kitchen-login-submit:hover:not(:disabled) { background: color-mix(in srgb, var(--k-red) 85%, var(--k-ink)); }
+
+@media (max-width: 360px) {
+  .kitchen-login-stage { padding-inline: 14px; }
+  .kitchen-login-cover { padding-left: 34px; padding-right: 26px; }
+  .kitchen-login-heading h1 { font-size: 27px; }
+  .kitchen-night .kitchen-login-heading h1 { font-size: 25px; }
+  .kitchen-login-margin { right: 9px; }
+  .kitchen-login-footer { flex-direction: column; }
+}
+
+@media (max-height: 700px) {
+  .kitchen-login-stage { padding-block: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-bottom)); }
+  .kitchen-login-cover { min-height: 590px; }
+  .kitchen-login-polaroid { width: 88px; }
+  .kitchen-login-picture { height: 51px; }
+  .kitchen-login-seal { margin-top: 20px; }
+  .kitchen-login-form { margin-top: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kitchen-login-field.is-shaking, .kitchen-login-spinner { animation: none; }
+  .kitchen-login-field input, .kitchen-login-submit { transition: none; }
+}

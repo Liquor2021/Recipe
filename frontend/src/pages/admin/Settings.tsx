@@ -3,7 +3,7 @@ import { useQuery, useMutation, useMutationState, useQueryClient } from "@tansta
 import { backupApi, settingsApi, shoppingCategoriesApi } from "@/api"
 import SecurityNotice from "@/components/SecurityNotice"
 import { asString } from "@/lib/utils"
-import { useAppInfoStore } from "@/store/useAppInfoStore"
+import { appDisplayName, DEFAULT_APP_NAME, useAppInfoStore } from "@/store/useAppInfoStore"
 import type { FamilyMember, ShoppingCategoryOverride } from "@/types"
 import toast from "react-hot-toast"
 
@@ -264,7 +264,7 @@ export default function AdminSettings() {
         qc.invalidateQueries({ queryKey: [key] })
       }
       if (variables.app_name !== undefined) {
-        updateAppName(variables.app_name || "NiniMenu")
+        updateAppName(variables.app_name || DEFAULT_APP_NAME)
       }
       if (variables.family_members !== undefined) {
         const savedMembers = parseFamilyMembers(variables.family_members)
@@ -340,13 +340,13 @@ export default function AdminSettings() {
           <div className="flex items-center gap-2">
             <input
               type="text"
-              value={appName !== null ? appName : asString(settings?.app_name, storedAppName)}
+              value={appName !== null ? appName : appDisplayName(asString(settings?.app_name, storedAppName))}
               onChange={(e) => setAppName(e.target.value)}
-              placeholder="NiniMenu"
+              placeholder={DEFAULT_APP_NAME}
               className="w-28 py-2 px-3 rounded-[10px] border-[1.5px] border-border bg-bg text-sm outline-none transition-all focus:border-primary text-right"
             />
             <button
-              onClick={() => saveSettings({ app_name: (appName !== null ? appName : asString(settings?.app_name, "NiniMenu")) || "NiniMenu" })}
+              onClick={() => saveSettings({ app_name: appDisplayName(appName !== null ? appName : asString(settings?.app_name, storedAppName)) })}
               disabled={updateMut.isPending}
               className="px-3 rounded-full text-xs font-semibold bg-primary text-white disabled:opacity-60"
             >
