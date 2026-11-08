@@ -332,7 +332,7 @@ function CookModeContent() {
         </main>
       )}
       {/* 做菜模式是 z-[300] 的全屏层，扣库存弹层要盖在它上面；关掉后回到菜品详情 */}
-      <ConsumeInventorySheet dish={consumeDish} recordId={consumedRecordId} portionScale={consumedScale} onClose={() => navigate(-1)} zIndexClass="z-[320]" />
+      <ConsumeInventorySheet dish={consumeDish} recordId={consumedRecordId} portionScale={consumedScale} onClose={() => navigate(-1)} />
     </div>
   )
 }

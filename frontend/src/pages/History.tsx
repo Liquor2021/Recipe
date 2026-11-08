@@ -11,8 +11,9 @@ import SwipeDeleteRow from "@/components/SwipeDeleteRow"
 import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import InventoryHistorySheet from "@/components/InventoryHistorySheet"
 import ReschedulePlanSheet from "@/components/ReschedulePlanSheet"
+import KitchenSheet from "@/components/KitchenSheet"
 import toast from "react-hot-toast"
-import { BarChart3, Camera, ChevronLeft, ChevronRight, Ellipsis, NotebookPen, Star } from "lucide-react"
+import { BarChart3, Camera, ChevronLeft, ChevronRight, Ellipsis, NotebookPen, Star, Undo2 } from "lucide-react"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import "@/styles/kitchen-memories.css"
 import { thumbUrl } from "@/lib/dishImage"
@@ -78,12 +79,23 @@ function HistoryRecordRow({ record, showDate = false, today, pending, onStatus, 
   onUndo: (record: MealRecord) => void
 }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const rowRef = useRef<HTMLElement>(null)
+  const isSource = location.pathname === "/history" && new URLSearchParams(location.search).get("record") === String(record.id)
+  useEffect(() => {
+    if (!isSource) return
+    const frame = requestAnimationFrame(() => {
+      rowRef.current?.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [isSource, location.key])
   const completed = record.status === "completed"
   const planned = record.status === "planned"
   const canComplete = planned && record.meal_date <= today
   const overdue = planned && record.meal_date < today
   return (
-    <article className={`history-ledger-row ${showDate ? "history-plan-row" : ""}`}>
+    <article ref={rowRef} key={record.status} data-record-id={record.id} className={`history-ledger-row ${isSource ? "is-achievement-source" : ""} ${showDate ? "history-plan-row" : ""}`}>
+      {isSource && <p className="history-source-note">成就的解锁出处</p>}
       <div className="history-ledger-main">
         {showDate && <span className={`history-relative-date ${overdue ? "is-overdue" : ""}`}>{getPlanDateLabel(record.meal_date, today)}</span>}
         <button
@@ -172,10 +184,12 @@ function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
   const consistent = history.data?.applied === !!activeEntry
   const canConfirm = fetched && consistent && !pending
 
-  return createPortal(
-    <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={() => !pending && onClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="undo-completion-title" className={`kitchen-surface kitchen-${theme} kitchen-memory-sheet bg-card w-full max-w-[640px] rounded-t-2xl p-5 max-h-[90dvh] overflow-y-auto animate-slide-in-up`} style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape" && !pending) onClose() }}>
-        <h2 id="undo-completion-title" className="text-base font-bold">撤销「{record.dish_name}」已吃记录？</h2>
+  return (
+    <KitchenSheet title="撤销这顿已吃记录？" theme={theme} icon={<Undo2 size={19} />} onClose={onClose} closeDisabled={pending} footer={<>
+      <button disabled={pending} onClick={onClose} className="is-ink">保留记录</button>
+      <button disabled={!canConfirm} onClick={() => { if (canConfirm) onConfirm(activeEntry?.id ?? null) }} className="is-danger">{pending ? "正在撤销…" : "确认撤销"}</button>
+    </>}>
+        <p className="kitchen-sheet-context"><strong>{record.dish_name}</strong><span>{record.meal_date} · {record.meal_type === "lunch" ? "午市" : "晚市"} · 已吃</span></p>
         <p className="mt-3 text-sm text-text2 leading-relaxed">这道菜会恢复为待完成计划，本条记录的评分、心情和成品照会清空。</p>
         {history.isError ? (
           <div className="mt-3">
@@ -202,12 +216,7 @@ function UndoCompletionDialog({ record, pending, error, onClose, onConfirm }: {
           <p role="alert" className="text-sm text-red">{error}</p>
           <button disabled={pending || history.isFetching} onClick={() => void history.refetch()} className="min-h-11 px-3 rounded-xl text-sm text-primary disabled:opacity-50">重新读取库存记录</button>
         </div>}
-        <div className="grid grid-cols-2 gap-3 mt-5 mb-3">
-          <button autoFocus disabled={pending} onClick={onClose} className="min-h-11 rounded-xl bg-bg text-sm font-semibold disabled:opacity-50">保留记录</button>
-          <button disabled={!canConfirm} onClick={() => { if (canConfirm) onConfirm(activeEntry?.id ?? null) }} className="min-h-11 rounded-xl bg-primary text-white text-sm font-semibold disabled:opacity-50">{pending ? "正在撤销…" : "确认撤销"}</button>
-        </div>
-      </div>
-    </div>, document.body,
+    </KitchenSheet>
   )
 }
 
@@ -222,6 +231,19 @@ export default function History() {
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate())
   const [view, setView] = useState<"calendar" | "pending">("calendar")
   const [today, setToday] = useState(todayStr)
+  useEffect(() => {
+    if (location.pathname !== "/history") return
+    const raw = new URLSearchParams(location.search).get("date")
+    if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return
+    const date = new Date(raw + "T12:00:00")
+    if (Number.isNaN(date.getTime()) || date.getDate() !== Number(raw.slice(8))) return
+    // 成就出处是外部路由输入；同步到保留挂载的日历选择。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCalYear(date.getFullYear())
+    setCalMonth(date.getMonth())
+    setSelectedDay(date.getDate())
+    setView("calendar")
+  }, [location.pathname, location.search])
   useEffect(() => {
     let timer: number
     function refreshDate() {
@@ -250,6 +272,7 @@ export default function History() {
   const ratingSession = useRef<RatingSession | null>(null)
   const [ratingUploading, setRatingUploading] = useState(false)
   const [ratingSaving, setRatingSaving] = useState(false)
+  const [ratingNotice, setRatingNotice] = useState("")
   const [showMealRating, setShowMealRating] = useState(false)
   const [mealRatingDate, setMealRatingDate] = useState("")
   const [mealRatingMood, setMealRatingMood] = useState<string>("")
@@ -258,6 +281,7 @@ export default function History() {
   const mealSession = useRef<DayRatingSession | null>(null)
   const [mealUploadRemaining, setMealUploadRemaining] = useState(0)
   const [mealSaving, setMealSaving] = useState(false)
+  const [mealNotice, setMealNotice] = useState("")
   const [mealReading, setMealReading] = useState(false)
   const [mealReady, setMealReady] = useState(false)
   const [mealReadError, setMealReadError] = useState("")
@@ -420,8 +444,8 @@ export default function History() {
       toast.success("评价已保存")
       closeRating()
     },
-    onError: (_err, { session }) => {
-      if (ratingSession.current === session) toast.error("评价失败，请重试")
+    onError: (error, { session }) => {
+      if (ratingSession.current === session) setRatingNotice(getUploadErrorMessage(error, "评价失败，草稿已保留，请重试"))
     },
     onSettled: (_data, _err, { session }) => {
       session.saving = false
@@ -448,7 +472,7 @@ export default function History() {
       if (mealSession.current !== session) return
       setMealConflict({ latest: null, reason: isDayRatingConflict(error) ? "changed" : "unconfirmed" })
       await readMealRating(session, false)
-      if (mealSession.current === session) toast.error("评价未确认，草稿已保留，请核对后继续")
+      if (mealSession.current === session) setMealNotice("评价未确认，草稿已保留，请核对后继续")
     },
     onSettled: (_data, _err, { session }) => {
       session.saving = false
@@ -575,6 +599,7 @@ export default function History() {
     // 即使缓存通知尚未触发列表重绘，也以刚保存的实际响应初始化。
     r = qc.getQueryData<MealRecord>(["record", r.id]) || r
     ratingSession.current = { target: String(r.id), photos: r.photo ? [r.photo] : [], uploading: false, saving: false }
+    setRatingNotice("")
     setRatingUploading(false)
     setRatingSaving(false)
     setRatingRecord(r)
@@ -596,6 +621,7 @@ export default function History() {
     if (!ratingRecord || !ratingMood || !session || session.target !== String(ratingRecord.id) || session.uploading || session.saving || ratingWritePending("record", session.target)) return
     session.saving = true
     setRatingSaving(true)
+    setRatingNotice("")
     updateMut.mutate({
       id: ratingRecord.id,
       session,
@@ -619,6 +645,7 @@ export default function History() {
       if (!file || ratingSession.current !== session || session.uploading || session.saving) return
       session.uploading = true
       setRatingUploading(true)
+      setRatingNotice("")
       try {
         const res = await uploadApi.image(file)
         if (ratingSession.current !== session) return
@@ -627,9 +654,9 @@ export default function History() {
           session.photos = [url]
           setRatingPhoto(url)
         }
-        else toast.error("上传返回异常")
+        else setRatingNotice("上传返回异常，请重试")
       } catch (err) {
-        if (ratingSession.current === session) toast.error(getUploadErrorMessage(err))
+        if (ratingSession.current === session) setRatingNotice(getUploadErrorMessage(err))
       } finally {
         session.uploading = false
         if (ratingSession.current === session) setRatingUploading(false)
@@ -662,6 +689,7 @@ export default function History() {
     }
     const session: DayRatingSession = { target: selectedDateKey, photos: [], version: "", readToken: 0, uploading: false, saving: false }
     mealSession.current = session
+    setMealNotice("")
     setMealRatingDate(selectedDateKey)
     setMealUploadRemaining(0)
     setMealSaving(false)
@@ -714,7 +742,7 @@ export default function History() {
     }
     setMealConflict(null)
     setMealReadError("")
-    toast(keepDraft ? "已核对最新内容，请检查草稿后再保存" : "已载入最新评价")
+    setMealNotice(keepDraft ? "已核对最新内容，请检查草稿后再保存" : "已载入最新评价")
   }
 
   function closeMealRating() {
@@ -734,6 +762,7 @@ export default function History() {
     if (!mealRatingMood || !session || !session.version || mealReading || mealReadError || mealConflict || session.uploading || session.saving || ratingWritePending("day", session.target)) return
     session.saving = true
     setMealSaving(true)
+    setMealNotice("")
     dayRatingMut.mutate({
       session,
       data: {
@@ -764,12 +793,13 @@ export default function History() {
       if (files.length === 0 || mealSession.current !== session || session.uploading || session.saving) return
       const remaining = 9 - session.photos.length
       if (remaining <= 0) {
-        toast.error("最多上传9张照片")
+        setMealNotice("最多上传9张照片")
         return
       }
       const toUpload = files.slice(0, remaining)
+      setMealNotice("")
       if (files.length > remaining) {
-        toast.error(`已选${files.length}张，仅上传前${remaining}张`)
+        setMealNotice(`已选${files.length}张，仅上传前${remaining}张`)
       }
       // 同一草稿一次只处理一批文件；同步占用上传状态，避免连点绕过 9 张限制。
       session.uploading = true
@@ -796,7 +826,7 @@ export default function History() {
           }
           setMealUploadRemaining(toUpload.length - index - 1)
         }
-        if (failed > 0) toast.error(lastErrMsg || `${failed}张上传失败`)
+        if (failed > 0 && mealSession.current === session) setMealNotice(lastErrMsg || `${failed}张上传失败`)
       } finally {
         session.uploading = false
         if (mealSession.current === session) setMealUploadRemaining(0)
@@ -1102,22 +1132,16 @@ export default function History() {
       {rescheduleRecord && <ReschedulePlanSheet key={rescheduleRecord.id} record={rescheduleRecord} pending={rescheduleMut.isPending} error={rescheduleMut.isError ? getUploadErrorMessage(rescheduleMut.error, "改期失败，请稍后重试") : undefined} onClose={() => setRescheduleRecord(null)} onSubmit={(data) => rescheduleMut.mutate({ record: rescheduleRecord, ...data })} />}
       {undoRecord && <UndoCompletionDialog key={undoRecord.id} record={undoRecord} pending={undoMut.isPending} error={undoMut.isError ? getUploadErrorMessage(undoMut.error, "撤销失败，请稍后重试") : undefined} onClose={() => setUndoRecord(null)} onConfirm={(entryId) => undoMut.mutate({ record: undoRecord, entryId })} />}
 
-      {ratingRecord && createPortal(
-        <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={closeRating}>
-          <div role="dialog" aria-modal="true" aria-label={`${ratingRecord.dish_name}评价`} className={`kitchen-surface kitchen-${theme} kitchen-memory-sheet bg-card w-full max-w-[640px] rounded-t-2xl animate-slide-in-up`} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeRating() }}>
-            <div className="w-9 h-1 rounded-full bg-border2 mx-auto mt-2" />
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-              <div className="text-base font-bold">{ratingRecord.dish_name} — 这道菜怎么样？</div>
-              <button onClick={closeRating} aria-label="关闭菜品评价" className="w-7 h-7 rounded-full flex items-center justify-center text-text3 hover:bg-bg text-sm">✕</button>
-            </div>
-            <div className="p-5">
-              <div className="flex justify-center gap-4 mb-5">
+      {ratingRecord && <KitchenSheet title="这道菜怎么样？" theme={theme} icon={<Star size={19} />} onClose={closeRating} className="kitchen-rating-sheet" footer={<button onClick={submitRating} disabled={!ratingMood || ratingUploading || ratingSaving} className="is-ink">{ratingUploading ? "照片上传中…" : ratingSaving ? "正在保存…" : "保存评价"}</button>}>
+        <p className="kitchen-sheet-context"><strong>{ratingRecord.dish_name}</strong><span>{ratingRecord.meal_date} · {ratingRecord.meal_type === "lunch" ? "午市" : "晚市"}</span></p>
+        {ratingNotice && <p role="alert" className="kitchen-sheet-hint mb-3 text-red">{ratingNotice}</p>}
+              <div className="grid grid-cols-3 gap-2 mb-5">
                 {moodOptions.map((m) => (
                   <button
                     key={m.key}
                     onClick={() => setRatingMood(m.key)}
                     disabled={ratingSaving}
-                    className={`flex flex-col items-center gap-1.5 p-3 px-5 rounded-2xl border-2 transition-all active:scale-90 ${ratingMood === m.key ? "border-primary bg-primary-light" : "border-transparent bg-bg"}`}
+                    className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded border-2 transition-all active:scale-90 ${ratingMood === m.key ? "border-primary bg-primary-light" : "border-transparent bg-bg"}`}
                   >
                     <span className="text-3xl">{m.emoji}</span>
                     <span className={`text-xs font-medium ${ratingMood === m.key ? "text-primary" : "text-text2"}`}>{m.label}</span>
@@ -1154,7 +1178,7 @@ export default function History() {
                 />
               </div>
               <div className="mb-5">
-                <div className="text-xs text-text2 font-semibold mb-2">📷 成品照（可选，限1张）</div>
+                <div className="text-xs text-text2 font-semibold mb-2">成品照（可选，限1张）</div>
                 {ratingPhoto ? (
                   <div className="relative w-20 h-20 rounded-[10px] overflow-hidden border border-border">
                     <img src={ratingPhoto} alt="" className="w-full h-full object-cover" />
@@ -1178,27 +1202,13 @@ export default function History() {
                   </button>
                 )}
               </div>
-              <button
-                onClick={submitRating}
-                disabled={!ratingMood || ratingUploading || ratingSaving}
-                className="w-full py-3 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-40 disabled:active:scale-100"
-              >{ratingUploading ? "照片上传中…" : ratingSaving ? "正在保存…" : "保存评价"}</button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
-      {showMealRating && createPortal(
-        <div className="fixed inset-0 z-[400] bg-black/45 backdrop-blur-sm flex items-end justify-center" onClick={closeMealRating}>
-          <div role="dialog" aria-modal="true" aria-label="整体用餐评价" className={`kitchen-surface kitchen-${theme} kitchen-memory-sheet bg-card w-full max-w-[640px] max-h-[90dvh] overflow-y-auto rounded-t-2xl animate-slide-in-up`} onClick={(e) => e.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeMealRating() }}>
-            <div className="w-9 h-1 rounded-full bg-border2 mx-auto mt-2" />
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-              <div className="text-base font-bold">🍲 这顿饭怎么样？</div>
-              <button onClick={closeMealRating} aria-label="关闭整体评价" className="w-7 h-7 rounded-full flex items-center justify-center text-text3 hover:bg-bg text-sm">✕</button>
-            </div>
-            <div className="p-5">
+      </KitchenSheet>}
+
+      {showMealRating && <KitchenSheet title="这天吃得怎么样？" theme={theme} icon={<NotebookPen size={19} />} onClose={closeMealRating} className="kitchen-rating-sheet" footer={<button onClick={submitMealRating} disabled={!mealReady || !mealRatingMood || mealUploadRemaining > 0 || mealSaving || mealReading || !!mealReadError || !!mealConflict} className="is-ink">{mealConflict ? "核对最新评价后继续" : mealUploadRemaining > 0 ? "照片上传中…" : mealSaving ? "正在保存…" : "保存评价"}</button>}>
+
               <div className="text-center mb-3 text-[13px] text-text2">评价 {mealRatingDate} 的整体用餐感受</div>
+              {mealNotice && <p role="status" className="kitchen-sheet-hint mb-3">{mealNotice}</p>}
               {mealReading && <p role="status" className="mb-4 text-center text-sm text-text3">正在读取最新评价…</p>}
               {mealReadError && <div role="alert" className="mb-4 rounded-xl border border-border bg-bg p-3 text-sm text-text2">
                 <p>{mealReadError}</p>
@@ -1219,13 +1229,13 @@ export default function History() {
                 </>}
               </section>}
               {mealReady && <fieldset disabled={mealSaving || mealReading || !!mealReadError || !!mealConflict} className="min-w-0">
-              <div className="flex justify-center gap-4 mb-5">
+              <div className="grid grid-cols-3 gap-2 mb-5">
                 {mealMoodOptions.map((m) => (
                   <button
                     key={m.key}
                     onClick={() => setMealRatingMood(m.key)}
                     disabled={mealSaving}
-                    className={`flex flex-col items-center gap-1.5 p-3 px-5 rounded-2xl border-2 transition-all active:scale-90 ${mealRatingMood === m.key ? "border-primary bg-primary-light" : "border-transparent bg-bg"}`}
+                    className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded border-2 transition-all active:scale-90 ${mealRatingMood === m.key ? "border-primary bg-primary-light" : "border-transparent bg-bg"}`}
                   >
                     <span className="text-3xl">{m.emoji}</span>
                     <span className={`text-xs font-medium ${mealRatingMood === m.key ? "text-primary" : "text-text2"}`}>{m.label}</span>
@@ -1244,7 +1254,7 @@ export default function History() {
                 />
               </div>
               <div className="mb-5">
-                <div className="text-xs text-text2 font-semibold mb-2">📷 上传照片（可选，最多9张）</div>
+                <div className="text-xs text-text2 font-semibold mb-2">上传照片（可选，最多9张）</div>
                 <div className="flex gap-2 items-start">
                   <button
                     type="button"
@@ -1271,17 +1281,9 @@ export default function History() {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={submitMealRating}
-                disabled={!mealRatingMood || mealUploadRemaining > 0 || mealSaving || mealReading || !!mealReadError || !!mealConflict}
-                className="w-full py-3 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 disabled:opacity-40 disabled:active:scale-100"
-              >{mealConflict ? "核对最新评价后继续" : mealUploadRemaining > 0 ? `照片上传中，还剩 ${mealUploadRemaining} 张…` : mealSaving ? "正在保存…" : "保存评价"}</button>
               </fieldset>}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+
+      </KitchenSheet>}
 
       {showViewer && viewerPhotos.length > 0 && createPortal(
         <PhotoViewer photos={viewerPhotos} idx={viewerIdx} setIdx={setViewerIdx} onClose={closeViewer} />,

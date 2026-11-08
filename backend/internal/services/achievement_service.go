@@ -19,10 +19,14 @@ var (
 	achievementSyncMu          sync.Mutex
 	achievementSyncTimer       *time.Timer
 	achievementRunMu           sync.Mutex
+	achievementSourceIDs       = map[uint]bool{}
 )
 
 type achievementSnapshot struct {
+	err                 error
 	totalRecords        int
+	recentRecords       int
+	recentDays          int
 	distinctDishes      map[uint]bool
 	recordDates         map[string]bool
 	mealCounts          map[string]int
@@ -114,9 +118,14 @@ func EnsureDefaultAchievements() {
 	defaultAchievementsEnsured = true
 }
 
-func QueueAutoAchievementSync() {
+func QueueAutoAchievementSync(sourceRecordIDs ...uint) {
 	achievementSyncMu.Lock()
 	defer achievementSyncMu.Unlock()
+	for _, id := range sourceRecordIDs {
+		if id > 0 {
+			achievementSourceIDs[id] = true
+		}
+	}
 
 	if achievementSyncTimer != nil {
 		achievementSyncTimer.Reset(achievementSyncDelay)
@@ -176,7 +185,30 @@ func SyncAutoAchievements() {
 
 	EnsureDefaultAchievements()
 
-	unlockable := evaluateAchievementCodes(buildAchievementSnapshot())
+	achievementSyncMu.Lock()
+	sourceIDs := achievementSourceIDs
+	achievementSourceIDs = map[uint]bool{}
+	achievementSyncMu.Unlock()
+	snapshot := buildAchievementSnapshot()
+	if snapshot.err != nil {
+		return
+	}
+	unlockable := evaluateAchievementCodes(snapshot)
+	// 多条记录合并或历史回算时无法唯一归因，宁可不填出处。
+	var source models.MealRecord
+	withoutSource := map[string]bool{}
+	if len(sourceIDs) == 1 {
+		for id := range sourceIDs {
+			if database.DB.Scopes(EatenRecords).First(&source, id).Error == nil {
+				baseline := buildAchievementSnapshot(id)
+				if baseline.err == nil {
+					withoutSource = evaluateAchievementCodes(baseline)
+				} else {
+					source = models.MealRecord{}
+				}
+			}
+		}
+	}
 	if len(unlockable) == 0 {
 		return
 	}
@@ -210,10 +242,14 @@ func SyncAutoAchievements() {
 		if !unlockable[a.Code] || unlockedMap[a.ID] {
 			continue
 		}
-		newUnlocks = append(newUnlocks, models.UserAchievement{
-			AchievementID: a.ID,
-			UnlockedAt:    now,
-		})
+		award := models.UserAchievement{AchievementID: a.ID, UnlockedAt: now}
+		if source.ID > 0 && !withoutSource[a.Code] {
+			award.SourceRecordID = source.ID
+			award.SourceDishName = source.DishName
+			award.SourceMealDate = source.MealDate
+			award.SourceMealType = source.MealType
+		}
+		newUnlocks = append(newUnlocks, award)
 		unlockedMap[a.ID] = true
 	}
 	if len(newUnlocks) > 0 {
@@ -221,7 +257,7 @@ func SyncAutoAchievements() {
 	}
 }
 
-func buildAchievementSnapshot() achievementSnapshot {
+func buildAchievementSnapshot(excludeRecordIDs ...uint) achievementSnapshot {
 	s := achievementSnapshot{
 		distinctDishes:     map[uint]bool{},
 		recordDates:        map[string]bool{},
@@ -238,9 +274,12 @@ func buildAchievementSnapshot() achievementSnapshot {
 	}
 
 	var allDishes []models.Dish
-	database.DB.Unscoped().
+	if err := database.DB.Unscoped().
 		Select("id", "name", "image_url", "images", "video_url", "category", "taste", "ingredients", "steps", "cook_time", "difficulty", "deleted_at").
-		Find(&allDishes)
+		Find(&allDishes).Error; err != nil {
+		s.err = err
+		return s
+	}
 	dishByID := make(map[uint]models.Dish, len(allDishes))
 	for _, d := range allDishes {
 		dishByID[d.ID] = d
@@ -266,10 +305,13 @@ func buildAchievementSnapshot() achievementSnapshot {
 
 	// 成就只按已经吃过的记录算：保存的明日菜单是计划，不能提前解锁"晚餐小队"之类的成就
 	var records []models.MealRecord
-	database.DB.Scopes(EatenRecords).
+	if err := database.DB.Scopes(EatenRecords).Where("id NOT IN ?", append([]uint{0}, excludeRecordIDs...)).
 		Select("id", "dish_id", "meal_type", "meal_date", "remark", "mood", "created_at").
 		Order("created_at ASC, id ASC").
-		Find(&records)
+		Find(&records).Error; err != nil {
+		s.err = err
+		return s
+	}
 	s.totalRecords = len(records)
 
 	mealByDate := map[string]map[string]bool{}
@@ -278,6 +320,9 @@ func buildAchievementSnapshot() achievementSnapshot {
 	seasonCounts := map[string]int{}
 	recordInfos := make([]achievementRecordInfo, 0, len(records))
 
+	recentDates := map[string]bool{}
+	recentStart, _ := parseMealDate(TodayDate())
+	recentStart = recentStart.AddDate(0, 0, -13)
 	for _, r := range records {
 		s.distinctDishes[r.DishID] = true
 		s.recordDates[r.MealDate] = true
@@ -306,6 +351,10 @@ func buildAchievementSnapshot() achievementSnapshot {
 
 		info := achievementRecordInfo{record: r, dish: dish}
 		if parsed, ok := parseMealDate(r.MealDate); ok {
+			if !parsed.Before(recentStart) {
+				s.recentRecords++
+				recentDates[r.MealDate] = true
+			}
 			info.date = parsed
 			info.hasDate = true
 			if isWeekend(parsed) {
@@ -329,6 +378,7 @@ func buildAchievementSnapshot() achievementSnapshot {
 		recordInfos = append(recordInfos, info)
 	}
 
+	s.recentDays = len(recentDates)
 	for _, meals := range mealByDate {
 		if meals["lunch"] && meals["dinner"] {
 			s.fullDayCount++
@@ -353,8 +403,11 @@ func buildAchievementSnapshot() achievementSnapshot {
 	s.longestDateStreak = longestDateStreak(s.recordDates)
 
 	var ratings []models.DayRating
-	database.DB.Select("meal_date", "home_mood", "mood", "remark", "photos").
-		Where("meal_date <= ?", TodayDate()).Find(&ratings)
+	if err := database.DB.Select("meal_date", "home_mood", "mood", "remark", "photos").
+		Where("meal_date <= ?", TodayDate()).Find(&ratings).Error; err != nil {
+		s.err = err
+		return s
+	}
 	for _, r := range ratings {
 		// 首页心情是独立记录，不要求当天完成做饭；用餐评价与饭照才跟随已吃状态。
 		if strings.TrimSpace(r.HomeMood) != "" {
@@ -377,13 +430,22 @@ func buildAchievementSnapshot() achievementSnapshot {
 	}
 
 	var n int64
-	database.DB.Model(&models.Favorite{}).Count(&n)
+	if err := database.DB.Model(&models.Favorite{}).Count(&n).Error; err != nil {
+		s.err = err
+		return s
+	}
 	s.favoriteCount = int(n)
-	database.DB.Model(&models.ShoppingCheck{}).Where("checked = ?", true).Count(&n)
+	if err := database.DB.Model(&models.ShoppingCheck{}).Where("checked = ?", true).Count(&n).Error; err != nil {
+		s.err = err
+		return s
+	}
 	s.shoppingChecked = int(n)
 	// 库存成就按"不同食材"计（同一种番茄买 10 批不算 10 项），口径与买菜清单"家中有"一致
 	if counts, err := availableBatchCounts(); err == nil {
 		s.inventoryCount = len(counts)
+	} else {
+		s.err = err
+		return s
 	}
 
 	type eventCount struct {
@@ -391,10 +453,13 @@ func buildAchievementSnapshot() achievementSnapshot {
 		Count     int
 	}
 	var eventCounts []eventCount
-	database.DB.Model(&models.AchievementEvent{}).
+	if err := database.DB.Model(&models.AchievementEvent{}).
 		Select("event_type, count(*) as count").
 		Group("event_type").
-		Find(&eventCounts)
+		Find(&eventCounts).Error; err != nil {
+		s.err = err
+		return s
+	}
 	for _, event := range eventCounts {
 		s.eventCounts[event.EventType] = event.Count
 	}
@@ -446,135 +511,133 @@ func collectDishRecordStats(s *achievementSnapshot, d models.Dish) {
 
 func evaluateAchievementCodes(s achievementSnapshot) map[string]bool {
 	codes := map[string]bool{}
-	unlock := func(code string, ok bool) {
-		if ok {
+	for code, progress := range measureAchievementProgress(s) {
+		if progress.Current >= progress.Target {
 			codes[code] = true
 		}
 	}
-
-	unlock("first_pick", s.totalRecords >= 1)
-	unlock("record_3", s.totalRecords >= 3)
-	unlock("record_10", s.totalRecords >= 10)
-	unlock("record_20", s.totalRecords >= 20)
-	unlock("record_50", s.totalRecords >= 50)
-	unlock("record_100", s.totalRecords >= 100)
-	unlock("record_200", s.totalRecords >= 200)
-
-	unlock("distinct_3", len(s.distinctDishes) >= 3)
-	unlock("distinct_10", len(s.distinctDishes) >= 10)
-	unlock("distinct_30", len(s.distinctDishes) >= 30)
-	unlock("distinct_50", len(s.distinctDishes) >= 50)
-	unlock("hundred_dishes", len(s.distinctDishes) >= 100)
-
-	unlock("streak_3", s.longestDateStreak >= 3)
-	unlock("seven_days", s.longestDateStreak >= 7)
-	unlock("streak_14", s.longestDateStreak >= 14)
-	unlock("streak_30", s.longestDateStreak >= 30)
-
-	unlock("lunch_5", s.mealCounts["lunch"] >= 5)
-	unlock("lunch_20", s.mealCounts["lunch"] >= 20)
-	unlock("lunch_50", s.mealCounts["lunch"] >= 50)
-	unlock("dinner_5", s.mealCounts["dinner"] >= 5)
-	unlock("dinner_20", s.mealCounts["dinner"] >= 20)
-	unlock("dinner_50", s.mealCounts["dinner"] >= 50)
-	unlock("full_day_once", s.fullDayCount >= 1)
-	unlock("full_day_3", s.fullDayCount >= 3)
-	unlock("full_day_10", s.fullDayCount >= 10)
-
-	unlock("home_food_5", s.categoryCounts["家常菜"] >= 5)
-	unlock("home_chef", s.categoryCounts["家常菜"] >= 20)
-	unlock("sichuan_rookie", s.categoryCounts["川菜"] >= 5)
-	unlock("sichuan_master", s.categoryCounts["川菜"] >= 10)
-	unlock("cantonese_rookie", s.categoryCounts["粤菜"] >= 5)
-	unlock("cantonese_master", s.categoryCounts["粤菜"] >= 10)
-	unlock("soup_lover", s.categoryCounts["汤品"] >= 5)
-	unlock("soup_master", s.categoryCounts["汤品"] >= 15)
-	unlock("quick_cook", s.consecutiveQuick >= 3)
-	unlock("quick_master", s.quickCount >= 20)
-	unlock("staple_runner", s.categoryCounts["主食"] >= 10)
-	unlock("snack_collector", s.categoryCounts["小食"] >= 5)
-	unlock("foodie_explorer", len(s.recordCategories) >= 5)
-	unlock("category_collector", len(s.recordCategories) >= 7)
-
-	unlock("easy_10", s.difficultyCounts["easy"] >= 10)
-	unlock("medium_10", s.difficultyCounts["medium"] >= 10)
-	unlock("hard_first", s.difficultyCounts["hard"] >= 1)
-	unlock("hard_10", s.difficultyCounts["hard"] >= 10)
-	unlock("weekend_chef", s.weekendHard)
-	unlock("sunday_feast", s.weekendRecords >= 3)
-
-	unlock("lightning_10", s.fastCount >= 10)
-	unlock("slow_cook_5", s.slowCount >= 5)
-	unlock("midnight_snack", s.hasMidnightRecord)
-	unlock("breakfast_king", s.hasBreakfastRecord)
-
-	unlock("spicy_life", s.consecutiveSpicy >= 3)
-	unlock("spicy_master_10", s.spicyCount >= 10)
-	unlock("sweet_tooth_5", s.sweetCount >= 5)
-	unlock("sour_explorer_5", s.sourCount >= 5)
-	unlock("umami_10", s.umamiCount >= 10)
-	unlock("light_diet_10", s.lightCount >= 10)
-	unlock("healthy_life", s.healthyCount >= 10)
-	unlock("taste_master", len(s.tasteSet) >= 6)
-
-	unlock("first_review", len(s.recordMoodCounts) > 0 || s.recordRemarkCount > 0)
-	unlock("review_5", countMapValues(s.recordMoodCounts) >= 5)
-	unlock("review_20", countMapValues(s.recordMoodCounts) >= 20)
-	unlock("meal_remark_10", s.recordRemarkCount >= 10)
-	unlock("yummy_10", s.recordMoodCounts["yum"] >= 10)
-	unlock("not_again_3", s.recordMoodCounts["no"] >= 3)
-	unlock("first_day_rating", s.dayRatingCount >= 1)
-	unlock("day_rating_7", s.dayRatingCount >= 7)
-
-	unlock("happy_home_5", s.homeMoodCounts["happy"] >= 5)
-	unlock("tired_care_3", s.homeMoodCounts["tired"] >= 3)
-	unlock("lazy_easy_3", s.homeMoodCounts["lazy"] >= 3)
-	unlock("spicy_mood_5", s.homeMoodCounts["spicy"] >= 5)
-	unlock("healthy_mood_5", s.homeMoodCounts["healthy"] >= 5)
-	unlock("seasonal_eater", len(s.seasonSet) >= 4)
-
-	unlock("first_photo", s.photoCount >= 1)
-	unlock("photo_wall_3_days", s.photoDays >= 3)
-	unlock("photo_collector_10", s.photoCount >= 10)
-	unlock("photo_album_30", s.photoCount >= 30)
-
-	unlock("first_favorite", s.favoriteCount >= 1)
-	unlock("favorite_5", s.favoriteCount >= 5)
-	unlock("favorite_10", s.favoriteCount >= 10)
-
-	unlock("first_shopping_check", s.shoppingChecked >= 1)
-	unlock("shopping_10", s.shoppingChecked >= 10)
-	unlock("shopping_50", s.shoppingChecked >= 50)
-	unlock("pantry_first", s.inventoryCount >= 1)
-	unlock("pantry_10", s.inventoryCount >= 10)
-
-	recommendCount := s.eventCounts["recommend_lunch"] + s.eventCounts["recommend_dinner"] + s.eventCounts["recommend_mood"] + s.eventCounts["blind_box"]
-	unlock("first_recommend", recommendCount >= 1)
-	unlock("recommend_10", recommendCount >= 10)
-	unlock("recommend_50", recommendCount >= 50)
-	unlock("lunch_recommend_10", s.eventCounts["recommend_lunch"] >= 10)
-	unlock("dinner_recommend_10", s.eventCounts["recommend_dinner"] >= 10)
-	unlock("mood_recommend_5", s.eventCounts["recommend_mood"] >= 5)
-	unlock("blind_box_first", s.eventCounts["blind_box"] >= 1)
-	unlock("blind_box_10", s.eventCounts["blind_box"] >= 10)
-	unlock("week_plan_first", s.eventCounts["week_plan"] >= 1)
-	unlock("week_plan_5", s.eventCounts["week_plan"] >= 5)
-
-	unlock("dish_library_10", s.dishLibraryCount >= 10)
-	unlock("dish_library_30", s.dishLibraryCount >= 30)
-	unlock("dish_library_50", s.dishLibraryCount >= 50)
-	unlock("image_library_10", s.imageDishCount >= 10)
-	unlock("video_recipe_1", s.videoDishCount >= 1)
-	unlock("ingredient_ready_10", s.ingredientDishCount >= 10)
-	unlock("rich_recipe_10", s.stepDishCount >= 10)
-	unlock("category_builder_5", len(s.libraryCategorySet) >= 5)
-
-	unlock("top_dish_5", s.topDishCount >= 5)
-	unlock("top_dish_10", s.topDishCount >= 10)
-	unlock("month_regular_10", s.maxMonthRecords >= 10)
-	unlock("season_regular_30", s.maxSeasonRecords >= 30)
-
 	return codes
+}
+
+func boolProgress(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func measureAchievementProgress(s achievementSnapshot) map[string]AchievementProgress {
+	result := map[string]AchievementProgress{}
+	measure := func(code string, current, target int, unit, series string) {
+		result[code] = AchievementProgress{Current: current, Target: target, Unit: unit, Series: series}
+	}
+	recommendCount := s.eventCounts["recommend_lunch"] + s.eventCounts["recommend_dinner"] + s.eventCounts["recommend_mood"] + s.eventCounts["blind_box"]
+	measure("first_pick", s.totalRecords, 1, "道", "下厨记录")
+	measure("record_3", s.totalRecords, 3, "道", "下厨记录")
+	measure("record_10", s.totalRecords, 10, "道", "下厨记录")
+	measure("record_20", s.totalRecords, 20, "道", "下厨记录")
+	measure("record_50", s.totalRecords, 50, "道", "下厨记录")
+	measure("record_100", s.totalRecords, 100, "道", "下厨记录")
+	measure("record_200", s.totalRecords, 200, "道", "下厨记录")
+	measure("distinct_3", len(s.distinctDishes), 3, "种", "尝鲜图鉴")
+	measure("distinct_10", len(s.distinctDishes), 10, "种", "尝鲜图鉴")
+	measure("distinct_30", len(s.distinctDishes), 30, "种", "尝鲜图鉴")
+	measure("distinct_50", len(s.distinctDishes), 50, "种", "尝鲜图鉴")
+	measure("hundred_dishes", len(s.distinctDishes), 100, "种", "尝鲜图鉴")
+	measure("streak_3", s.longestDateStreak, 3, "天", "连续开饭")
+	measure("seven_days", s.longestDateStreak, 7, "天", "连续开饭")
+	measure("streak_14", s.longestDateStreak, 14, "天", "连续开饭")
+	measure("streak_30", s.longestDateStreak, 30, "天", "连续开饭")
+	measure("lunch_5", s.mealCounts["lunch"], 5, "道", "午市记录")
+	measure("lunch_20", s.mealCounts["lunch"], 20, "道", "午市记录")
+	measure("lunch_50", s.mealCounts["lunch"], 50, "道", "午市记录")
+	measure("dinner_5", s.mealCounts["dinner"], 5, "道", "晚市记录")
+	measure("dinner_20", s.mealCounts["dinner"], 20, "道", "晚市记录")
+	measure("dinner_50", s.mealCounts["dinner"], 50, "道", "晚市记录")
+	measure("full_day_once", s.fullDayCount, 1, "天", "一日两餐")
+	measure("full_day_3", s.fullDayCount, 3, "天", "一日两餐")
+	measure("full_day_10", s.fullDayCount, 10, "天", "一日两餐")
+	measure("home_food_5", s.categoryCounts["家常菜"], 5, "道", "家常味道")
+	measure("home_chef", s.categoryCounts["家常菜"], 20, "道", "家常味道")
+	measure("sichuan_rookie", s.categoryCounts["川菜"], 5, "道", "川味收藏")
+	measure("sichuan_master", s.categoryCounts["川菜"], 10, "道", "川味收藏")
+	measure("cantonese_rookie", s.categoryCounts["粤菜"], 5, "道", "粤味收藏")
+	measure("cantonese_master", s.categoryCounts["粤菜"], 10, "道", "粤味收藏")
+	measure("soup_lover", s.categoryCounts["汤品"], 5, "道", "暖汤收藏")
+	measure("soup_master", s.categoryCounts["汤品"], 15, "道", "暖汤收藏")
+	measure("quick_cook", s.consecutiveQuick, 3, "道", "")
+	measure("quick_master", s.quickCount, 20, "道", "")
+	measure("staple_runner", s.categoryCounts["主食"], 10, "道", "")
+	measure("snack_collector", s.categoryCounts["小食"], 5, "道", "")
+	measure("foodie_explorer", len(s.recordCategories), 5, "种", "分类探索")
+	measure("category_collector", len(s.recordCategories), 7, "种", "分类探索")
+	measure("easy_10", s.difficultyCounts["easy"], 10, "道", "")
+	measure("medium_10", s.difficultyCounts["medium"], 10, "道", "")
+	measure("hard_first", s.difficultyCounts["hard"], 1, "道", "硬菜挑战")
+	measure("hard_10", s.difficultyCounts["hard"], 10, "道", "硬菜挑战")
+	measure("weekend_chef", boolProgress(s.weekendHard), 1, "道", "")
+	measure("sunday_feast", s.weekendRecords, 3, "道", "")
+	measure("lightning_10", s.fastCount, 10, "道", "")
+	measure("slow_cook_5", s.slowCount, 5, "道", "")
+	measure("midnight_snack", boolProgress(s.hasMidnightRecord), 1, "道", "")
+	measure("breakfast_king", boolProgress(s.hasBreakfastRecord), 1, "道", "")
+	measure("spicy_life", s.consecutiveSpicy, 3, "道", "")
+	measure("spicy_master_10", s.spicyCount, 10, "道", "")
+	measure("sweet_tooth_5", s.sweetCount, 5, "道", "")
+	measure("sour_explorer_5", s.sourCount, 5, "道", "")
+	measure("umami_10", s.umamiCount, 10, "道", "")
+	measure("light_diet_10", s.lightCount, 10, "道", "")
+	measure("healthy_life", s.healthyCount, 10, "道", "")
+	measure("taste_master", len(s.tasteSet), 6, "种", "味觉探索")
+	measure("first_review", boolProgress(len(s.recordMoodCounts) > 0 || s.recordRemarkCount > 0), 1, "道", "")
+	measure("review_5", countMapValues(s.recordMoodCounts), 5, "道", "认真点评")
+	measure("review_20", countMapValues(s.recordMoodCounts), 20, "道", "认真点评")
+	measure("meal_remark_10", s.recordRemarkCount, 10, "条", "饭后有感")
+	measure("yummy_10", s.recordMoodCounts["yum"], 10, "道", "")
+	measure("not_again_3", s.recordMoodCounts["no"], 3, "道", "")
+	measure("first_day_rating", s.dayRatingCount, 1, "天", "整日复盘")
+	measure("day_rating_7", s.dayRatingCount, 7, "天", "整日复盘")
+	measure("happy_home_5", s.homeMoodCounts["happy"], 5, "天", "")
+	measure("tired_care_3", s.homeMoodCounts["tired"], 3, "天", "")
+	measure("lazy_easy_3", s.homeMoodCounts["lazy"], 3, "天", "")
+	measure("spicy_mood_5", s.homeMoodCounts["spicy"], 5, "天", "")
+	measure("healthy_mood_5", s.homeMoodCounts["healthy"], 5, "天", "")
+	measure("seasonal_eater", len(s.seasonSet), 4, "季", "四季饭桌")
+	measure("first_photo", s.photoCount, 1, "张", "饭桌相册")
+	measure("photo_wall_3_days", s.photoDays, 3, "天", "回忆上墙")
+	measure("photo_collector_10", s.photoCount, 10, "张", "饭桌相册")
+	measure("photo_album_30", s.photoCount, 30, "张", "饭桌相册")
+	measure("first_favorite", s.favoriteCount, 1, "道", "私房收藏")
+	measure("favorite_5", s.favoriteCount, 5, "道", "私房收藏")
+	measure("favorite_10", s.favoriteCount, 10, "道", "私房收藏")
+	measure("first_shopping_check", s.shoppingChecked, 1, "项", "买菜清单")
+	measure("shopping_10", s.shoppingChecked, 10, "项", "买菜清单")
+	measure("shopping_50", s.shoppingChecked, 50, "项", "买菜清单")
+	measure("pantry_first", s.inventoryCount, 1, "种", "冰箱库存")
+	measure("pantry_10", s.inventoryCount, 10, "种", "冰箱库存")
+	measure("first_recommend", recommendCount, 1, "次", "点菜灵感")
+	measure("recommend_10", recommendCount, 10, "次", "点菜灵感")
+	measure("recommend_50", recommendCount, 50, "次", "点菜灵感")
+	measure("lunch_recommend_10", s.eventCounts["recommend_lunch"], 10, "次", "")
+	measure("dinner_recommend_10", s.eventCounts["recommend_dinner"], 10, "次", "")
+	measure("mood_recommend_5", s.eventCounts["recommend_mood"], 5, "次", "")
+	measure("blind_box_first", s.eventCounts["blind_box"], 1, "次", "惊喜盲盒")
+	measure("blind_box_10", s.eventCounts["blind_box"], 10, "次", "惊喜盲盒")
+	measure("week_plan_first", s.eventCounts["week_plan"], 1, "次", "每周计划")
+	measure("week_plan_5", s.eventCounts["week_plan"], 5, "次", "每周计划")
+	measure("dish_library_10", s.dishLibraryCount, 10, "道", "菜谱书")
+	measure("dish_library_30", s.dishLibraryCount, 30, "道", "菜谱书")
+	measure("dish_library_50", s.dishLibraryCount, 50, "道", "菜谱书")
+	measure("image_library_10", s.imageDishCount, 10, "道", "")
+	measure("video_recipe_1", s.videoDishCount, 1, "道", "")
+	measure("ingredient_ready_10", s.ingredientDishCount, 10, "道", "")
+	measure("rich_recipe_10", s.stepDishCount, 10, "道", "")
+	measure("category_builder_5", len(s.libraryCategorySet), 5, "种", "菜单分类")
+	measure("top_dish_5", s.topDishCount, 5, "次", "本命菜")
+	measure("top_dish_10", s.topDishCount, 10, "次", "本命菜")
+	measure("month_regular_10", s.maxMonthRecords, 10, "道", "月度常客")
+	measure("season_regular_30", s.maxSeasonRecords, 30, "道", "季度食客")
+	return result
 }
 
 func hasDishImage(d models.Dish) bool {

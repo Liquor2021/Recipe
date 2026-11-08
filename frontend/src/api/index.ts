@@ -1,6 +1,6 @@
 import { api, apiFresh, getUploadErrorMessage } from "./client"
 import defaultClient from "./client"
-import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, ConsumptionMatch, DietReport, ConsumptionExpectation, RecordConsumptionHistory } from "@/types"
+import type { Dish, DishInput, PaginatedData, PickResult, BlindBoxResult, MealRecord, StatsData, DashboardData, Achievement, AchievementDetails, WeekPlan, ShoppingCategory, ShoppingCategoryOverride, Holiday, Quote, DayRating, PhotoWall, DishRecordsResponse, DishCategoryCounts, FavoriteOverview, InventoryBatch, FridgeMatch, ConsumptionMatch, DietReport, ConsumptionExpectation, RecordConsumptionHistory } from "@/types"
 
 export const dishesApi = {
   list: (params?: Record<string, string>) =>
@@ -84,6 +84,7 @@ export const quotesApi = {
 }
 
 export const achievementsApi = {
+  details: (id: number) => apiFresh<AchievementDetails>("GET", "/achievements/" + id),
   listFresh: async () => {
     const data = await apiFresh<Achievement[] | null>("GET", "/achievements")
     return Array.isArray(data) ? data : []

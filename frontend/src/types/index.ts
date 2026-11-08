@@ -130,6 +130,15 @@ export interface Achievement {
   created_at: string
 }
 
+export interface AchievementDetails {
+  is_unlocked: boolean
+  unlocked_at: string | null
+  progress: { current: number; target: number; unit: string; series: string } | null
+  series: { id: number; name: string; is_unlocked: boolean; target: number }[]
+  source: { record_id: number; dish_name: string; meal_date: string; meal_type: string; available: boolean } | null
+  estimate: { days: number; recent_records: number; window_days: number } | null
+}
+
 export interface WeekDayPlan {
   date: string
   day_name: string

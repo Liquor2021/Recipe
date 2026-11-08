@@ -2,7 +2,9 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fridgeApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { parsePortionScale, portionLabel } from "@/lib/portions"
-import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
+import KitchenSheet from "@/components/KitchenSheet"
+import { Refrigerator, Check } from "lucide-react"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 import type { ConsumptionBatch, ConsumptionSlot, Dish } from "@/types"
 import toast from "react-hot-toast"
 
@@ -18,8 +20,8 @@ function expiryText(daysLeft: number): string {
 // 后端按菜谱主料精确/别名匹配出真实库存批次（/fridge/consumption），
 // 默认只勾选每项主料里最早到期的未过期批次；同类不同部位（菜要排骨、冰箱是五花肉）
 // 只列出供参考、不默认勾选，避免扣错食材。
-// zIndexClass：在全屏层（如做菜模式 z-[300]）上打开时需要更高的层级
-export default function ConsumeInventorySheet({ dish, recordId, portionScale = 1, onClose, zIndexClass }: { dish: Dish | null; recordId: number; portionScale?: number; onClose: () => void; zIndexClass?: string }) {
+export default function ConsumeInventorySheet({ dish, recordId, portionScale = 1, onClose }: { dish: Dish | null; recordId: number; portionScale?: number; onClose: () => void }) {
+  const theme = useKitchenTheme((state) => state.theme)
   const scale = parsePortionScale(portionScale)
   const { data, isError, isFetching, refetch } = useQuery({
     queryKey: ["fridge-consumption", recordId, dish?.id, scale],
@@ -35,23 +37,21 @@ export default function ConsumeInventorySheet({ dish, recordId, portionScale = 1
   if (!dish || recordId <= 0) return null
   if (isError || !data || data.dish_id !== dish.id || data.slots.length === 0) {
     return (
-      <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5" zIndexClass={zIndexClass}>
-        {({ close }) => <>
-          <div className="text-lg font-bold mb-2">更新冰箱</div>
-          <p className="text-sm text-text2 mb-4" role="status">{isError ? "暂时无法读取库存，可以重试，或稍后从记录页补扣。" : !data ? "正在读取库存…" : "冰箱里没有匹配这道菜的食材。这顿已记为吃过，之后可从记录页补扣库存。"}</p>
-          <div className="flex gap-2">
-            <button className="flex-1 min-h-11 rounded-full border border-border text-sm" onClick={close}>关闭</button>
-            {isError && <button disabled={isFetching} className="flex-1 min-h-11 rounded-full bg-primary text-white text-sm disabled:opacity-50" onClick={() => void refetch()}>重新读取</button>}
-          </div>
-        </>}
-      </AnimatedBottomSheet>
+      <KitchenSheet title="更新冰箱" theme={theme} icon={<Refrigerator size={19} />} onClose={onClose} footer={<>
+        <button onClick={onClose}>关闭</button>
+        {isError && <button disabled={isFetching} className="is-ink" onClick={() => void refetch()}>重新读取</button>}
+      </>}>
+        <p className="kitchen-sheet-context"><strong>{dish.name}</strong><span>本次做菜 {portionLabel(scale)}</span></p>
+        <p className="kitchen-sheet-hint" role="status">{isError ? "暂时无法读取库存，可以重试，或稍后从记录页补扣。" : !data ? "正在读取库存…" : "冰箱里没有匹配这道菜的食材。这顿已记为吃过，之后可从记录页补扣库存。"}</p>
+      </KitchenSheet>
     )
   }
   // 菜品或份量改变时重置勾选状态及剩余数量，不能沿用上一次的扣减建议。
-  return <ConsumeSheetBody key={`${recordId}:${dish.id}:${scale}:${data.slots.map(s => s.batches.map(b => b.updated_at).join()).join()}`} dish={dish} recordId={recordId} portionScale={scale} slots={data.slots} onClose={onClose} onRefresh={() => void refetch()} refreshing={isFetching} zIndexClass={zIndexClass} />
+  return <ConsumeSheetBody key={`${recordId}:${dish.id}:${scale}:${data.slots.map(s => s.batches.map(b => b.updated_at).join()).join()}`} dish={dish} recordId={recordId} portionScale={scale} slots={data.slots} onClose={onClose} onRefresh={() => void refetch()} refreshing={isFetching} />
 }
 
-function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefresh, refreshing, zIndexClass }: { dish: Dish; recordId: number; portionScale: number; slots: ConsumptionSlot[]; onClose: () => void; onRefresh: () => void; refreshing: boolean; zIndexClass?: string }) {
+function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefresh, refreshing }: { dish: Dish; recordId: number; portionScale: number; slots: ConsumptionSlot[]; onClose: () => void; onRefresh: () => void; refreshing: boolean }) {
+  const theme = useKitchenTheme((state) => state.theme)
   const qc = useQueryClient()
   const batchById = new Map(slots.flatMap((s) => s.batches.map((b) => [b.batch_id, b] as const)))
   const [selected, setSelected] = useState<number[]>(() =>
@@ -85,7 +85,7 @@ function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefr
         void qc.invalidateQueries({ queryKey: [key] })
       }
       const parts = [removed > 0 ? `移出 ${removed} 批` : "", updated > 0 ? `更新 ${updated} 批剩余量` : ""].filter(Boolean)
-      toast.success(parts.length > 0 ? `🧊 冰箱已${parts.join("，")}` : "这些批次已经不在冰箱里了")
+      toast.success(parts.length > 0 ? `冰箱已${parts.join("，")}` : "这些批次已经不在冰箱里了")
       onClose()
     },
     onError: (err) => toast.error(getUploadErrorMessage(err, "更新冰箱失败，稍后再试")),
@@ -129,20 +129,21 @@ function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefr
   }
 
   return (
-    <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5" zIndexClass={zIndexClass}>
-      {({ close }) => (
-        <>
-          <div className="text-lg font-extrabold mb-0.5">🧊 做完{dish.name}，更新一下冰箱？</div>
-          <div className="text-sm font-semibold text-primary mb-1">本次做菜 {portionLabel(portionScale)}</div>
-          <div className="text-xs text-text3 mb-4">勾选用到的批次：用完的移出冰箱，还剩的填写剩余量。扣减明细会保存在这顿的记录中。</div>
-          <div className="flex flex-col gap-3.5 mb-4 max-h-[50vh] overflow-y-auto">
+    <KitchenSheet title="更新冰箱" theme={theme} icon={<Refrigerator size={19} />} onClose={onClose} closeDisabled={consumeMut.isPending} footer={<>
+      <button onClick={onClose} disabled={consumeMut.isPending}>稍后再扣</button>
+      <button className="is-ink" disabled={chosen.length === 0 || blankPartial || consumeMut.isPending || refreshing} onClick={submit}>{consumeMut.isPending ? "正在更新…" : "更新冰箱"}{chosen.length > 0 ? " (" + chosen.length + ")" : ""}</button>
+    </>}>
+      <p className="kitchen-sheet-context"><strong>{dish.name}</strong><span>本次做菜 {portionLabel(portionScale)}</span></p>
+      <p className="kitchen-sheet-hint mb-4">勾选实际用到的批次，选择整批用完或填写剩余量。扣减明细会保存在这顿的记录中。</p>
+      <fieldset disabled={consumeMut.isPending || refreshing} className="min-w-0">
+          <div className="flex flex-col gap-3.5 mb-4">
             {slots.map((slot) => (
               <div key={slot.requested_name}>
                 <div className="text-xs font-semibold text-text2 mb-1.5">
                   {slot.requested_name}
                   {slot.amount && <span className="font-normal text-text3"> · 菜谱用量 {slot.amount}</span>}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid gap-2">
                   {slot.batches.map((b) => (
                     <BatchChip key={b.batch_id} batch={b} active={selected.includes(b.batch_id)} onToggle={() => toggle(b.batch_id)} />
                   ))}
@@ -161,6 +162,7 @@ function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefr
               </div>
             ))}
           </div>
+      </fieldset>
           {hasSimilar && (
             <div className="text-[11px] text-text3 mb-4">「相近」是同类的其他部位（如菜要排骨、冰箱里是五花肉），确实用了再勾选</div>
           )}
@@ -168,26 +170,8 @@ function ConsumeSheetBody({ dish, recordId, portionScale, slots, onClose, onRefr
             {getUploadErrorMessage(consumeMut.error, "更新失败")}
             <button type="button" disabled={refreshing} onClick={onRefresh} className="block min-h-11 text-primary underline">刷新库存后重试</button>
           </div>}
-          <div className="flex gap-2.5">
-            <button
-              type="button"
-              onClick={close}
-              className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border2 text-text2 active:scale-96 transition-all"
-            >
-              稍后再扣
-            </button>
-            <button
-              type="button"
-              disabled={chosen.length === 0 || blankPartial || consumeMut.isPending || refreshing}
-              onClick={submit}
-              className="flex-1 py-2.5 rounded-full text-sm font-bold bg-primary text-white transition-all active:scale-96 disabled:opacity-50"
-            >
-              更新冰箱 {chosen.length > 0 ? `(${chosen.length})` : ""}
-            </button>
-          </div>
-        </>
-      )}
-    </AnimatedBottomSheet>
+      <p role="status" className="kitchen-sheet-hint">{chosen.length === 0 ? "选完批次可更新" : blankPartial ? "请填好选中批次的剩余数量" : "已选 " + chosen.length + " 批 · 未勾选的库存保持不变"}</p>
+    </KitchenSheet>
   )
 }
 
@@ -200,14 +184,14 @@ function RemainingRow({ batch, remaining, onPartial, onChange }: {
 }) {
   const partial = remaining !== undefined
   const option = (active: boolean) =>
-    `px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all active:scale-95 ${
+    `min-h-9 px-2.5 py-1 rounded text-[11px] font-semibold border transition-all active:scale-95 ${
       active ? "border-primary bg-primary-light text-primary" : "border-border bg-card text-text3"
     }`
   return (
-    <div className="mt-2 flex items-center gap-1.5 text-xs text-text2">
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-text2">
       <span className="min-w-0 truncate">{batch.stock_name}{batch.quantity ? ` ${batch.quantity}` : ""}</span>
-      <button type="button" onClick={() => onPartial(false)} className={option(!partial)}>用完</button>
-      <button type="button" onClick={() => onPartial(true)} className={option(partial)}>还剩</button>
+      <button type="button" aria-pressed={!partial} onClick={() => onPartial(false)} className={option(!partial)}>整批用完</button>
+      <button type="button" aria-pressed={partial} onClick={() => onPartial(true)} className={option(partial)}>还剩</button>
       {partial && (
         <input
           value={remaining}
@@ -215,7 +199,7 @@ function RemainingRow({ batch, remaining, onPartial, onChange }: {
           placeholder="如：2个、半袋"
           maxLength={50}
           aria-label={`${batch.stock_name}剩余数量`}
-          className="w-24 h-7 rounded-lg border border-border bg-bg px-2 text-xs outline-none focus:border-primary"
+          className="w-28 h-9 rounded border border-border bg-bg px-2 text-xs outline-none focus:border-primary"
         />
       )}
     </div>
@@ -228,12 +212,11 @@ function BatchChip({ batch, active, onToggle }: { batch: ConsumptionBatch; activ
     <button
       type="button"
       onClick={onToggle}
-      className={`px-3 py-1.5 rounded-full text-[13px] font-medium border-[1.5px] transition-all active:scale-95 ${
-        active ? "border-mint bg-mint-light text-[#2E8577]" : "border-border2 bg-card text-text3"
-      }`}
+      aria-pressed={active}
+      className={"kitchen-batch-row " + (active ? "is-selected" : "")}
     >
-      {active ? "✓ " : ""}
-      {batch.kind === "similar" && <span className="mr-1 text-[11px] font-bold text-[#C8A23C]">相近</span>}
+      <span className="kitchen-batch-check" aria-hidden="true">{active && <Check size={14} />}</span>
+      {batch.kind === "similar" && <span className="mr-1 text-[11px] font-bold text-yellow">相近</span>}
       {batch.stock_name}
       {batch.quantity && <span className="ml-1 opacity-80">{batch.quantity}</span>}
       {expiry && <span className={`ml-1 text-[11px] ${batch.days_left < 0 ? "text-red" : "opacity-70"}`}>{expiry}</span>}

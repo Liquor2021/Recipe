@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"ninimenu/internal/database"
 	"ninimenu/internal/models"
 	"ninimenu/internal/services"
 	"ninimenu/internal/utils"
+	"strconv"
 	"strings"
 	"time"
 
@@ -105,6 +107,29 @@ func GetAchievements(c *gin.Context) {
 	}
 
 	utils.Success(c, result)
+}
+
+func GetAchievementDetails(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		utils.BadRequest(c, "成就编号无效")
+		return
+	}
+	var achievement models.Achievement
+	if err := database.DB.First(&achievement, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			utils.NotFound(c, "成就不存在")
+		} else {
+			utils.InternalError(c, "读取成就失败")
+		}
+		return
+	}
+	details, err := services.GetAchievementDetails(achievement)
+	if err != nil {
+		utils.InternalError(c, "读取成就详情失败，请稍后重试")
+		return
+	}
+	utils.Success(c, details)
 }
 
 func UnlockAchievement(c *gin.Context) {

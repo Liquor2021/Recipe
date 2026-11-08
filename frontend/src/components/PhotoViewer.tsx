@@ -1,5 +1,8 @@
 import { useEffect, useRef } from "react"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
+import { Image, ChevronLeft, ChevronRight } from "lucide-react"
+import KitchenSheet from "@/components/KitchenSheet"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 
 interface PhotoViewerProps {
   photos: string[]
@@ -9,6 +12,7 @@ interface PhotoViewerProps {
 }
 
 export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewerProps) {
+  const theme = useKitchenTheme((state) => state.theme)
   const layerRef = useRef<HTMLDivElement>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   const startX = useRef<number | null>(null)
@@ -19,7 +23,7 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   useEffect(() => {
     idxRef.current = idx
     targetIdxRef.current = idx
-    gsap.set(stripRef.current, { x: -idx * window.innerWidth })
+    gsap.set(stripRef.current, { x: 0, xPercent: -idx * 100 })
   }, [idx])
 
   useEffect(() => {
@@ -32,7 +36,7 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
       gsap.killTweensOf(strip)
       const target = targetIdxRef.current
       idxRef.current = target
-      gsap.set(strip, { x: -target * window.innerWidth })
+      gsap.set(strip, { x: 0, xPercent: -target * 100 })
       setIdx(target)
     }
     window.addEventListener("resize", alignAfterResize)
@@ -43,30 +47,18 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   }, [setIdx])
 
   const { contextSafe } = useGSAP(() => {
-    gsap.set(stripRef.current, { x: -idxRef.current * window.innerWidth })
-    gsap.fromTo(layerRef.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: motionDuration(0.2) })
+    gsap.set(stripRef.current, { x: 0, xPercent: -idxRef.current * 100 })
   }, { scope: layerRef })
 
-  // contextSafe 只是把回调包一层（登记到 GSAP 上下文便于卸载时清理），ref 在点击/滑动时才读；
-  // react-hooks/refs 把"把读 ref 的函数传给 contextSafe"当成渲染时读 ref，属误报
-  // eslint-disable-next-line react-hooks/refs
-  const close = contextSafe(() => {
-    gsap.to(layerRef.current, {
-      autoAlpha: 0,
-      duration: motionDuration(0.18),
-      ease: "power1.out",
-      onComplete: onClose,
-    })
-  })
-
-  // eslint-disable-next-line react-hooks/refs -- 同上，contextSafe 回调在事件里执行
+  // eslint-disable-next-line react-hooks/refs -- contextSafe 回调在事件里执行
   const snapTo = contextSafe((newIdx: number, animate: boolean) => {
     if (!stripRef.current) return
     startX.current = null
     targetIdxRef.current = newIdx
     animating.current = true
     gsap.to(stripRef.current, {
-      x: -newIdx * window.innerWidth,
+      x: 0,
+      xPercent: -newIdx * 100,
       duration: animate ? motionDuration(0.3) : 0,
       ease: "power3.out",
       overwrite: true,
@@ -81,7 +73,8 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   function applyTransform(offset: number) {
     if (!stripRef.current) return
     gsap.set(stripRef.current, {
-      x: -idxRef.current * window.innerWidth + offset,
+      x: offset,
+      xPercent: -idxRef.current * 100,
       force3D: true,
     })
   }
@@ -119,16 +112,18 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   }
 
   return (
-    <div ref={layerRef} className="fixed inset-0 z-500 flex flex-col bg-black/92 select-none">
-      <button onClick={close} aria-label="关闭图片预览" className="absolute top-4 right-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-lg text-white">x</button>
-      {photos.length > 1 && (
-        <>
-          <button onClick={prev} className="absolute left-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-lg text-white active:bg-white/25">←</button>
-          <button onClick={next} className="absolute right-3 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-lg text-white active:bg-white/25">→</button>
-        </>
-      )}
+    <KitchenSheet title="饭桌照片" theme={theme} icon={<Image size={19} />} onClose={onClose} closeLabel="关闭图片预览" className="kitchen-photo-viewer" footer={<>
+      {photos.length > 1 && <button onClick={prev} aria-label="上一张照片"><ChevronLeft size={18} /></button>}
+      <span role="status" className="kitchen-sheet-hint">{idx + 1} / {photos.length}</span>
+      {photos.length > 1 && <button onClick={next} aria-label="下一张照片"><ChevronRight size={18} /></button>}
+    </>}>
       <div
-        className="flex-1 overflow-hidden"
+        ref={layerRef}
+        className="kitchen-photo-stage"
+        tabIndex={0}
+        role="group"
+        aria-label="照片预览，可按左右方向键切换"
+        onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); prev() } if (event.key === "ArrowRight") { event.preventDefault(); next() } }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -137,17 +132,15 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
       >
         <div
           ref={stripRef}
-          className="flex h-full will-change-transform"
-          style={{ width: `${photos.length * 100}vw` }}
+          className="flex h-full w-full will-change-transform"
         >
           {photos.map((src, i) => (
-            <div key={i} className="flex shrink-0 items-center justify-center" style={{ width: "100vw" }}>
-              <img src={src} alt="" className="max-h-[75vh] max-w-[90vw] rounded-lg object-contain" draggable={false} />
+            <div key={i} className="flex shrink-0 items-center justify-center" style={{ width: "100%" }}>
+              <img src={src} alt={"饭桌照片 " + (i + 1)} className="kitchen-photo-print" draggable={false} />
             </div>
           ))}
         </div>
       </div>
-      <div className="pb-6 text-center text-[13px] text-white/50">{idx + 1} / {photos.length}</div>
-    </div>
+    </KitchenSheet>
   )
 }

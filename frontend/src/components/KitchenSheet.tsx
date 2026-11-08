@@ -11,6 +11,11 @@ interface KitchenSheetProps {
   children: ReactNode
   className?: string
   hideHeading?: boolean
+  icon?: ReactNode
+  footer?: ReactNode
+  bodyClassName?: string
+  closeDisabled?: boolean
+  closeLabel?: string
 }
 
 function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
@@ -22,7 +27,7 @@ function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
 
 // The parent mounts this sheet while open. Native modal dialogs keep keyboard
 // focus inside the sheet and make the rest of the page inert.
-export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false }: KitchenSheetProps) {
+export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false, icon, footer, bodyClassName = "", closeDisabled = false, closeLabel = "关闭" }: KitchenSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const backdropPointerDown = useRef(false)
   const titleId = useId()
@@ -43,22 +48,24 @@ export default function KitchenSheet({ title, theme, onClose, children, classNam
       ref={dialogRef}
       className={`kitchen-surface kitchen-${theme} kitchen-sheet ${className}`}
       aria-labelledby={titleId}
-      onCancel={(event) => { event.preventDefault(); onClose() }}
+      onCancel={(event) => { event.preventDefault(); if (!closeDisabled) onClose() }}
       onPointerDown={(event) => { backdropPointerDown.current = isBackdrop(event) }}
       onPointerUp={(event) => {
         const shouldClose = backdropPointerDown.current && isBackdrop(event)
         backdropPointerDown.current = false
-        if (shouldClose) onClose()
+        if (shouldClose && !closeDisabled) onClose()
       }}
       onPointerCancel={() => { backdropPointerDown.current = false }}
     >
       <header className="kitchen-sheet-heading">
+        {icon && <span className="kitchen-sheet-stamp" aria-hidden="true">{icon}</span>}
         <h2 id={titleId} className={hideHeading ? "sr-only" : undefined}>{title}</h2>
-        <button type="button" className="kitchen-icon-button" aria-label="关闭" onClick={onClose} autoFocus>
+        <button type="button" className="kitchen-icon-button" aria-label={closeLabel} disabled={closeDisabled} onClick={onClose} autoFocus>
           <X size={20} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </header>
-      {children}
+      <div className={`kitchen-sheet-body ${bodyClassName}`}>{children}</div>
+      {footer && <footer className="kitchen-sheet-actions">{footer}</footer>}
     </dialog>,
     document.body,
   )

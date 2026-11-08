@@ -99,11 +99,6 @@
   .history-month-summary p { flex-basis: 100%; }
 }
 /* 旧评价逻辑原样保留，表单容器换成贴边的纸抽屉。 */
-.kitchen-memory-sheet { position: relative; border: 1px solid var(--k-line); border-bottom: 0; border-radius: 13px 13px 0 0; background: var(--k-card); color: var(--k-ink); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
-.kitchen-memory-sheet::before { content: ""; display: block; width: 78px; height: 13px; margin: 6px auto 4px; background: color-mix(in srgb, var(--k-kraft) 85%, transparent); border-inline: 1px dashed var(--k-line); transform: rotate(-3deg); }
-.kitchen-memory-sheet button { min-height: 40px; border-radius: 5px; }
-.kitchen-memory-sheet textarea { background: var(--k-paper); }
-.kitchen-memory-sheet [class*="text-base"][class*="font-bold"] { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; }
 
 /* 相册不再给每一天加一层卡片，让照片直接贴在纸面上。 */
 .memory-album-intro { margin: 1px 0 24px; text-align: center; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 13px; color: var(--k-muted); }
@@ -195,3 +190,11 @@
 @media (prefers-reduced-motion: reduce) {
   .memory-ink-button, .memory-polaroid { transition: none; }
 }
+
+.kitchen-rating-sheet textarea { background: var(--k-paper); }
+.history-ledger-row { animation: history-ledger-refresh 240ms ease-out; }
+@keyframes history-ledger-refresh { from { opacity: .35; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .history-ledger-row { animation: none; } }
+
+.history-ledger-row.is-achievement-source { background: color-mix(in srgb, var(--k-green) 6%, var(--k-card)); }
+.history-source-note { margin-bottom: 9px; color: var(--k-green); font-size: 12px; }

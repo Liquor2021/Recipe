@@ -32,9 +32,13 @@ type Achievement struct {
 }
 
 type UserAchievement struct {
-	ID            uint      `json:"id" gorm:"primaryKey"`
-	AchievementID uint      `json:"achievement_id" gorm:"not null;index"`
-	UnlockedAt    time.Time `json:"unlocked_at"`
+	ID             uint      `json:"id" gorm:"primaryKey"`
+	AchievementID  uint      `json:"achievement_id" gorm:"not null;index"`
+	UnlockedAt     time.Time `json:"unlocked_at"`
+	SourceRecordID uint
+	SourceDishName string
+	SourceMealDate string
+	SourceMealType string
 }
 
 type AchievementEvent struct {

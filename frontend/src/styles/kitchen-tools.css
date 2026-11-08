@@ -82,7 +82,8 @@
 .k-plan-shopping-link { margin-left: auto; color: var(--k-red); flex-shrink: 0; font-size: 11px; }
 .k-plan-save-bar { position: fixed; z-index: 110; left: 50%; bottom: 0; transform: translateX(-50%); width: 100%; max-width: 680px; padding: 12px 18px; background: var(--k-card); border: 1px solid var(--k-line); border-bottom: 0; border-radius: 10px 10px 0 0; box-shadow: 0 -4px 16px rgb(43 37 32 / 6%); }
 .k-plan-save-button { min-height: 48px; flex-shrink: 0; padding-inline: 18px; font-size: 14px; }
-.k-plan-picker[open] { display: flex; flex-direction: column; height: min(760px, 88dvh); overflow: hidden; }
+.k-plan-picker[open] { height: min(760px, 88dvh); }
+.k-plan-picker > .kitchen-sheet-body { display: flex; flex: 1; flex-direction: column; overflow: hidden; }
 .k-plan-picker > .kitchen-sheet-heading { flex-shrink: 0; }
 .k-plan-picker .k-tool-field { padding-left: 40px; }
 .k-plan-picker-results { overscroll-behavior: contain; }

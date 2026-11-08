@@ -413,7 +413,7 @@ function DishPickerModal({
   )
 
   return (
-    <KitchenSheet title={`挑选${meta.shortLabel}`} theme={theme} onClose={onClose} className="k-plan-picker">
+    <KitchenSheet title={`挑选${meta.shortLabel}`} theme={theme} onClose={onClose} className="k-plan-picker" icon={<Search size={19} />} footer={<button className="is-ink" onClick={onClose}>选好了 · 本餐 {selectedCount} 道</button>}>
         <div className="shrink-0 pt-2">
           <p className="mb-3 text-[12px] text-text3">{total} 道可选</p>
           <p className="k-plan-picker-count" role="status" aria-live="polite">

@@ -63,6 +63,7 @@ func Setup(r *gin.Engine) {
 			app.POST("/pick/blind-box", handlers.PickBlindBox)
 			app.GET("/quotes", handlers.GetQuotes)
 			app.GET("/achievements", handlers.GetAchievements)
+			app.GET("/achievements/:id", handlers.GetAchievementDetails)
 			app.POST("/achievements/:id/unlock", handlers.UnlockAchievement)
 			app.POST("/achievements/:id/toggle", handlers.ToggleAchievement)
 			app.GET("/stats", handlers.GetStats)

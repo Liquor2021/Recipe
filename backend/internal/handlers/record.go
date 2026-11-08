@@ -400,7 +400,11 @@ func CreateRecord(c *gin.Context) {
 		}
 		return
 	}
-	services.QueueAutoAchievementSync()
+	if record.Status == models.MealCompleted {
+		services.QueueAutoAchievementSync(record.ID)
+	} else {
+		services.QueueAutoAchievementSync()
+	}
 	utils.Success(c, record)
 }
 
@@ -530,6 +534,7 @@ func UpdateRecord(c *gin.Context) {
 		return
 	}
 	var transitionError string
+	becameCompleted := false
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&record, id).Error; err != nil {
 			return err
@@ -563,6 +568,7 @@ func UpdateRecord(c *gin.Context) {
 				return errors.New(transitionError)
 			}
 		}
+		becameCompleted = before.Status != models.MealCompleted && record.Status == models.MealCompleted
 		if err := tx.Save(&record).Error; err != nil {
 			return err
 		}
@@ -578,7 +584,11 @@ func UpdateRecord(c *gin.Context) {
 		}
 		return
 	}
-	services.QueueAutoAchievementSync()
+	if becameCompleted {
+		services.QueueAutoAchievementSync(record.ID)
+	} else {
+		services.QueueAutoAchievementSync()
+	}
 	utils.Success(c, record)
 }
 
