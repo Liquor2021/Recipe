@@ -2,33 +2,34 @@
 .kitchen-dishes .kitchen-page-header-inner { gap: 8px; }
 .kitchen-dishes .kitchen-page-meta { color: var(--k-red); border-color: var(--k-red); white-space: nowrap; }
 .kitchen-dishes-add { background: var(--k-ink); color: var(--k-card); border-color: var(--k-ink); }
-.kitchen-dishes-search { margin: 0 20px 10px; display: flex; align-items: center; gap: 9px; min-height: 46px; padding-inline: 12px 3px; border: 1px dashed var(--k-line); border-radius: 6px; background: var(--k-card); color: var(--k-muted); }
+.kitchen-dishes-search { margin: 0 20px 10px; display: flex; align-items: center; gap: 9px; min-height: 46px; padding-inline: 12px 8px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); color: var(--k-muted); }
 .kitchen-dishes-search input { flex: 1; width: 0; min-width: 0; background: none; outline: 0; padding-block: 10px; font-size: 14px; color: var(--k-ink); }
-.kitchen-dishes-search:focus-within { border-color: var(--k-red); outline: 2px solid color-mix(in srgb, var(--k-red) 15%, transparent); }
+.kitchen-dishes .kitchen-dishes-search input:focus-visible { outline: none; }
+.kitchen-dishes-search:focus-within { border-color: var(--k-red); outline: 2px solid color-mix(in srgb, var(--k-red) 14%, transparent); }
 .kitchen-dishes-search input::-webkit-search-cancel-button { display: none; }
-.kitchen-dishes-search button { width: 40px; height: 40px; display: grid; place-items: center; }
-.kitchen-filter-strip { display: flex; align-items: flex-start; gap: 5px; flex-shrink: 0; padding-inline: 20px; }
-.kitchen-filter-strip > [role] { flex: 1; min-width: 0; overscroll-behavior-x: contain; }
-.kitchen-filter-arrow { display: grid; place-items: center; width: 26px; height: 38px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 4px; background: var(--k-card); color: var(--k-muted); }
-.kitchen-filter-arrow:disabled { opacity: .3; }
+.kitchen-dishes-search button { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; border: 0; background: none; color: var(--k-faint); }
+.kitchen-dishes .kitchen-filter-strip { padding-inline: 20px; }
 .kitchen-category-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 1px 1px 9px; }
-.kitchen-category-tabs button { min-height: 38px; padding: 7px 13px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 5px; font-size: 13px; color: var(--k-muted); }
+.kitchen-category-tabs button { min-height: 32px; padding: 4px 11px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 6px; font-size: 12.5px; color: var(--k-muted); }
 .kitchen-category-tabs button[aria-current="true"] { background: var(--k-ink); border-color: var(--k-ink); color: var(--k-card); font-weight: 700; }
 .kitchen-taste-tabs { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 3px 1px 7px; }
-.kitchen-taste-tabs button { flex-shrink: 0; min-height: 40px; min-width: 40px; padding: 5px 12px; color: var(--k-muted); border: 1px dashed var(--k-line); border-radius: 999px; background: var(--k-card); font-size: 12px; }
+.kitchen-taste-tabs button { flex-shrink: 0; min-height: 30px; min-width: 0; padding: 3px 10px; color: var(--k-muted); border: 1px dashed var(--k-line); border-radius: 999px; background: var(--k-card); font-size: 11.5px; }
 .kitchen-taste-tabs button.is-active { color: var(--k-card); background: var(--k-ink); border-color: var(--k-ink); border-style: solid; }
-.kitchen-dishes-scroll { padding-inline: 20px; }
+.kitchen-dishes-scroll { min-height: 0; padding-inline: 20px; scrollbar-width: none; }
+.kitchen-dishes-scroll::-webkit-scrollbar { display: none; }
 .kitchen-dish-group { display: flex; align-items: center; gap: 5px; padding: 9px 0 2px; font: 700 13px "Kitchen Serif", SimSun, serif; color: var(--k-muted); }
 .kitchen-dish-group > span:first-child { color: var(--k-red); }
 .kitchen-dish-row { display: flex; gap: 14px; align-items: center; padding: 13px 1px; border-bottom: 1px dotted var(--k-line); }
-.kitchen-dish-photo { flex-shrink: 0; width: 72px; height: 76px; padding: 4px 4px 9px; background: var(--k-card); border: 1px solid var(--k-line); border-radius: 3px; transform: rotate(-3deg); box-shadow: var(--k-shadow); overflow: hidden; }
-.kitchen-dish-row:nth-child(even) .kitchen-dish-photo { transform: rotate(2deg); }
+.kitchen-dish-photo { flex-shrink: 0; width: 72px; height: 76px; padding: 4px 4px 9px; background: var(--k-card); border: 1px solid var(--k-line); border-radius: 3px; transform: rotate(-1.5deg); box-shadow: var(--k-shadow); overflow: hidden; }
+.kitchen-dish-row:nth-child(even) .kitchen-dish-photo { transform: rotate(1.5deg); }
 .kitchen-dish-info { flex: 1; min-width: 0; }
 .kitchen-dish-title { display: flex; align-items: center; gap: 2px; }
 .kitchen-dish-title > button:first-child { min-width: 0; text-align: left; font: 900 17px/1.5 "Kitchen Serif", SimSun, serif; overflow-wrap: anywhere; }
 .kitchen-dish-heart { display: grid; place-items: center; flex: 0 0 auto; width: 38px; height: 38px; color: var(--k-faint); }
 .kitchen-dish-heart.is-active { color: var(--k-red); }
-.kitchen-dish-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; color: var(--k-muted); font-size: 11px; line-height: 1.6; }
+.kitchen-dish-meta { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; padding-block: 2px; color: var(--k-muted); font-size: 11px; line-height: 1.6; white-space: nowrap; }
+.kitchen-dish-meta > span { flex-shrink: 0; }
+.kitchen-dish-meta > span:last-child { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; }
 .kitchen-dish-difficulty { padding: 1px 5px; border: 1px solid currentColor; border-radius: 3px; transform: rotate(-2deg); white-space: nowrap; }
 .kitchen-dish-meals { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 7px; }
 .kitchen-meal-toggle { display: inline-flex; gap: 5px; align-items: center; justify-content: center; min-height: 40px; padding: 7px 13px; border: 1px dashed var(--k-line); border-radius: 4px; color: var(--k-muted); font-size: 12px; }
@@ -43,4 +44,5 @@
 .kitchen-picked-label span { color: var(--k-muted); font-size: 11px; white-space: nowrap; }
 .kitchen-picked-bar > button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 9px 12px; border-radius: 5px; background: var(--k-ink); color: var(--k-card); font: 700 14px "Kitchen Serif", SimSun, serif; }
 @media (hover: hover) { .kitchen-dish-title > button:hover, .kitchen-dish-heart:hover { color: var(--k-red); } .kitchen-meal-toggle:hover:not(:disabled) { border-style: solid; } }
-@media (max-width: 360px) { .kitchen-dishes-search { margin-inline: 16px; } .kitchen-category-tabs, .kitchen-dishes-scroll, .kitchen-taste-wrap { padding-inline: 16px; } .kitchen-dish-row { gap: 10px; } .kitchen-dish-photo { width: 62px; height: 68px; } .kitchen-dish-title > button:first-child { font-size: 16px; } .kitchen-picked-bar { gap: 7px; } .kitchen-picked-label { flex-direction: column; } }
+@media (max-width: 400px) { .kitchen-dish-meta > .kitchen-dish-taste { display: none; } }
+@media (max-width: 360px) { .kitchen-dishes-search { margin-inline: 16px; } .kitchen-dishes .kitchen-filter-strip, .kitchen-dishes-scroll { padding-inline: 16px; } .kitchen-dish-row { gap: 10px; } .kitchen-dish-photo { width: 62px; height: 68px; } .kitchen-dish-title > button:first-child { font-size: 16px; } .kitchen-picked-bar { gap: 7px; } .kitchen-picked-label { flex-direction: column; } }

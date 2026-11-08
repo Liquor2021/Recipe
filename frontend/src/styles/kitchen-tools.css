@@ -85,8 +85,14 @@
 .k-plan-picker[open] { height: min(760px, 88dvh); }
 .k-plan-picker > .kitchen-sheet-body { display: flex; flex: 1; flex-direction: column; overflow: hidden; }
 .k-plan-picker > .kitchen-sheet-heading { flex-shrink: 0; }
-.k-plan-picker .k-tool-field { padding-left: 40px; }
-.k-plan-picker-results { overscroll-behavior: contain; }
+.k-plan-picker .k-tool-field { padding-left: 40px; border-style: solid; }
+.k-plan-picker-categories { display: flex; gap: 8px; padding: 1px 1px 12px; }
+.k-plan-picker-categories .k-tool-chip { min-height: 32px; padding-inline: 11px; font-size: 12px; }
+.k-plan-picker-results { overscroll-behavior: contain; scrollbar-width: none; }
+.k-plan-picker-results::-webkit-scrollbar { display: none; }
+.k-plan-picker-meta { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--k-muted); font-size: 11px; }
+.k-plan-picker .k-tool-button { white-space: nowrap; }
+.k-plan-picker .k-tool-polaroid { transform: rotate(-1.5deg); }
 .k-plan-picker-count { margin: -6px 0 12px; color: var(--k-muted); font-size: 12px; }
 .k-plan-picker-count > span { color: var(--k-amber); }
 
@@ -136,6 +142,12 @@
   .k-tool-button.is-ink:hover:not(:disabled) { background: var(--k-red); color: var(--k-card); }
   .k-tool-text-button:hover:not(:disabled), .k-tool-icon-button:hover:not(:disabled), .k-fridge-batch-remove:hover:not(:disabled) { color: var(--k-red); }
   .k-more-entry:hover strong, .k-fridge-recipe-open:hover .k-fridge-recipe-title { color: var(--k-red); }
+}
+@media (max-width: 360px) {
+  .k-plan-picker .k-tool-button { min-height: 32px; padding: 0 10px; font-size: 11px; gap: 4px; }
+  .k-plan-picker .k-tool-polaroid { width: 38px; height: 42px; padding: 3px 3px 6px; }
+  .k-plan-picker-row { gap: 8px; }
+  .k-plan-picker-row .k-tool-section-title { font-size: 15px; }
 }
 @media (max-width: 359px) {
   .k-plan-paper { padding-inline: 12px; }

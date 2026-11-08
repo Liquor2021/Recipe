@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode, type RefObject, type UIEventHandler } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { horizontalWheelTarget } from "@/lib/horizontalScroll"
+import "@/styles/horizontal-filter-strip.css"
 
 interface HorizontalFilterStripProps {
   children: ReactNode
@@ -9,7 +10,7 @@ interface HorizontalFilterStripProps {
   className: string
   scrollRef: RefObject<HTMLDivElement | null>
   itemCount: number
-  onScroll: UIEventHandler<HTMLDivElement>
+  onScroll?: UIEventHandler<HTMLDivElement>
 }
 
 export default function HorizontalFilterStrip({ children, label, role, className, scrollRef, itemCount, onScroll }: HorizontalFilterStripProps) {
@@ -48,7 +49,7 @@ export default function HorizontalFilterStrip({ children, label, role, className
   const overflow = edges.back || edges.forward
 
   return (
-    <div className="kitchen-filter-strip" data-no-swipe>
+    <div className="kitchen-filter-strip" data-no-swipe data-overflow-start={edges.back} data-overflow-end={edges.forward}>
       {/* 保留箭头占位，避免首次测量后宽度变化夹断从详情页恢复的滚动位置。 */}
       <button type="button" className="kitchen-filter-arrow" style={{ visibility: overflow ? "visible" : "hidden" }} aria-label={`向左滚动${label}`} disabled={!edges.back} onClick={() => move(-1)}><ChevronLeft size={15} aria-hidden="true" /></button>
       <div ref={scrollRef} role={role} aria-label={label} className={className} onScroll={onScroll}>{children}</div>

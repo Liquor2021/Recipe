@@ -4,6 +4,7 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient, useMutationSta
 import { dishesApi, favoritesApi, settingsApi, recordsApi, getUploadErrorMessage } from "@/api"
 import { asArray } from "@/lib/utils"
 import { readDishListSession, saveDishListSession, useDishListSession } from "@/lib/dishListSession"
+import { restoreListScroll } from "@/lib/listScroll"
 import { hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, pendingMealSelectionKey, reconcileMealSelection } from "@/lib/mealSelection"
 import KitchenTodayMenu from "@/components/KitchenTodayMenu"
 import HorizontalFilterStrip from "@/components/HorizontalFilterStrip"
@@ -72,6 +73,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const sidebarRef = useRef<HTMLDivElement>(null)
   const tasteRef = useRef<HTMLDivElement>(null)
   const restoreScrollRef = useRef<number | null>(session.scrollTop)
+  const leavingListRef = useRef(false)
   const mealEditLocks = useRef(new Set<string>())
   const pendingMealKeys = useMutationState({
     filters: { mutationKey: mealSelectionMutationKey, status: "pending" },
@@ -149,6 +151,10 @@ function DishListPage({ today, generation }: { today: string; generation: number
   const paramsKey = JSON.stringify(queryParams)
   const previousParamsRef = useRef(paramsKey)
   useLayoutEffect(() => {
+    if (location.pathname === "/dishes") leavingListRef.current = false
+  }, [location.key, location.pathname])
+
+  useLayoutEffect(() => {
     const container = listRef.current
     if (!container) return
     if (previousParamsRef.current !== paramsKey) {
@@ -157,12 +163,23 @@ function DishListPage({ today, generation }: { today: string; generation: number
       container.scrollTop = 0
       saveDishListSession(today, { scrollTop: 0 })
     }
-    const target = restoreScrollRef.current
-    if (target === null || !dishesData) return
-    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
-    container.scrollTop = Math.min(target, maxScroll)
-    if (maxScroll >= target || !hasNextPage) restoreScrollRef.current = null
-  }, [dishesData, hasNextPage, paramsKey, today])
+    if (!dishesData || location.pathname !== "/dishes" || leavingListRef.current) return
+    const restore = () => {
+      const target = restoreScrollRef.current
+      if (target === null) return
+      if (restoreListScroll(container, target, hasNextPage)) {
+        restoreScrollRef.current = null
+        saveDishListSession(today, { scrollTop: container.scrollTop })
+      }
+      else if (container.clientHeight > 0 && !isError) loadMore()
+    }
+    restore()
+    if (restoreScrollRef.current === null) return
+    // 懒加载/隐藏页签可能还没有可用高度；不要把这一帧的 0 当作恢复成功。
+    const observer = new ResizeObserver(restore)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [dishesData, hasNextPage, isError, loadMore, location.pathname, paramsKey, today])
 
   useEffect(() => {
     saveDishListSession(today, { search, activeCategory, activeTaste })
@@ -182,12 +199,6 @@ function DishListPage({ today, generation }: { today: string; generation: number
     if (itemBounds.left < bounds.left) sidebar.scrollLeft += itemBounds.left - bounds.left
     else if (itemBounds.right > bounds.right) sidebar.scrollLeft += itemBounds.right - bounds.right
   }, [activeCategory, sidebarCats])
-
-  useEffect(() => {
-    // If the cache expired during a long detail visit, refill only as far as the
-    // saved position. Failed requests wait for the explicit retry button.
-    if (restoreScrollRef.current !== null && dishesData && !isError) loadMore()
-  }, [dishesData, isError, loadMore])
 
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -320,6 +331,16 @@ function DishListPage({ today, generation }: { today: string; generation: number
     saveDishListSession(today, { scrollTop: 0 })
   }
 
+  function openDish(path: string) {
+    // 点击后立即保存，避免路由卸载前尚未派发的 scroll 事件漏掉最后一段位置。
+    const container = listRef.current
+    if (container && restoreScrollRef.current === null) {
+      saveDishListSession(today, { scrollTop: container.scrollTop })
+    }
+    leavingListRef.current = true
+    navigate(path)
+  }
+
   const totalPicked = todayLunchIds.size + todayDinnerIds.size
 
   const dishMap = useMemo(() => {
@@ -398,7 +419,9 @@ function DishListPage({ today, generation }: { today: string; generation: number
               role="region"
               aria-label="菜品列表"
               onScroll={(event) => {
-                if (restoreScrollRef.current === null) saveDishListSession(today, { scrollTop: event.currentTarget.scrollTop })
+                if (location.pathname === "/dishes" && !leavingListRef.current && restoreScrollRef.current === null && event.currentTarget.clientHeight > 0) {
+                  saveDishListSession(today, { scrollTop: event.currentTarget.scrollTop })
+                }
               }}
               className="kitchen-dishes-scroll flex-1 overflow-y-auto scrollbar-none overscroll-y-contain"
             >
@@ -454,7 +477,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
                         // The ref is read only when this click callback runs, never during render.
                         // eslint-disable-next-line react-hooks/refs
                         onToggleMeal={(mt) => toggleMeal(d, mt)}
-                        onClick={() => navigate(`/dishes/${d.id}`)}
+                        onClick={() => openDish(`/dishes/${d.id}`)}
                       />
                     ))}
                   </div>
@@ -474,7 +497,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
                     // The ref is read only when this click callback runs, never during render.
                     // eslint-disable-next-line react-hooks/refs
                     onToggleMeal={(mt) => toggleMeal(d, mt)}
-                    onClick={() => navigate(`/dishes/${d.id}`)}
+                    onClick={() => openDish(`/dishes/${d.id}`)}
                   />
                 ))
               )}
@@ -519,7 +542,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
           onCancel={cancelMeal}
           onOpenDish={(record) => {
             setShowTodayModal(false)
-            navigate(`/dishes/${record.dish_id}?record_id=${record.id}`)
+            openDish(`/dishes/${record.dish_id}?record_id=${record.id}`)
           }}
         />
       )}
@@ -555,7 +578,7 @@ function DishRow({ dish, isFav, isLunch, isDinner, lunchPending, dinnerPending, 
           <span>{dish.category}</span>
           {dish.cook_time > 0 && <span>{dish.cook_time}分钟</span>}
           <span className={`kitchen-dish-difficulty ${diffColor(dish.difficulty)}`}>火候·{diffLabel(dish.difficulty)}</span>
-          {dish.taste && <span>{dish.taste}</span>}
+          {dish.taste && <span className="kitchen-dish-taste">{dish.taste}</span>}
         </div>
         <div className="kitchen-dish-meals">
           <MealToggle active={isLunch} pending={lunchPending} disabled={mealDisabled} label="午餐" onClick={() => onToggleMeal("lunch")} color="primary" />

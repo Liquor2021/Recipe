@@ -22,6 +22,7 @@ node --test scripts/*.test.*
 | `cook-timer.test.mjs` | 做菜倒计时延迟纠偏、暂停继续、总进度保持、到时与重置边界 |
 | `dish-editor-session.test.mjs` | 编辑器上传乱序、替换失败、离开页面隔离、上传与保存互斥、服务器版本识别 |
 | `meal-selection.test.mjs` | 点菜请求互斥、跨页面等待、不同菜独立更新、失败恢复与并发刷新交接 |
+| `list-scroll.test.mjs` | 列表返回位置、隐藏容器等待布局、缓存失效后的分页补齐、结果缩短及滚动赋值失败 |
 
 逻辑测试直接导入 TypeScript helper；认证测试使用项目已安装的 TypeScript 编译并加载实际客户端源码，模拟网络和存储。所有测试均不读写真实用户数据。
 

@@ -1,0 +1,10 @@
+.kitchen-filter-strip { display: flex; align-items: flex-start; gap: 5px; flex-shrink: 0; }
+.kitchen-filter-strip > [role] {
+  flex: 1; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+  mask-image: linear-gradient(to right, var(--filter-start, #000), #000 14px, #000 calc(100% - 14px), var(--filter-end, #000));
+}
+.kitchen-filter-strip > [role]::-webkit-scrollbar { display: none; }
+.kitchen-filter-strip[data-overflow-start="true"] { --filter-start: transparent; }
+.kitchen-filter-strip[data-overflow-end="true"] { --filter-end: transparent; }
+.kitchen-filter-arrow { display: grid; place-items: center; width: 26px; height: 32px; flex-shrink: 0; border: 1px solid var(--k-line); border-radius: 4px; background: var(--k-card); color: var(--k-muted); }
+.kitchen-filter-arrow:disabled { opacity: .3; }

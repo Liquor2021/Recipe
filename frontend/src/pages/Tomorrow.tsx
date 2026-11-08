@@ -12,6 +12,7 @@ import { getTomorrow, nextLocalMidnightDelay } from "@/lib/tomorrowDate"
 import DishImage from "@/components/DishImage"
 import PageHeader from "@/components/PageHeader"
 import KitchenSheet from "@/components/KitchenSheet"
+import HorizontalFilterStrip from "@/components/HorizontalFilterStrip"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import toast from "react-hot-toast"
 import "@/styles/kitchen-tools.css"
@@ -377,6 +378,7 @@ function DishPickerModal({
   const [search, setSearch] = useState("")
   const [keyword, setKeyword] = useState("")
   const [category, setCategory] = useState("全部")
+  const categoryStripRef = useRef<HTMLDivElement>(null)
   const meta = mealMeta[meal]
   const theme = useKitchenTheme(s => s.theme)
   const selectedCount = [...selectedMealById.values()].filter(selectedMeal => selectedMeal === meal).length
@@ -431,7 +433,7 @@ function DishPickerModal({
             />
           </label>
 
-          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-none scroll-fade-x">
+          <HorizontalFilterStrip scrollRef={categoryStripRef} role="navigation" label="挑选菜品分类" itemCount={categories.length} className="k-plan-picker-categories">
             {categories.map((item) => (
               <button
                 key={item}
@@ -442,7 +444,7 @@ function DishPickerModal({
                 {item}
               </button>
             ))}
-          </div>
+          </HorizontalFilterStrip>
         </div>
 
         <div className="k-plan-picker-results min-h-0 flex-1 overflow-y-auto pb-4">
@@ -467,26 +469,24 @@ function DishPickerModal({
                 const selectedHere = selectedMeal === meal
                 const selectedOther = selectedMeal && selectedMeal !== meal
                 return (
-                  <div key={dish.id} className="flex items-center gap-3 py-3">
+                  <div key={dish.id} className="k-plan-picker-row flex items-center gap-3 py-3">
                     <div className="k-tool-polaroid">
                       <DishImage dish={dish} className="h-full w-full" emojiSize="text-[27px]" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="k-tool-section-title truncate">{dish.name}</div>
-                      <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-text3">
-                        {dish.category && <span className="max-w-[84px] truncate">{dish.category}</span>}
-                        {dish.category && <span className="h-[3px] w-[3px] rounded-full bg-text4" />}
-                        <span>{cookTimeText(dish)}</span>
-                        <span className="h-[3px] w-[3px] rounded-full bg-text4" />
-                        <span>{diffLabel(dish.difficulty)}</span>
+                      <div className="k-tool-section-title truncate" title={dish.name}>{dish.name}</div>
+                      <div className="k-plan-picker-meta" title={[dish.category, cookTimeText(dish), diffLabel(dish.difficulty)].filter(Boolean).join(" · ")}>
+                        {[dish.category, cookTimeText(dish), diffLabel(dish.difficulty)].filter(Boolean).join(" · ")}
                       </div>
                     </div>
                     {selectedOther ? (
                       <button
                         disabled
+                        title={`已在${mealMeta[selectedMeal].shortLabel}`}
+                        aria-label={`${dish.name}已在${mealMeta[selectedMeal].shortLabel}`}
                         className="k-tool-button shrink-0 text-[11px]"
                       >
-                        已在{mealMeta[selectedMeal].shortLabel}
+                        已选
                       </button>
                     ) : selectedHere ? (
                       <button
