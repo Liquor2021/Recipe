@@ -16,6 +16,7 @@ node --test scripts/*.test.*
 | `tomorrow-requests.test.mjs` | 推荐请求乱序、手动选菜或修改数量后丢弃旧响应、离页隔离、重新挂载与冲突响应识别 |
 | `tomorrow-date.test.mjs` | 本地午夜切换、跨月/跨年/闰日，以及夏令时 23/25 小时日期的刷新时间 |
 | `home-mood.test.mjs` | 心情异步恢复、快速点选、失败回退与跨日隔离 |
+| `history-summary.test.mjs` | 计划相对日期、跨月/跨年/闰日/夏令时、月度顿数与道数区分、状态和月份过滤、分页重复去重 |
 | `fridge-filters.test.mjs` | 同名多批筛选、名称搜索、临期边界、无效日期与跨日更新 |
 | `auth-regression.test.cjs` | 管理员与应用认证分离、状态同步、登录失败和迟到的旧请求；普通读取接受离线副本、编辑读取拒绝旧 Service Worker 缓存 |
 | `cook-timer.test.mjs` | 做菜倒计时延迟纠偏、暂停继续、总进度保持、到时与重置边界 |

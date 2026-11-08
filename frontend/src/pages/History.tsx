@@ -5,7 +5,6 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tansta
 import { recordsApi, statsApi, dayRatingApi, dishesApi, uploadApi, getUploadErrorMessage } from "@/api"
 import { useAuthStore } from "@/store/useAuthStore"
 import type { MealRecord, DayRating, Dish } from "@/types"
-import SafeImage from "@/components/SafeImage"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import PhotoViewer from "@/components/PhotoViewer"
 import SwipeDeleteRow from "@/components/SwipeDeleteRow"
@@ -13,10 +12,12 @@ import ConsumeInventorySheet from "@/components/ConsumeInventorySheet"
 import InventoryHistorySheet from "@/components/InventoryHistorySheet"
 import ReschedulePlanSheet from "@/components/ReschedulePlanSheet"
 import toast from "react-hot-toast"
-import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, NotebookPen, Star } from "lucide-react"
+import { BarChart3, Camera, ChevronLeft, ChevronRight, Ellipsis, NotebookPen, Star } from "lucide-react"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import "@/styles/kitchen-memories.css"
 import { thumbUrl } from "@/lib/dishImage"
+import { getHistoryMonthSummary, getPlanDateLabel } from "@/lib/historySummary"
+import { nextLocalMidnightDelay } from "@/lib/tomorrowDate"
 
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 
@@ -36,7 +37,10 @@ const moodEmojiMap: Record<string, string> = { yum: "😋", ok: "😐", no: "�
 const homeMoodEmojiMap: Record<string, string> = { happy: "😊", tired: "😫", lazy: "😌", spicy: "🤤", healthy: "🌿" }
 const homeMoodLabelMap: Record<string, string> = { happy: "开心", tired: "疲惫", lazy: "想偷懒", spicy: "想吃辣", healthy: "想养生" }
 
-const todayStr = () => `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}-${String(new Date().getDate()).padStart(2,"0")}`
+const todayStr = () => {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
 
 const statusLabels = { planned: "计划", completed: "已吃", cancelled: "已取消" }
 
@@ -62,9 +66,10 @@ function mergeSavedRecord(value: unknown, saved: MealRecord): unknown {
   return value
 }
 
-function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRating, onReschedule, onInventory, onUndo }: {
+function HistoryRecordRow({ record, showDate = false, today, pending, onStatus, onRating, onReschedule, onInventory, onUndo }: {
   record: MealRecord
   showDate?: boolean
+  today: string
   pending: boolean
   onStatus: (record: MealRecord, status: MealRecord["status"]) => void
   onRating: (record: MealRecord) => void
@@ -74,10 +79,13 @@ function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRatin
 }) {
   const navigate = useNavigate()
   const completed = record.status === "completed"
-  const canComplete = record.status === "planned" && record.meal_date <= todayStr()
+  const planned = record.status === "planned"
+  const canComplete = planned && record.meal_date <= today
+  const overdue = planned && record.meal_date < today
   return (
-    <article className="history-ledger-row">
+    <article className={`history-ledger-row ${showDate ? "history-plan-row" : ""}`}>
       <div className="history-ledger-main">
+        {showDate && <span className={`history-relative-date ${overdue ? "is-overdue" : ""}`}>{getPlanDateLabel(record.meal_date, today)}</span>}
         <button
           onClick={() => navigate("/dishes/" + record.dish_id + (completed ? "" : "?record_id=" + record.id))}
           className="history-dish-link"
@@ -86,45 +94,50 @@ function HistoryRecordRow({ record, showDate = false, pending, onStatus, onRatin
           <span className="memory-dot-leader" aria-hidden="true" />
           <span className="history-meal-label">{record.meal_type === "lunch" ? "午市" : "晚市"}</span>
         </button>
-        <span className={"history-status-stamp is-" + record.status}>{statusLabels[record.status] || "计划"}</span>
+        {!showDate && <span className={"history-status-stamp is-" + record.status}>{statusLabels[record.status] || "计划"}</span>}
       </div>
-      <div className="history-row-footnote">
-        <span>{showDate ? record.meal_date + " · " : ""}原量 × {record.portion_scale || 1}</span>
-        {completed && <button onClick={() => onRating(record)} aria-label={"评价" + record.dish_name} className="history-rating-button">
-          {record.mood ? <span>{moodEmojiMap[record.mood]}</span> : "写评价"}
-          {record.rating > 0 && <span>★ {record.rating}</span>}
+      <div className={`history-row-footnote ${!planned ? "has-more" : ""}`}>
+        <span>{showDate && <><time dateTime={record.meal_date}>{record.meal_date}</time> · </>}原量 × {record.portion_scale || 1}
+          {completed && record.mood && <span> · {moodEmojiMap[record.mood]}</span>}
+          {completed && record.rating > 0 && <span> · ★ {record.rating}</span>}
+        </span>
+        {completed && <button onClick={() => onRating(record)} aria-label={"评价" + record.dish_name} title={"评价" + record.dish_name} className="history-round-button history-rating-button">
+          <Star size={15} aria-hidden="true" fill={record.rating > 0 ? "currentColor" : "none"} />
         </button>}
       </div>
-      {record.status === "planned" && record.meal_date < todayStr() && <p className="history-overdue">已过计划日期，仍待完成</p>}
-      {completed && record.remark && <p className="history-record-remark">“{record.remark}”</p>}
-      <details className="history-row-actions">
-        <summary>记录操作 <ChevronDown size={13} aria-hidden="true" /></summary>
-        <div className="history-action-content">
-          <span className="history-action-photo"><SafeImage src={thumbUrl(record.dish_image_url)} alt="" className="w-full h-full object-cover" fallback={record.dish_emoji} /></span>
-          <div className="history-action-buttons">
-            {!completed ? record.status === "cancelled" ? (
-              <button disabled={pending} onClick={() => onStatus(record, "planned")}>恢复计划</button>
-            ) : <>
-              <button disabled={pending} onClick={() => onStatus(record, "cancelled")}>取消计划</button>
-              <button disabled={pending} onClick={() => onReschedule(record)}>改期</button>
-              {canComplete && <>
-                <button disabled={pending} onClick={() => navigate("/dishes/" + record.dish_id + "/cook?record_id=" + record.id)}>开始做菜</button>
-                <button disabled={pending} className="is-primary" onClick={() => onStatus(record, "completed")}>标记已吃</button>
-              </>}
-            </> : <>
-              <button disabled={pending} onClick={() => onUndo(record)}>撤销已吃</button>
-              <button disabled={pending} onClick={() => onInventory(record)}>{record.inventory_applied ? "库存记录" : "补扣库存"}</button>
-            </>}
-          </div>
+      {overdue && !showDate && <p className="history-overdue">{getPlanDateLabel(record.meal_date, today)}</p>}
+      {planned ? (
+        <div className="history-action-buttons history-plan-actions">
+          {canComplete && <>
+            <button disabled={pending} className="is-cook" onClick={() => navigate("/dishes/" + record.dish_id + "/cook?record_id=" + record.id)}>开始做菜</button>
+            <button disabled={pending} className="is-primary" onClick={() => onStatus(record, "completed")}>标记已吃</button>
+          </>}
+          <button disabled={pending} onClick={() => onReschedule(record)}>改期</button>
+          <button disabled={pending} onClick={() => onStatus(record, "cancelled")}>取消计划</button>
         </div>
-      </details>
+      ) : (
+        <details className="history-row-actions">
+          <summary className="history-round-button" aria-label={record.dish_name + "的更多操作"} title="更多操作"><Ellipsis size={17} aria-hidden="true" /></summary>
+          <div className="history-action-content">
+            <div className="history-action-buttons">
+              {!completed ? (
+                <button disabled={pending} onClick={() => onStatus(record, "planned")}>恢复计划</button>
+              ) : <>
+                <button disabled={pending} onClick={() => onUndo(record)}>撤销已吃</button>
+                <button disabled={pending} onClick={() => onInventory(record)}>{record.inventory_applied ? "库存记录" : "补扣库存"}</button>
+              </>}
+            </div>
+          </div>
+        </details>
+      )}
+      {completed && record.remark && <p className="history-record-remark">“{record.remark}”</p>}
     </article>
   )
 }
 
 function SwipeRowBg({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   return (
-    <SwipeDeleteRow actionWidth={80} onDelete={onDelete} className="bg-red">
+    <SwipeDeleteRow actionWidth={80} onDelete={onDelete} className="history-swipe-row">
       {children}
     </SwipeDeleteRow>
   )
@@ -132,7 +145,7 @@ function SwipeRowBg({ children, onDelete }: { children: React.ReactNode; onDelet
 
 function SwipeRowCard({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
   return (
-    <SwipeDeleteRow actionWidth={72} onDelete={onDelete} className="history-swipe-card">
+    <SwipeDeleteRow actionWidth={72} onDelete={onDelete} className="history-swipe-row history-swipe-card">
       {children}
     </SwipeDeleteRow>
   )
@@ -208,6 +221,23 @@ export default function History() {
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate())
   const [view, setView] = useState<"calendar" | "pending">("calendar")
+  const [today, setToday] = useState(todayStr)
+  useEffect(() => {
+    let timer: number
+    function refreshDate() {
+      window.clearTimeout(timer)
+      setToday(todayStr())
+      timer = window.setTimeout(refreshDate, nextLocalMidnightDelay())
+    }
+    timer = window.setTimeout(refreshDate, nextLocalMidnightDelay())
+    window.addEventListener("focus", refreshDate)
+    document.addEventListener("visibilitychange", refreshDate)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener("focus", refreshDate)
+      document.removeEventListener("visibilitychange", refreshDate)
+    }
+  }, [])
   const [rescheduleRecord, setRescheduleRecord] = useState<MealRecord | null>(null)
   const [inventoryRecord, setInventoryRecord] = useState<MealRecord | null>(null)
   const [undoRecord, setUndoRecord] = useState<MealRecord | null>(null)
@@ -314,23 +344,11 @@ export default function History() {
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => recordsApi.delete(id),
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: ["records"] })
-      const prev = qc.getQueryData(["records"])
-      qc.setQueryData(["records"], (old: unknown) => {
-        if (!old || typeof old !== "object" || old === null) return old
-        const o = old as { items?: MealRecord[] }
-        if (!o.items) return old
-        return { ...o, items: o.items.filter((r) => r.id !== id) }
-      })
-      return { prev }
-    },
     onSuccess: () => {
       void refreshMealQueries()
       toast.success("已删除")
     },
-    onError: (err, _id, context) => {
-      if (context?.prev) qc.setQueryData(["records"], context.prev)
+    onError: (err) => {
       toast.error(getUploadErrorMessage(err, "删除失败"))
     },
   })
@@ -483,21 +501,17 @@ export default function History() {
   })
 
   const { data: stats } = useQuery({ queryKey: ["stats"], queryFn: () => statsApi.get() })
-  const { data: recordsData } = useQuery({
-    queryKey: ["records"],
-    queryFn: () => recordsApi.list({ pageSize: "100" }),
-  })
   const pendingQuery = useInfiniteQuery({
     queryKey: ["records", "pending"],
     queryFn: ({ pageParam }) => recordsApi.list({ status: "planned", page: String(pageParam), pageSize: "20" }),
     initialPageParam: 1,
     getNextPageParam: (lastPage, pages) => pages.length * 20 < lastPage.total ? pages.length + 1 : undefined,
-    enabled: view === "pending",
   })
   const pendingRecords = pendingQuery.data?.pages.flatMap((page) => page.items || []) || []
   const recordActionPending = statusMut.isPending || rescheduleMut.isPending || undoMut.isPending || supplementMut.isPending || deleteMut.isPending
 
   const rowActions = {
+    today,
     pending: recordActionPending,
     onStatus: (record: MealRecord, status: MealRecord["status"]) => statusMut.mutate({ record, status }),
     onRating: openRating,
@@ -507,7 +521,7 @@ export default function History() {
   }
 
   const selectedDateKey = selectedDay !== null ? `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}` : ""
-  const selectedIsFuture = selectedDateKey > todayStr()
+  const selectedIsFuture = selectedDateKey > today
   const monthStartKey = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`
   const monthEndKey = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(new Date(calYear, calMonth + 1, 0).getDate()).padStart(2, "0")}`
 
@@ -534,7 +548,7 @@ export default function History() {
     },
   })
 
-  const records = useMemo(() => recordsData?.items || [], [recordsData])
+  const monthSummary = useMemo(() => getHistoryMonthSummary(monthRecords ?? [], monthStartKey, monthEndKey), [monthRecords, monthStartKey, monthEndKey])
 
   const recordByDate = useMemo(() => {
     const m = new Map<string, MealRecord[]>()
@@ -853,7 +867,6 @@ export default function History() {
     const firstDay = new Date(calYear, calMonth, 1).getDay()
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
     const prevDays = new Date(calYear, calMonth, 0).getDate()
-    const today = new Date()
     const cells: { day: number; isCurrentMonth: boolean; isToday: boolean; dateKey: string }[] = []
 
     for (let i = firstDay - 1; i >= 0; i--) {
@@ -863,7 +876,7 @@ export default function History() {
       cells.push({ day: d, isCurrentMonth: false, isToday: false, dateKey: `${py}-${String(pm + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}` })
     }
     for (let d = 1; d <= daysInMonth; d++) {
-      const isToday = calYear === today.getFullYear() && calMonth === today.getMonth() && d === today.getDate()
+      const isToday = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}` === today
       cells.push({ day: d, isCurrentMonth: true, isToday, dateKey: `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}` })
     }
     const remaining = (7 - (firstDay + daysInMonth) % 7) % 7
@@ -878,7 +891,7 @@ export default function History() {
   const calCells = buildCalendar()
   const selectedRecords = selectedDay !== null ? (recordByDate.get(selectedDateKey) || []) : []
   const selectedCompletedRecords = selectedRecords.filter((r) => r.status === "completed")
-  const canRateSelectedDay = !selectedIsFuture && selectedCompletedRecords.length > 0
+  const canRateSelectedDay = !monthError && !selectedIsFuture && selectedCompletedRecords.length > 0
   const completedMealTypes = new Set(selectedCompletedRecords.map((r) => r.meal_type))
 
   function changeMonth(dir: number) {
@@ -890,8 +903,6 @@ export default function History() {
     setCalYear(y)
     setSelectedDay(null)
   }
-
-  const topDish = stats?.top_dishes?.[0]
 
   return (
     <div className="kitchen-history animate-fadeUp">
@@ -907,25 +918,24 @@ export default function History() {
 
       <div className="kitchen-memory-body">
         <div className="history-view-tabs" role="group" aria-label="记录视图">
-          <button onClick={() => setView("calendar")} aria-pressed={view === "calendar"} className={`min-h-11 rounded-xl text-sm font-semibold transition-colors ${view === "calendar" ? "bg-card text-primary shadow-sm" : "text-text2"}`}>日历记录</button>
-          <button onClick={() => setView("pending")} aria-pressed={view === "pending"} className={`min-h-11 rounded-xl text-sm font-semibold transition-colors ${view === "pending" ? "bg-card text-primary shadow-sm" : "text-text2"}`}>待完成</button>
+          <button onClick={() => setView("calendar")} aria-pressed={view === "calendar"}>日历记录</button>
+          <button onClick={() => setView("pending")} aria-pressed={view === "pending"}>待完成{pendingQuery.data && <span className="history-pending-count">{pendingQuery.data.pages[0].total}</span>}</button>
         </div>
         {view === "pending" ? (
           <div>
-            <div className="mb-4 text-[13px] text-text2">过去没做的和未来安排的计划都在这里，可直接改期或取消。</div>
+            <p className="history-pending-intro">没做的、想做的，都记在这里。</p>
             {pendingQuery.isPending ? (
               <div className="py-8 text-center text-sm text-text3" role="status">正在读取待完成计划…</div>
             ) : pendingQuery.isError && !pendingQuery.data ? (
               <button onClick={() => void pendingQuery.refetch()} className="w-full min-h-11 px-4 py-3 text-sm text-primary">计划读取失败，点此重试</button>
             ) : pendingRecords.length === 0 ? (
-              <div className="py-12 text-center bg-card rounded-2xl border border-border">
+              <div className="kitchen-empty history-empty">
                 <span className="block text-4xl mb-3">🍽</span>
                 <div className="text-base font-semibold">没有待完成的计划</div>
                 <div className="mt-1 text-[13px] text-text2">安排好想吃的菜后，会显示在这里。</div>
               </div>
             ) : (
               <div className="flex flex-col gap-2.5">
-                <div className="text-xs text-text3">共 {pendingQuery.data?.pages[0].total || pendingRecords.length} 道待完成</div>
                 {pendingRecords.map((record) => (
                   <SwipeRowCard key={record.id} onDelete={() => requestDelete(record)}>
                     <HistoryRecordRow record={record} showDate {...rowActions} />
@@ -939,8 +949,9 @@ export default function History() {
           <>
         <div className="history-calendar">
           <div className="history-calendar-heading">
-            <h2>{calYear} 年 {calMonth + 1} 月</h2>
-            <div className="flex gap-2">
+            <h2>{calMonth + 1} 月 <small>· {calYear}</small></h2>
+            <div className="history-calendar-legend"><span><i className="is-eaten" />已吃</span><span><i className="is-planned" />计划</span><span><i className="is-overdue" />逾期</span></div>
+            <div className="history-calendar-nav">
               <button onClick={() => changeMonth(-1)} aria-label="上个月"><ChevronLeft size={18} strokeWidth={1.5} /></button>
               <button onClick={() => changeMonth(1)} aria-label="下个月"><ChevronRight size={18} strokeWidth={1.5} /></button>
             </div>
@@ -952,6 +963,7 @@ export default function History() {
               const hasLunch = recs.some((r) => r.status === "completed" && r.meal_type === "lunch")
               const hasDinner = recs.some((r) => r.status === "completed" && r.meal_type === "dinner")
               const hasPlan = recs.some((r) => r.status === "planned")
+              const hasOverdue = hasPlan && cell.dateKey < today
               const isSelected = cell.isCurrentMonth && selectedDay === cell.day
               const homeMood = cell.isCurrentMonth ? dayRatingByDate.get(cell.dateKey)?.home_mood : ""
               const homeMoodEmoji = homeMood ? homeMoodEmojiMap[homeMood] : ""
@@ -959,7 +971,7 @@ export default function History() {
                 <button
                   key={i}
                   onClick={() => cell.isCurrentMonth && setSelectedDay(cell.day)}
-                  aria-label={`${cell.dateKey}${hasLunch || hasDinner ? " 已吃" : ""}${hasPlan ? " 有计划" : ""}`}
+                  aria-label={`${cell.dateKey}${hasLunch || hasDinner ? " 已吃" : ""}${hasPlan ? " 有计划" : ""}${hasOverdue ? " 已逾期" : ""}`}
                   disabled={!cell.isCurrentMonth}
                   aria-current={cell.isToday ? "date" : undefined}
                   aria-pressed={isSelected}
@@ -968,22 +980,21 @@ export default function History() {
                   {cell.day}
                   <span className="history-date-marks" aria-hidden="true">
                     {(hasLunch || hasDinner) && <span className="is-eaten" />}
-                    {hasPlan && <span className="is-planned" />}
+                    {hasPlan && <span className={hasOverdue ? "is-overdue" : "is-planned"} />}
                   </span>
                   {homeMoodEmoji && <span className="absolute -top-0.5 right-0 text-[10px] leading-none">{homeMoodEmoji}</span>}
                 </button>
               )
             })}
           </div>
-          <div className="mt-2 flex justify-end gap-3 text-[11px] text-text3"><span>● 已吃</span><span>○ 计划</span></div>
         </div>
 
         {selectedDay !== null && (
-          <div className="history-day-ledger animate-pop-soft">
+          <section className="history-day-ledger animate-pop-soft" aria-labelledby="history-selected-date">
             <div className="history-day-heading">
               <div className="flex items-center gap-1.5 flex-wrap">
-                {calMonth + 1}月{selectedDay}日
-                {selectedDateKey === todayStr() && <span className="history-today-note">今天</span>}
+                <h2 id="history-selected-date">「{calMonth + 1}月{selectedDay}日」</h2>
+                {selectedDateKey === today && <span className="history-today-note">今天</span>}
                 {dayRating?.home_mood && (
                   <span className="memory-mood-stamp">
                     {homeMoodEmojiMap[dayRating.home_mood] || "😃"} {homeMoodLabelMap[dayRating.home_mood] || "心情"}
@@ -994,11 +1005,11 @@ export default function History() {
                 <button
                   onClick={openMealRating}
                   className="history-day-rating"
+                  aria-label={dayRating?.mood ? "编辑当日心情与评价" : "记录当日心情与评价"}
+                  title={dayRating?.mood ? "编辑当日心情与评价" : "记录当日心情与评价"}
                 >
-                  {dayRating?.mood ? "✓ 已评价" : "😌 评价"}
+                  <span aria-hidden="true">{dayRating?.mood ? moodEmojiMap[dayRating.mood] : "😌"}</span>
                 </button>
-              ) : selectedRecords.some((r) => r.status === "planned") ? (
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-white/80 text-text2">待完成</span>
               ) : null}
             </div>
             {monthPending ? (
@@ -1008,7 +1019,7 @@ export default function History() {
             ) : selectedRecords.length === 0 ? (
               <div className="kitchen-empty history-empty">
                 <NotebookPen size={28} strokeWidth={1.3} aria-hidden="true" />
-                <p>{selectedDateKey === todayStr() ? "今天还没有记录哦~" : selectedIsFuture ? "这天还没有安排" : "这天没有记录"}</p>
+                <p>{selectedDateKey === today ? "今天还没有记录哦~" : selectedIsFuture ? "这天还没有安排" : "这天没有记录"}</p>
               </div>
             ) : (
               selectedRecords.map((r) => (
@@ -1018,7 +1029,7 @@ export default function History() {
               ))
             )}
             {dayRating?.mood && canRateSelectedDay && (
-              <div className="px-4 py-2.5 bg-bg border-t border-border flex items-center gap-2.5 text-[13px]">
+              <div className="history-day-review">
                 <span className="text-xl">🍚</span>
                 <span className="flex-1 text-text2">
                   {completedMealTypes.size > 1 ? "午餐+晚餐" : completedMealTypes.has("lunch") ? "午餐" : "晚餐"} · 整体评价
@@ -1039,62 +1050,49 @@ export default function History() {
               // 只有计划或已取消的日子不提示评价；已上传的照片仍可查看。
               if (!hasPhotos && !canRateSelectedDay) return null
               return (
-                <div className="px-4 py-2.5 border-t border-border">
-                  <div className="text-[11px] text-text3 mb-1.5">{hasPhotos ? `📷 照片 (${dayPhotos.length})` : "📷 拍张照记录一下？"}</div>
-                  <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1 scroll-fade-x">
+                <div className="history-day-photos">
+                  {hasPhotos && <div className="history-photo-list" aria-label="当日照片">
                     {dayPhotos.map((p, i) => (
-                       <div
-                         key={i}
-                         className="w-14 h-14 rounded-md overflow-hidden flex-shrink-0 bg-bg border border-border flex items-center justify-center cursor-pointer transition-all active:scale-95 relative"
-                         onClick={() => openViewer(dayPhotos, i)}
-                       >
-                          <img src={thumbUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                       <div key={p} className="history-photo-item">
+                          <button className="history-polaroid" onClick={() => openViewer(dayPhotos, i)} aria-label={`查看第 ${i + 1} 张照片`}>
+                            <img src={thumbUrl(p)} alt="" loading="lazy" decoding="async" />
+                            <span>{calMonth + 1}.{selectedDay} · 饭桌记忆</span>
+                          </button>
                           {isAdminLoggedIn && (
                             <button
                              onClick={(e) => { e.stopPropagation(); if (dayRating) removeDayPhoto(i, dayRating) }}
                              aria-label={`删除第 ${i + 1} 张照片`}
                              disabled={dayPhotoReading || (dayPhotoError?.date === selectedDateKey && !dayPhotoError.ready) || (updateDayPhotosMut.isPending && updateDayPhotosMut.variables.meal_date === selectedDateKey)}
-                             className="absolute top-0 right-0 w-[22px] h-[22px] rounded-bl-md bg-black/50 text-white text-xs flex items-center justify-center active:bg-red disabled:opacity-50"
+                             className="history-photo-delete"
                            >✕</button>
                          )}
                        </div>
                      ))}
-                    {canRateSelectedDay && <button
-                      onClick={openMealRating}
-                      className="w-14 h-14 rounded-md flex-shrink-0 border-2 border-dashed border-border2 flex flex-col items-center justify-center cursor-pointer transition-all active:border-primary active:text-primary text-text3"
-                    >
-                      <span className="text-base leading-none">+</span>
-                      <span className="text-[11px]">添加</span>
-                    </button>}
-                  </div>
+                  </div>}
+                  {canRateSelectedDay && <div className="history-photo-invitation">
+                    <button onClick={openMealRating} className="history-photo-add" aria-label="贴一张饭桌照片">
+                      <Camera size={20} strokeWidth={1.5} aria-hidden="true" />
+                      <span>贴一张</span>
+                    </button>
+                    <p>给{selectedDateKey === today ? "今天" : "这天"}的饭桌拍一张，照片墙和做菜回忆都会留着它。</p>
+                  </div>}
                 </div>
               )
             })()}
-          </div>
+          </section>
         )}
 
-        <dl className="history-kraft-stats">
-          <div><dt>累计做菜</dt><dd>{stats ? stats.total_records + " 道" : "—"}</dd></div>
-          <div><dt>最常吃</dt><dd>{topDish?.dish_name || "尚未记录"}</dd></div>
-          <div><dt>午餐菜品</dt><dd>{stats ? stats.lunch_count + " 道" : "—"}</dd></div>
-          <div><dt>晚餐菜品</dt><dd>{stats ? stats.dinner_count + " 道" : "—"}</dd></div>
-        </dl>
-
-        <h2 className="history-recent-heading">「最近记录」</h2>
-        <div className="flex flex-col gap-2.5">
-          {records.slice(0, 5).map((r) => (
-            <SwipeRowCard key={r.id} onDelete={() => requestDelete(r)}>
-              <HistoryRecordRow record={r} showDate {...rowActions} />
-            </SwipeRowCard>
-          ))}
-          {records.length === 0 && (
-            <div className="text-center py-12">
-              <span className="text-[56px] block mb-4 animate-float">📅</span>
-              <div className="text-base font-semibold mb-1.5">还没有记录</div>
-              <div className="text-[13px] text-text2">去首页推荐一道菜吧~</div>
-            </div>
-          )}
-        </div>
+        <footer className="history-month-summary" aria-label={`${calYear}年${calMonth + 1}月小结`}>
+          {monthPending ? <span role="status">正在整理本月手账…</span> : monthError ? (
+            <button onClick={() => void refetchMonth()}>本月记录读取失败，点此重试</button>
+          ) : <>
+            <p><strong>{calMonth + 1}月 · {monthSummary.meals} 顿</strong>
+              <span>共 {monthSummary.dishes} 道 · 午 {monthSummary.lunches} · 晚 {monthSummary.dinners}</span>
+              {monthSummary.topDish && <span>最常吃 {monthSummary.topDish}</span>}
+            </p>
+            <button onClick={() => navigate("/report")}>饮食报告 <ChevronRight size={13} aria-hidden="true" /></button>
+          </>}
+        </footer>
           </>
         )}
       </div>

@@ -12,33 +12,38 @@
 .memory-dot-leader { min-width: 14px; flex: 1; border-bottom: 1px dotted var(--k-line); align-self: center; }
 .memory-mood-stamp { position: relative; display: inline-flex; align-items: center; gap: 4px; min-height: 29px; border: 1px solid var(--k-red); border-radius: 40% 12% 37% 13% / 35% 36% 30% 29%; background: var(--k-card); padding: 3px 8px; color: var(--k-red); font-size: 11px; white-space: nowrap; transform: rotate(-3deg); }
 
-/* 日历上的红圈和点、圈具有不同含义，选中状态另用浅纸色表示。 */
+/* 月历是目录，选中日期展开成一页手账。 */
 .history-view-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.history-view-tabs button { min-height: 42px; padding: 0 16px; border: 1px solid var(--k-line); border-radius: 5px; color: var(--k-muted); background: transparent; font-size: 13px; }
+.history-view-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 16px; border: 1px dashed var(--k-line); border-radius: 99px; color: var(--k-muted); background: var(--k-card); font-size: 13px; }
 .history-view-tabs button[aria-pressed="true"] { color: var(--k-paper); background: var(--k-ink); border-color: var(--k-ink); box-shadow: none; }
-.history-calendar { padding: 13px 12px 9px; margin-bottom: 18px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }
-.history-calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
-.history-calendar-heading h2 { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 700; font-size: 17px; }
-.history-calendar-heading button { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; color: var(--k-muted); border-radius: 5px; }
+.history-pending-count { font-size: 11px; font-variant-numeric: tabular-nums; }
+.history-pending-intro { margin-bottom: 14px; font-size: 12px; color: var(--k-muted); }
+.history-calendar { padding: 8px 10px; margin-bottom: 14px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.history-calendar-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; margin-bottom: 4px; }
+.history-calendar-heading h2 { white-space: nowrap; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 700; font-size: 16px; }
+.history-calendar-heading h2 small { font-size: 11px; color: var(--k-muted); font-weight: 400; }
+.history-calendar-nav { display: flex; }
+.history-calendar-heading button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 40px; color: var(--k-muted); border-radius: 5px; }
+.history-calendar-legend { display: flex; gap: 7px; color: var(--k-muted); font-size: 10px; white-space: nowrap; }
+.history-calendar-legend > span { display: inline-flex; align-items: center; gap: 3px; }
+.history-calendar-legend i, .history-date-marks span { display: block; width: 5px; height: 5px; border: 1px solid var(--k-muted); border-radius: 50%; }
+.history-calendar-legend .is-eaten, .history-date-marks .is-eaten { background: var(--k-green); border-color: var(--k-green); }
+.history-calendar-legend .is-overdue, .history-date-marks .is-overdue { background: var(--k-red); border-color: var(--k-red); }
 .history-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; }
-.history-calendar-day { position: relative; display: flex; align-items: center; justify-content: center; min-height: 43px; border-radius: 5px; color: var(--k-ink); background: transparent; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 13px; border: 1px solid transparent; }
+.history-calendar-day { position: relative; display: flex; align-items: center; justify-content: center; min-height: 40px; border-radius: 5px; color: var(--k-ink); background: transparent; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 13px; border: 1px solid transparent; }
 .history-calendar-day:disabled { opacity: .35; }
 .history-calendar-day.is-selected { background: var(--k-kraft); font-weight: 900; }
 .history-calendar-day.is-today { color: var(--k-red); }
 .history-calendar-day.is-today::before { content: ""; position: absolute; inset: 5px 2px; border: 1.5px solid var(--k-red); border-radius: 42% 45% 38% 46%; transform: rotate(-7deg); pointer-events: none; }
 .history-date-marks { display: flex; gap: 3px; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); }
-.history-date-marks span { display: block; width: 4px; height: 4px; border: 1px solid var(--k-red); border-radius: 50%; }
-.history-date-marks .is-eaten { background: var(--k-red); }
-.history-day-ledger { margin-bottom: 20px; overflow: hidden; }
+.history-day-ledger { margin-bottom: 12px; padding: 12px 14px; border: 1px solid var(--k-line); border-radius: 7px; background: var(--k-card); box-shadow: var(--k-shadow); }
 .history-empty { min-height: 160px; padding: 24px 18px; text-align: center; font-size: 13px; }
 .history-empty > svg { color: var(--k-red); }
-.history-day-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 0 9px; color: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 700; }
-.history-day-heading > div::before { content: "「"; color: var(--k-red); margin-right: -6px; }
-.history-day-heading > div::after { content: "」"; color: var(--k-red); margin-left: -6px; }
-.history-today-note { font-size: 12px; color: var(--k-red); font-weight: 500; }
-.history-day-rating { flex-shrink: 0; min-height: 40px; border: 1px solid var(--k-red); border-radius: 5px; background: var(--k-card); color: var(--k-red); padding: 0 10px; font-size: 11px; font-family: inherit; transform: rotate(-2deg); }
-.history-ledger-row { padding: 10px 0 6px; background: var(--k-paper); border-bottom: 1px dotted var(--k-line); }
-.history-ledger-main { display: flex; align-items: center; gap: 9px; min-height: 40px; }
+.history-day-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 40px; padding-bottom: 5px; color: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 700; }
+.history-today-note { padding: 2px 5px; border: 1px solid currentColor; border-radius: 3px; font-size: 10px; color: var(--k-red); font-weight: 500; transform: rotate(-3deg); }
+.history-day-rating { flex-shrink: 0; display: grid; place-items: center; width: 40px; height: 40px; border: 1px dashed var(--k-line); border-radius: 50%; background: var(--k-paper); font-size: 20px; transform: rotate(-5deg); }
+.history-ledger-row { padding: 5px 0 9px; background: var(--k-card); border-bottom: 1px dotted var(--k-line); }
+.history-ledger-main { display: flex; align-items: center; gap: 8px; min-height: 36px; }
 .history-dish-link { display: flex; min-width: 0; align-items: center; flex: 1; gap: 8px; min-height: 44px; text-align: left; }
 .history-dish-link strong { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 15px; font-weight: 900; overflow-wrap: anywhere; }
 .history-dish-link strong.is-cancelled { color: var(--k-faint); text-decoration: line-through; }
@@ -46,24 +51,53 @@
 .history-status-stamp { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 2px 7px; border: 1px solid currentColor; border-radius: 3px; font-size: 11px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; transform: rotate(-4deg); color: var(--k-green); }
 .history-status-stamp.is-planned { color: var(--k-amber, #a77730); border-style: dashed; transform: rotate(3deg); }
 .history-status-stamp.is-cancelled { color: var(--k-faint); transform: none; }
-.history-row-footnote { display: flex; justify-content: space-between; align-items: center; min-height: 24px; font-size: 11px; color: var(--k-faint); gap: 8px; }
-.history-rating-button { display: flex; gap: 6px; align-items: center; justify-content: center; min-height: 36px; min-width: 44px; padding: 0 6px; color: var(--k-muted); font-size: 12px; }
-.history-overdue { font-size: 11px; color: var(--k-amber, #a77730); margin: 4px 0; }
+.history-row-footnote { display: flex; justify-content: space-between; align-items: center; min-height: 28px; font-size: 11px; color: var(--k-muted); gap: 8px; }
+.history-row-footnote.has-more { min-height: 36px; padding-right: 43px; }
+.history-round-button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--k-line); border-radius: 50%; background: var(--k-card); color: var(--k-muted); }
+.history-rating-button { color: var(--k-red); }
+.history-overdue { font-size: 11px; color: var(--k-red); margin: 4px 0; }
 .history-record-remark { font-family: "KaiTi", "STKaiti", "Kitchen Serif", serif; font-size: 13px; color: var(--k-muted); margin: 7px 0; overflow-wrap: anywhere; }
-.history-row-actions summary { display: flex; align-items: center; justify-content: flex-end; gap: 5px; width: fit-content; min-height: 36px; margin-left: auto; color: var(--k-muted); font-size: 11px; list-style: none; }
+.history-row-actions summary { position: relative; display: flex; margin-top: -36px; margin-left: auto; list-style: none; }
 .history-row-actions summary::-webkit-details-marker { display: none; }
-.history-row-actions[open] summary svg { transform: rotate(180deg); }
-.history-action-content { display: flex; align-items: center; gap: 8px; padding: 8px 0 5px; border-top: 1px dashed var(--k-line); }
-.history-action-photo { display: flex; width: 34px; height: 36px; flex-shrink: 0; padding: 2px; border: 1px solid var(--k-line); background: var(--k-card); font-size: 20px; justify-content: center; align-items: center; border-radius: 3px; overflow: hidden; }
+.history-row-actions[open] summary { background: var(--k-kraft); }
+.history-action-content { padding: 9px 0 2px; }
 .history-action-buttons { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
-.history-action-buttons button { min-height: 34px; padding: 5px 7px; border: 1px solid var(--k-line); background: var(--k-card); border-radius: 4px; color: var(--k-muted); font-size: 11px; line-height: 1.5; }
+.history-action-buttons button { min-height: 34px; padding: 5px 9px; border: 1px dashed var(--k-line); background: var(--k-card); border-radius: 99px; color: var(--k-muted); font-size: 11px; line-height: 1.5; white-space: nowrap; }
 .history-action-buttons button.is-primary { background: var(--k-ink); color: var(--k-paper); border-color: var(--k-ink); }
-.history-kraft-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 24px; }
-.history-kraft-stats > div { border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-kraft); padding: 13px 15px; min-height: 78px; }
-.history-kraft-stats dt { color: var(--k-muted); font-size: 11px; margin-bottom: 5px; }
-.history-kraft-stats dd { font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
-.history-recent-heading { margin-bottom: 8px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 17px; font-weight: 700; }
-.history-swipe-card { border-bottom: 1px dotted var(--k-line); }
+.history-action-buttons button.is-cook { background: var(--k-red); color: var(--k-paper); border-color: var(--k-red); }
+.history-action-buttons :is(.is-primary, .is-cook) { border-style: solid; }
+.history-plan-actions { margin-top: 5px; }
+.history-relative-date { flex-shrink: 0; max-width: 105px; padding: 3px 6px; border: 1px dashed currentColor; border-radius: 4px; color: var(--k-green); font-size: 10px; transform: rotate(-2deg); }
+.history-relative-date.is-overdue { color: var(--k-red); }
+.history-swipe-row { border-radius: 0; background: var(--k-card); }
+.history-swipe-card { border: 1px solid var(--k-line); border-radius: 7px; box-shadow: var(--k-shadow); }
+.history-plan-row { padding: 9px 12px 12px; border-bottom: 0; }
+.history-plan-row .history-dish-link { gap: 6px; }
+.history-day-review { display: flex; align-items: center; gap: 9px; padding: 12px 0 3px; font-size: 12px; overflow-wrap: anywhere; }
+.history-day-photos { padding-top: 14px; }
+.history-photo-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.history-photo-item { position: relative; min-width: 0; }
+.history-polaroid { display: block; width: 100%; padding: 5px 5px 0; border: 1px solid var(--k-line); border-radius: 2px; background: var(--k-paper); box-shadow: var(--k-shadow); }
+.history-polaroid img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--k-kraft); }
+.history-polaroid > span { display: block; padding: 7px 0; color: var(--k-muted); font-size: 9px; font-family: "Kitchen Serif", "Songti SC", SimSun, serif; }
+.history-photo-delete { position: absolute; top: 5px; right: 5px; width: 32px; height: 32px; border-radius: 50%; background: rgb(30 23 16 / 65%); color: white; font-size: 12px; }
+.history-photo-invitation { display: flex; align-items: center; gap: 14px; padding: 3px 0; }
+.history-photo-invitation p { max-width: 300px; color: var(--k-muted); font-size: 12px; line-height: 1.85; }
+.history-photo-add { display: flex; flex-shrink: 0; flex-direction: column; align-items: center; justify-content: center; gap: 7px; width: 76px; height: 82px; border: 1px dashed var(--k-line); border-radius: 3px; background: var(--k-paper); color: var(--k-muted); font-size: 11px; transform: rotate(-3deg); }
+.history-photo-add svg { color: var(--k-red); }
+.history-month-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; padding: 9px 12px; border-block: 1px solid var(--k-line); color: var(--k-muted); font-size: 11px; line-height: 1.8; }
+.history-month-summary p { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; gap: 1px 10px; }
+.history-month-summary strong { color: var(--k-ink); font-family: "Kitchen Serif", "Songti SC", SimSun, serif; font-size: 14px; white-space: nowrap; }
+.history-month-summary p > span { overflow-wrap: anywhere; }
+.history-month-summary button { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; color: var(--k-red); white-space: nowrap; }
+@media (max-width: 380px) {
+  .history-calendar-heading { grid-template-columns: minmax(0, 1fr) auto; }
+  .history-calendar-legend { grid-row: 2; grid-column: 1 / -1; padding-bottom: 5px; }
+  .history-calendar-nav { grid-column: 2; grid-row: 1; }
+  .history-day-ledger { padding-inline: 10px; }
+  .history-photo-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-month-summary p { flex-basis: 100%; }
+}
 /* 旧评价逻辑原样保留，表单容器换成贴边的纸抽屉。 */
 .kitchen-memory-sheet { position: relative; border: 1px solid var(--k-line); border-bottom: 0; border-radius: 13px 13px 0 0; background: var(--k-card); color: var(--k-ink); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .kitchen-memory-sheet::before { content: ""; display: block; width: 78px; height: 13px; margin: 6px auto 4px; background: color-mix(in srgb, var(--k-kraft) 85%, transparent); border-inline: 1px dashed var(--k-line); transform: rotate(-3deg); }
