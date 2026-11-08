@@ -131,7 +131,7 @@ function drawLabel(ctx: CanvasRenderingContext2D, cx: number, cy: number, label:
 
 // 头部：应用名 + 周期（本周/本月 + 起止日期）+ 生成日期
 function makeHeaderPainter(report: DietReport, appName: string): Painter {
-  const name = appName || "NiniMenu"
+  const name = appName || "小灶手账"
   const label = report?.range === "month" ? "本月" : "本周"
   const dateText = `${fmtShortDate(report?.start_date)} - ${fmtShortDate(report?.end_date)}`
   return (ctx, y) => {
@@ -447,7 +447,7 @@ function makeMoodPainter(moods: ReportShare[]): Painter {
 
 // 底部水印（应用名可在后台改，超宽时截断）
 function makeWatermarkPainter(appName: string): Painter {
-  const text = `${appName || "NiniMenu"} · 今天也好好吃饭`
+  const text = `${appName || "小灶手账"} · 今天也好好吃饭`
   return (ctx, y) => {
     ctx.font = font(500, 22)
     ctx.fillStyle = C.text3

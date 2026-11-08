@@ -108,7 +108,7 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
             </div>
           </form>
           <footer className="kitchen-login-footer">
-            <span>NINI · {today.getFullYear()}</span>
+            <span>{appName} · {today.getFullYear()}</span>
             <span>{isNight ? "夜深了，锅还温着" : "手账只属于家里那几个人"}</span>
           </footer>
         </section>

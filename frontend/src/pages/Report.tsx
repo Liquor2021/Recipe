@@ -7,7 +7,7 @@ import { reportApi } from "@/api"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
 import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
 import { renderReportImage } from "@/lib/reportImage"
-import { useAppInfoStore } from "@/store/useAppInfoStore"
+import { DEFAULT_APP_NAME, useAppInfoStore } from "@/store/useAppInfoStore"
 import type { DietBalance, DietReport, ReportShare } from "@/types"
 import "@/styles/kitchen-report.css"
 
@@ -98,7 +98,7 @@ function BalanceCard({ balance }: { balance?: DietBalance }) {
 
 // 下载/分享用的文件名：应用名可在后台自定义，去掉文件名里不允许的字符
 function reportFileName(report: DietReport, appName: string) {
-  const safeName = (appName || "NiniMenu").replace(/[\\/:*?"<>|\s]+/g, "") || "NiniMenu"
+  const safeName = (appName || DEFAULT_APP_NAME).replace(/[\\/:*?"<>|\s]+/g, "") || DEFAULT_APP_NAME
   return `${safeName}-${report.range === "month" ? "本月" : "本周"}饮食报告-${report.end_date || ""}.png`
 }
 

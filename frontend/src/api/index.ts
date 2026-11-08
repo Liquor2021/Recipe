@@ -177,7 +177,7 @@ export const backupApi = {
     const p = (n: number) => String(n).padStart(2, "0")
     const a = document.createElement("a")
     a.href = url
-    a.download = `ninimenu-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.db`
+    a.download = `小灶手账-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.db`
     document.body.appendChild(a)
     a.click()
     a.remove()

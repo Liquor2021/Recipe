@@ -104,7 +104,7 @@ function BackupCard() {
         <div className="mt-3 flex flex-col gap-1">
           {data.files.map((f) => (
             <div key={f.name} className="flex items-center justify-between text-[12px] text-text2">
-              <span className="truncate">{f.name}</span>
+              <span className="truncate">{f.name.replace(/^ninimenu-(\d{4}-\d{2}-\d{2})\.db$/, "$1 · 自动备份")}</span>
               <span className="flex-shrink-0 text-text3">{formatSize(f.size)}</span>
             </div>
           ))}
