@@ -28,6 +28,10 @@
 .k-admin-login h1 { text-align: center; font-size: 23px; line-height: 1.5; font-weight: 900; overflow-wrap: anywhere; }
 .k-admin-login-note { margin: 8px 0 25px; text-align: center; color: var(--k-muted); font-size: 12px; }
 .k-admin-login-input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--k-line); border-radius: 5px; background: var(--k-paper); color: var(--k-ink); font-size: 14px; }
+.k-admin-login-input[aria-invalid="true"] { border-color: var(--k-red); }
+.k-admin-login-message { margin-top: 10px; min-height: 20px; color: var(--k-red); font-size: 12px; line-height: 1.6; }
+.k-admin-login-message p { display: flex; align-items: flex-start; gap: 6px; margin: 0; }
+.k-admin-login-message svg { flex-shrink: 0; margin-top: 2px; }
 .k-admin-login-submit { width: 100%; min-height: 46px; padding: 10px; background: var(--k-ink); color: var(--k-card); border: 1px solid var(--k-ink); border-radius: 5px; font-weight: 700; }
 .k-admin-login-submit:disabled { opacity: .5; }
 .k-admin-login-cancel { width: 100%; min-height: 44px; margin-top: 8px; color: var(--k-muted); font-size: 13px; }

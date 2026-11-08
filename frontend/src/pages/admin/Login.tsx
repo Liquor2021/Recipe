@@ -1,7 +1,11 @@
-import { useState, useEffect, useId } from "react"
+import { useState, useEffect, useId, useRef } from "react"
+import type { FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import { useMutation } from "@tanstack/react-query"
+import { AlertCircle } from "lucide-react"
 import { authApi } from "@/api"
+import { getLoginError } from "@/lib/loginError"
+import type { LoginError } from "@/lib/loginError"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import toast from "react-hot-toast"
@@ -11,34 +15,46 @@ export default function AdminLogin() {
   const { isLoggedIn, login } = useAuthStore()
   const appName = useAppInfoStore((s) => s.appName)
   const [password, setPassword] = useState("")
+  const [error, setError] = useState<LoginError | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const passwordId = useId()
+  const errorId = useId()
 
   useEffect(() => {
     if (isLoggedIn) navigate("/admin/dashboard", { replace: true })
   }, [isLoggedIn, navigate])
 
   const loginMut = useMutation({
-    mutationFn: () => authApi.login(password),
+    mutationFn: authApi.login,
     onSuccess: (data) => {
       login(data.token)
-      toast.success("✅ 登录成功")
-      navigate("/admin/dashboard")
+      setPassword("")
+      toast.success("已进入管理模式")
+      navigate("/admin/dashboard", { replace: true })
     },
-    onError: () => toast.error("密码错误"),
+    onError: (cause) => {
+      setError(getLoginError(cause, "admin"))
+      inputRef.current?.focus()
+    },
   })
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!password || loginMut.isPending) return
+    setError(null)
+    loginMut.mutate(password)
+  }
 
   return (
     <div className="k-admin-login">
-      <form className="k-admin-login-paper" onSubmit={(event) => {
-        event.preventDefault()
-        if (password && !loginMut.isPending) loginMut.mutate()
-      }}>
+      <form className="k-admin-login-paper" onSubmit={handleSubmit} noValidate aria-busy={loginMut.isPending}>
         <div className="k-admin-login-seal" aria-hidden="true">灶</div>
         <h1>{appName} · 管理</h1>
         <p className="k-admin-login-note">输入管理密码，翻开厨房手账</p>
         <div className="mb-4">
           <label htmlFor={passwordId} className="block text-[13px] font-semibold mb-1.5 text-text2">管理密码</label>
           <input
+            ref={inputRef}
             id={passwordId}
             name="password"
             type="password"
@@ -46,11 +62,17 @@ export default function AdminLogin() {
             required
             placeholder="请输入密码"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            readOnly={loginMut.isPending}
+            aria-invalid={error?.invalidPassword ?? false}
+            aria-describedby={error ? errorId : undefined}
+            onChange={(e) => { setPassword(e.target.value); setError(null) }}
             className="k-admin-login-input"
           />
         </div>
-        <button type="submit" disabled={loginMut.isPending} className="k-admin-login-submit">{loginMut.isPending ? "正在进入…" : "进入管理"}</button>
+        <button type="submit" disabled={!password || loginMut.isPending} className="k-admin-login-submit">{loginMut.isPending ? "正在进入…" : "进入管理"}</button>
+        <div id={errorId} className="k-admin-login-message" aria-live="polite" aria-atomic="true">
+          {error && <p><AlertCircle size={15} aria-hidden="true" /><span>{error.message}</span></p>}
+        </div>
         <button type="button" onClick={() => navigate("/")} className="k-admin-login-cancel">返回厨房</button>
       </form>
     </div>

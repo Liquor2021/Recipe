@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react"
+import type { KeyboardEvent } from "react"
 import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
 import { Image, ChevronLeft, ChevronRight } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
@@ -104,15 +105,21 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
   }
 
   function prev() {
-    if (!animating.current) snapTo((idxRef.current - 1 + photos.length) % photos.length, true)
+    if (photos.length > 1 && !animating.current) snapTo((idxRef.current - 1 + photos.length) % photos.length, true)
   }
 
   function next() {
-    if (!animating.current) snapTo((idxRef.current + 1) % photos.length, true)
+    if (photos.length > 1 && !animating.current) snapTo((idxRef.current + 1) % photos.length, true)
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDialogElement>) {
+    if (photos.length <= 1 || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    if (event.key === "ArrowLeft") { event.preventDefault(); prev() }
+    if (event.key === "ArrowRight") { event.preventDefault(); next() }
   }
 
   return (
-    <KitchenSheet title="饭桌照片" theme={theme} icon={<Image size={19} />} onClose={onClose} closeLabel="关闭图片预览" className="kitchen-photo-viewer" footer={<>
+    <KitchenSheet title="饭桌照片" theme={theme} icon={<Image size={19} />} onClose={onClose} closeLabel="关闭图片预览" onKeyDown={onKeyDown} className="kitchen-photo-viewer" footer={<>
       {photos.length > 1 && <button onClick={prev} aria-label="上一张照片"><ChevronLeft size={18} /></button>}
       <span role="status" className="kitchen-sheet-hint">{idx + 1} / {photos.length}</span>
       {photos.length > 1 && <button onClick={next} aria-label="下一张照片"><ChevronRight size={18} /></button>}
@@ -122,8 +129,7 @@ export default function PhotoViewer({ photos, idx, setIdx, onClose }: PhotoViewe
         className="kitchen-photo-stage"
         tabIndex={0}
         role="group"
-        aria-label="照片预览，可按左右方向键切换"
-        onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); prev() } if (event.key === "ArrowRight") { event.preventDefault(); next() } }}
+        aria-label={photos.length > 1 ? "照片预览，可按左右方向键切换" : "照片预览"}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}

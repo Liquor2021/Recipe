@@ -731,13 +731,14 @@ export default function More() {
             <button type="button" onClick={() => toast(`推荐去重天数：${asString(settings?.repeat_days, "3")}天`)} className="k-more-setting">
               <span><strong>推荐去重 · 近 {asString(settings?.repeat_days, "3")} 天</strong><small>最近吃过的菜不优先推荐</small></span><span className="k-tool-leader" aria-hidden="true" /><Settings2 size={17} aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => navigate("/admin/dashboard")} className="k-more-setting">
-              <span><strong>管理模式</strong><small>菜品、推荐语与成就</small></span><span className="k-tool-leader" aria-hidden="true" /><LockKeyhole size={17} aria-hidden="true" />
-            </button>
           </section>
         )}
-        <section className="k-more-settings" aria-label="登录">
-          <h2 className="k-tool-section-title">「登录」</h2>
+        <section className="k-more-settings" aria-label="登录与管理">
+          <h2 className="k-tool-section-title">「登录与管理」</h2>
+          <button type="button" onClick={() => navigate(isLoggedIn ? "/admin/dashboard" : "/admin/login")} className="k-more-setting">
+            <span><strong>管理模式</strong><small>{isLoggedIn ? "菜品、推荐语与成就" : "输入管理密码，维护厨房手账"}</small></span>
+            <span className="k-tool-leader" aria-hidden="true" /><LockKeyhole size={17} aria-hidden="true" />
+          </button>
           <button type="button" onClick={() => { logoutApp(); qc.clear() }} className="k-more-setting">
             <span><strong>退出并返回登录</strong><small>合上手账，下次输入口令再打开</small></span>
             <span className="k-tool-leader" aria-hidden="true" />

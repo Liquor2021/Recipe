@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { LogOut, Moon, Sun } from "lucide-react"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
@@ -19,17 +19,20 @@ export default function AdminLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { isLoggedIn, logout } = useAuthStore()
+  const leavingAdmin = useRef(false)
   const appName = useAppInfoStore((s) => s.appName)
   const { theme, toggleTheme } = useKitchenTheme()
   useEffect(watchKitchenTheme, [])
 
   useEffect(() => {
-    if (location.pathname !== "/admin/login" && !isLoggedIn) {
+    if (location.pathname !== "/admin/login" && !isLoggedIn && !leavingAdmin.current) {
       navigate("/admin/login", { replace: true })
     }
   }, [isLoggedIn, location.pathname, navigate])
 
   const handleLogout = () => {
+    // 主动退出先标记离开，避免身份更新触发的登录守卫覆盖回首页的导航。
+    leavingAdmin.current = true
     logout()
     navigate("/")
   }

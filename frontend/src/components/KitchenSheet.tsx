@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from "react"
-import type { PointerEvent, ReactNode } from "react"
+import type { KeyboardEventHandler, PointerEvent, ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { X } from "lucide-react"
 import "@/styles/kitchen-sheet.css"
@@ -16,6 +16,7 @@ interface KitchenSheetProps {
   bodyClassName?: string
   closeDisabled?: boolean
   closeLabel?: string
+  onKeyDown?: KeyboardEventHandler<HTMLDialogElement>
 }
 
 function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
@@ -27,7 +28,7 @@ function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
 
 // The parent mounts this sheet while open. Native modal dialogs keep keyboard
 // focus inside the sheet and make the rest of the page inert.
-export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false, icon, footer, bodyClassName = "", closeDisabled = false, closeLabel = "关闭" }: KitchenSheetProps) {
+export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false, icon, footer, bodyClassName = "", closeDisabled = false, closeLabel = "关闭", onKeyDown }: KitchenSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const backdropPointerDown = useRef(false)
   const titleId = useId()
@@ -48,6 +49,7 @@ export default function KitchenSheet({ title, theme, onClose, children, classNam
       ref={dialogRef}
       className={`kitchen-surface kitchen-${theme} kitchen-sheet ${className}`}
       aria-labelledby={titleId}
+      onKeyDown={onKeyDown}
       onCancel={(event) => { event.preventDefault(); if (!closeDisabled) onClose() }}
       onPointerDown={(event) => { backdropPointerDown.current = isBackdrop(event) }}
       onPointerUp={(event) => {

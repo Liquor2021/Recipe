@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import type { FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { isAxiosError } from "axios"
 import { AlertCircle, ArrowRight, LoaderCircle, Moon, Soup, Sun } from "lucide-react"
 import { authApi } from "@/api"
 import { APP_TOKEN_KEY } from "@/api/client"
+import { getLoginError } from "@/lib/loginError"
+import type { LoginError } from "@/lib/loginError"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
 import AchievementUnlockOverlay from "@/components/AchievementUnlockOverlay"
@@ -13,7 +14,7 @@ import "@/styles/kitchen-login.css"
 
 function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
   const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
+  const [error, setError] = useState<LoginError | null>(null)
   const [shake, setShake] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const appName = useAppInfoStore((s) => s.appName)
@@ -34,13 +35,9 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
       toast.success("手账已翻开")
     },
     onError: (cause) => {
-      const wrongPassword = isAxiosError(cause) && cause.response?.status === 401
-      setError(wrongPassword
-        ? "口令不对，再想想～"
-        : isAxiosError(cause) && !cause.response
-          ? "暂时连不上小灶，请检查网络后重试。"
-          : "暂时没能打开手账，请稍后再试。")
-      setShake(wrongPassword)
+      const feedback = getLoginError(cause, "app")
+      setError(feedback)
+      setShake(feedback.invalidPassword)
       inputRef.current?.focus()
     },
   })
@@ -48,7 +45,7 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!password || loginMut.isPending) return
-    setError("")
+    setError(null)
     setShake(false)
     loginMut.mutate(password)
   }
@@ -92,10 +89,10 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
                 required
                 value={password}
                 readOnly={loginMut.isPending}
-                aria-invalid={!!error}
+                aria-invalid={error?.invalidPassword ?? false}
                 aria-describedby={error ? "kitchen-login-error" : undefined}
                 placeholder={isNight ? "压低声音，对上暗号…" : "写下口令，翻开手账…"}
-                onChange={(event) => { setPassword(event.target.value); setError("") }}
+                onChange={(event) => { setPassword(event.target.value); setError(null) }}
               />
             </div>
             <button className="kitchen-login-submit" type="submit" disabled={!password || loginMut.isPending}>
@@ -104,7 +101,7 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
               {!loginMut.isPending ? <ArrowRight size={17} aria-hidden="true" /> : null}
             </button>
             <div id="kitchen-login-error" className="kitchen-login-message" aria-live="polite" aria-atomic="true">
-              {error ? <p className="kitchen-login-error"><AlertCircle size={16} aria-hidden="true" /><span>{error}</span></p> : null}
+              {error ? <p className="kitchen-login-error"><AlertCircle size={16} aria-hidden="true" /><span>{error.message}</span></p> : null}
             </div>
           </form>
           <footer className="kitchen-login-footer">
