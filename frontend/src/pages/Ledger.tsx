@@ -4,10 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, NotebookPen, Plus, ReceiptText, Wallet } from "lucide-react"
 import { ledgerApi } from "@/api/ledger"
 import { getUploadErrorMessage } from "@/api/client"
-import { comparisonLabel, expenseCategories, ledgerToday, money, parseMoney, shiftMonth } from "@/lib/ledger"
+import { expenseCategories, ledgerToday, money, parseMoney, shiftMonth } from "@/lib/ledger"
 import type { Expense } from "@/lib/ledger"
 import PageHeader from "@/components/PageHeader"
 import ExpenseSheet from "@/components/ExpenseSheet"
+import LedgerComparison from "@/components/LedgerComparison"
 import KitchenSheet from "@/components/KitchenSheet"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import toast from "react-hot-toast"
@@ -81,7 +82,7 @@ export default function Ledger() {
         <section className="ledger-summary" aria-label="月度收支概览">
           <div className="ledger-tape" aria-hidden="true" />
           <p className="ledger-eyebrow">{Number(month.slice(5))} 月厨房支出</p>
-          <div className="ledger-total-line"><strong><span>¥</span>{money(total)}</strong><span className={`ledger-comparison ${total > data.previous_total_cents ? "is-up" : ""}`}>{comparisonLabel(total, data.previous_total_cents)}</span></div>
+          <div className="ledger-total-line"><strong><span>¥</span>{money(total)}</strong><LedgerComparison total={total} previous={data.previous_total_cents} /></div>
           <div className="ledger-budget-caption"><span>{budget ? `本月预算 ¥${money(budget)}` : "给柴米油盐留一份预算"}</span><button type="button" onClick={() => setBudgetOpen(true)}>{budget ? "调整预算" : "设置预算"}</button></div>
           {budget > 0 && <>
             <div role="progressbar" aria-label="预算使用比例" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.round(total / budget * 100))} aria-valuetext={`已花 ${money(total)} 元，预算 ${money(budget)} 元`} className={`ledger-budget-track ${over ? "is-over" : ""}`}><i style={{ width: `${Math.min(100, total / budget * 100)}%` }} /></div>
@@ -99,7 +100,7 @@ export default function Ledger() {
         {visible.length === 0 ? <div className="kitchen-empty ledger-empty"><NotebookPen size={30} aria-hidden="true" /><strong>{data.entries.length ? "这个分类还没有支出" : "这一页，等你记下第一笔"}</strong><span>{data.entries.length ? "换个分类看看，或记下一笔新支出。" : "买菜、外卖、添一口锅，都可以记在这里。"}</span></div> : <div className="ledger-days">{[...days].map(([date, entries]) => <section key={date} className="ledger-day">
           <h3><span>{date === today ? "今天" : `${Number(date.slice(5, 7))} 月 ${Number(date.slice(8))} 日`}</span><small>{date === today ? date.slice(5).replace("-", "/") : `${entries.length} 笔`}</small><b>¥{money(entries.reduce((sum, e) => sum + e.amount_cents, 0))}</b></h3>
           {entries.map((expense) => <button type="button" key={expense.id} className="ledger-entry" aria-label={`修改${expense.note || expenseCategories.find((c) => c.key === expense.category)?.label}，${money(expense.amount_cents)}元`} onClick={() => setEditing(expense)}>
-            <span className={`ledger-source is-${expense.source === "shopping" ? "shopping" : expense.category === "takeout" ? "takeout" : "manual"}`}>{expense.source === "shopping" ? "买菜" : expense.category === "takeout" ? "外卖" : "手记"}</span>
+            <span className="ledger-source" style={{ color: expenseCategories.find((c) => c.key === expense.category)?.color }}>{expense.source === "shopping" ? "买菜" : expense.category === "takeout" ? "外卖" : "手记"}</span>
             <span className="ledger-entry-note"><strong>{expense.note || expenseCategories.find((c) => c.key === expense.category)?.label}</strong><small>{expenseCategories.find((c) => c.key === expense.category)?.label}</small></span>
             <span className="ledger-leader" aria-hidden="true" /><b>¥{money(expense.amount_cents)}</b><ChevronRight size={13} aria-hidden="true" />
           </button>)}

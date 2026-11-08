@@ -15,6 +15,7 @@ import toast from "react-hot-toast"
 import { ArrowRight, Check, ChefHat, Clock3, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
 import LedgerHomeNote from "@/components/LedgerHomeNote"
+import TodayMenuNote from "@/components/TodayMenuNote"
 import KitchenWheel from "@/components/KitchenWheel"
 import type { KitchenWheelHandle } from "@/components/KitchenWheel"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
@@ -67,7 +68,7 @@ export default function Home() {
     queryKey: ["dishes", "enabled"],
     queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", recommend: "1" }),
   })
-  const { data: recordsData } = useQuery({
+  const { data: recordsData, isPending: recordsPending, isError: recordsError, refetch: reloadRecords } = useQuery({
     queryKey: ["records", "today", todayKey],
     queryFn: () => recordsApi.list({ pageSize: "100", date_from: todayKey, date_to: todayKey }),
   })
@@ -371,6 +372,8 @@ export default function Home() {
           <span className="kitchen-margin-note" aria-hidden="true">好好吃饭</span>
         </section>
 
+        <TodayMenuNote date={todayKey} records={todayRecords} mood={todayRating?.mood} pending={recordsPending} error={recordsError} onRetry={() => void reloadRecords()} />
+
         {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
           <aside className="kitchen-urgent">
             <button onClick={() => navigate(`/fridge?filter=${urgentSummary.filter}`)}>
@@ -392,6 +395,44 @@ export default function Home() {
               <X size={17} />
             </button>
           </aside>
+        )}
+
+        <section className="kitchen-moods" aria-labelledby="kitchen-mood-title">
+          <div className="kitchen-section-heading">
+            <h2 id="kitchen-mood-title">「今天的心情」</h2>
+            <span>按心情，找点好吃的</span>
+          </div>
+          <div className="kitchen-mood-grid">
+            {moods.map((m) => (
+              <button
+                key={m.key}
+                className={`kitchen-mood ${selectedMood === m.key ? "is-selected" : ""}`}
+                aria-pressed={selectedMood === m.key}
+                onClick={() => handleMoodPick(m.key)}
+              >
+                <span className="kitchen-mood-emoji" aria-hidden="true">{m.emoji}</span>
+                <span>{m.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {moodDishes && moodDishes.length > 0 && (
+          <section className="kitchen-mood-recipes" aria-label="心情推荐">
+            <div className="kitchen-section-heading"><h2>「跟着心情吃」</h2></div>
+            <div className="kitchen-recipe-list">
+              {moodDishes.slice(0, 4).map((d) => (
+                <button key={d.id} onClick={() => navigate(`/dishes/${d.id}`)}>
+                  <DishImage dish={d} className="kitchen-recipe-thumb" />
+                  <span>
+                    <strong>{d.name}</strong>
+                    <small>{d.category} · {d.cook_time} 分钟</small>
+                  </span>
+                  <ArrowRight size={15} />
+                </button>
+              ))}
+            </div>
+          </section>
         )}
 
         <section className="kitchen-recommendation" aria-labelledby="kitchen-rec-title">
@@ -438,26 +479,6 @@ export default function Home() {
           {recQuote && <p className="kitchen-recipe-quote">“{recQuote}”</p>}
         </section>
 
-        <section className="kitchen-moods" aria-labelledby="kitchen-mood-title">
-          <div className="kitchen-section-heading">
-            <h2 id="kitchen-mood-title">「今天的心情」</h2>
-            <span>按心情，找点好吃的</span>
-          </div>
-          <div className="kitchen-mood-grid">
-            {moods.map((m) => (
-              <button
-                key={m.key}
-                className={`kitchen-mood ${selectedMood === m.key ? "is-selected" : ""}`}
-                aria-pressed={selectedMood === m.key}
-                onClick={() => handleMoodPick(m.key)}
-              >
-                <span className="kitchen-mood-emoji" aria-hidden="true">{m.emoji}</span>
-                <span>{m.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
         <KitchenWheel
           ref={wheelHandle}
           theme={theme}
@@ -498,7 +519,7 @@ export default function Home() {
           </div>
         </section>
 
-        <LedgerHomeNote month={todayKey.slice(0, 7)} />
+        <LedgerHomeNote month={todayKey.slice(0, 7)} active={location.pathname === "/"} />
         <button className="kitchen-tomorrow-note" onClick={() => navigate("/tomorrow")}>
           <Moon size={22} strokeWidth={1.4} />
           <span><strong>明天吃什么</strong><small>提前写好，明天少一点纠结</small></span>
@@ -523,24 +544,6 @@ export default function Home() {
             <ArrowRight size={16} />
           </button>
         </section>
-
-        {moodDishes && moodDishes.length > 0 && (
-          <section className="kitchen-mood-recipes" aria-label="心情推荐">
-            <div className="kitchen-section-heading"><h2>「跟着心情吃」</h2></div>
-            <div className="kitchen-recipe-list">
-              {moodDishes.slice(0, 4).map((d) => (
-                <button key={d.id} onClick={() => navigate(`/dishes/${d.id}`)}>
-                  <DishImage dish={d} className="kitchen-recipe-thumb" />
-                  <span>
-                    <strong>{d.name}</strong>
-                    <small>{d.category} · {d.cook_time} 分钟</small>
-                  </span>
-                  <ArrowRight size={15} />
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
 
         <footer className="kitchen-page-footer">
           <span>一餐一饭，都是生活。</span>

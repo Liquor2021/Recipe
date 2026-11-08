@@ -9,6 +9,8 @@
   --k-red: #c2492f;
   --k-green: #5f7a52;
   --k-amber: #996b27;
+  --k-ochre: #916344;
+  --k-gray: #73716b;
   --k-kraft: #e8dcc6;
   --k-shadow: 0 3px 9px rgb(64 45 25 / 8%), 0 1px 2px rgb(64 45 25 / 5%);
   --color-bg: var(--k-paper);
@@ -46,6 +48,8 @@
   --k-red: #eb7856;
   --k-green: #a0b58b;
   --k-amber: #d6ad70;
+  --k-ochre: #c69a78;
+  --k-gray: #aaa69e;
   --k-kraft: #342c22;
   --k-shadow: 0 4px 12px rgb(0 0 0 / 24%), 0 1px 2px rgb(0 0 0 / 18%);
   color-scheme: dark;

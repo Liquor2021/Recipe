@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react"
+import { useState, useMemo, useRef, useEffect, useEffectEvent } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate, useLocation } from "react-router-dom"
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
@@ -19,6 +19,8 @@ import "@/styles/kitchen-memories.css"
 import { thumbUrl } from "@/lib/dishImage"
 import { getHistoryMonthSummary, getPlanDateLabel } from "@/lib/historySummary"
 import { nextLocalMidnightDelay } from "@/lib/tomorrowDate"
+import { mealMoodOptions, mealMoodFromParam } from "@/lib/mealRating"
+import type { MealMood } from "@/lib/mealRating"
 
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 
@@ -26,12 +28,6 @@ const moodOptions = [
   { key: "yum", emoji: "😋", label: "好吃" },
   { key: "ok", emoji: "😐", label: "一般" },
   { key: "no", emoji: "😵", label: "不想再吃" },
-]
-
-const mealMoodOptions = [
-  { key: "great", emoji: "😋", label: "超满足" },
-  { key: "ok", emoji: "😐", label: "还行吧" },
-  { key: "meh", emoji: "😕", label: "不太行" },
 ]
 
 const moodEmojiMap: Record<string, string> = { yum: "😋", ok: "😐", no: "😵", great: "😋", meh: "😕" }
@@ -47,7 +43,7 @@ const statusLabels = { planned: "计划", completed: "已吃", cancelled: "已�
 
 // 每次打开评价都是独立会话；关闭或切换后，旧上传/保存不能改动新的草稿。
 type RatingSession = { target: string; photos: string[]; uploading: boolean; saving: boolean }
-type DayRatingSession = RatingSession & { version: string; readToken: number }
+type DayRatingSession = RatingSession & { version: string; readToken: number; initialMood?: MealMood }
 type DayRatingConflict = { latest: DayRating | null; reason: "changed" | "unconfirmed" }
 
 function isDayRatingConflict(error: unknown) {
@@ -681,13 +677,13 @@ export default function History() {
     }
   }
 
-  function openMealRating() {
+  function openMealRating(initialMood?: MealMood) {
     if (!canRateSelectedDay) return
     if (ratingWritePending("day", selectedDateKey)) {
       toast("这天的评价或照片正在保存，请稍后再打开")
       return
     }
-    const session: DayRatingSession = { target: selectedDateKey, photos: [], version: "", readToken: 0, uploading: false, saving: false }
+    const session: DayRatingSession = { target: selectedDateKey, photos: [], version: "", readToken: 0, uploading: false, saving: false, initialMood }
     mealSession.current = session
     setMealNotice("")
     setMealRatingDate(selectedDateKey)
@@ -713,7 +709,7 @@ export default function History() {
       if (initialize) {
         session.version = latest.version
         session.photos = parsePhotos(latest.photos)
-        setMealRatingMood(latest.mood || "")
+        setMealRatingMood(session.initialMood ?? latest.mood ?? "")
         setMealRatingRemark(latest.remark || "")
         setMealPhotos(session.photos)
         setMealReady(true)
@@ -922,6 +918,17 @@ export default function History() {
   const selectedRecords = selectedDay !== null ? (recordByDate.get(selectedDateKey) || []) : []
   const selectedCompletedRecords = selectedRecords.filter((r) => r.status === "completed")
   const canRateSelectedDay = !monthError && !selectedIsFuture && selectedCompletedRecords.length > 0
+  const reviewedLocation = useRef<string | null>(null)
+  const openReviewFromHome = useEffectEvent((mood?: MealMood) => openMealRating(mood))
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (location.pathname !== "/history" || params.get("review") !== "day" || params.get("date") !== selectedDateKey || monthPending || monthError || reviewedLocation.current === location.key) return
+    reviewedLocation.current = location.key
+    // 外部路由进入并读到当天记录后，打开同一套评价会话；每次导航只处理一次。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (canRateSelectedDay) openReviewFromHome(mealMoodFromParam(params.get("mood")))
+    else toast("这天还没有已吃记录，吃过后再来评价吧")
+  }, [location.pathname, location.search, location.key, selectedDateKey, monthPending, monthError, canRateSelectedDay])
   const completedMealTypes = new Set(selectedCompletedRecords.map((r) => r.meal_type))
 
   function changeMonth(dir: number) {
@@ -1033,7 +1040,7 @@ export default function History() {
               </div>
               {canRateSelectedDay ? (
                 <button
-                  onClick={openMealRating}
+                  onClick={() => openMealRating()}
                   className="history-day-rating"
                   aria-label={dayRating?.mood ? "编辑当日心情与评价" : "记录当日心情与评价"}
                   title={dayRating?.mood ? "编辑当日心情与评价" : "记录当日心情与评价"}
@@ -1100,7 +1107,7 @@ export default function History() {
                      ))}
                   </div>}
                   {canRateSelectedDay && <div className="history-photo-invitation">
-                    <button onClick={openMealRating} className="history-photo-add" aria-label="贴一张饭桌照片">
+                    <button onClick={() => openMealRating()} className="history-photo-add" aria-label="贴一张饭桌照片">
                       <Camera size={20} strokeWidth={1.5} aria-hidden="true" />
                       <span>贴一张</span>
                     </button>

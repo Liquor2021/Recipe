@@ -1,8 +1,8 @@
 export const expenseCategories = [
   { key: "ingredients", label: "食材", color: "var(--k-green)" },
   { key: "takeout", label: "外卖", color: "var(--k-amber)" },
-  { key: "seasoning", label: "调料", color: "var(--k-red)" },
-  { key: "kitchenware", label: "厨房用品", color: "var(--k-muted)" },
+  { key: "seasoning", label: "调料", color: "var(--k-ochre)" },
+  { key: "kitchenware", label: "厨房用品", color: "var(--k-gray)" },
   { key: "other", label: "其他", color: "var(--k-faint)" },
 ] as const
 
@@ -32,10 +32,17 @@ export function shiftMonth(month: string, offset: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
 }
 export function comparisonLabel(total: number, previous: number) {
-  if (previous === 0) return total === 0 ? "上月也没有支出" : "上月无支出，暂不比较"
+  if (previous <= 0 || !Number.isFinite(previous) || !Number.isFinite(total)) return null
   const change = (total - previous) / previous * 100
   return change === 0 ? "与上月持平" : `${change > 0 ? "↑" : "↓"} 比上月 ${Math.abs(change).toFixed(1)}%`
 }
 export function newExpenseRequestID() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
+}
+
+export function homeCategoryTotals(categories: LedgerMonth["categories"]) {
+  return [
+    ...expenseCategories.slice(0, 3).map((category) => ({ ...category, amount: categories[category.key] })),
+    { key: "supplies", label: categories.other > 0 ? "用品等" : "用品", color: "var(--k-gray)", amount: categories.kitchenware + categories.other },
+  ]
 }

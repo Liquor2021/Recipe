@@ -131,12 +131,36 @@
 .kitchen-urgent > button:first-child { flex: 1; min-width: 0; text-align: left; padding: 6px 0; }
 .kitchen-urgent strong { font-size: 12px; display: block; color: var(--k-red); }
 .kitchen-urgent span { font-size: 11px; display: flex; align-items: center; gap: 4px; color: var(--k-muted); margin-top: 4px; }
+.kitchen-today-menu { padding: 10px 13px 9px; margin-bottom: 18px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); box-shadow: var(--k-shadow); }
+.kitchen-today-menu > header, .kitchen-today-menu > footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; }
+.kitchen-today-menu h2 { display: flex; align-items: center; gap: 5px; font-size: 15px; }
+.kitchen-today-menu h2 i { color: var(--k-red); font-style: normal; }
+.kitchen-today-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px 10px 7px 9px; background: color-mix(in srgb, var(--k-amber) 14%, var(--k-card)); font-size: 15px; }
+.kitchen-today-menu > header button, .kitchen-today-more { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; color: var(--k-red); font-size: 11px; }
+.kitchen-today-menu > ul { list-style: none; padding: 0; margin: 0; }
+.kitchen-today-menu > ul > li + li { border-top: 1px dotted var(--k-line); }
+.kitchen-today-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 5px 0; text-align: left; }
+.kitchen-today-row strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.kitchen-today-meal { flex-shrink: 0; padding: 3px 4px; color: var(--k-ochre); border: 1px solid currentColor; border-radius: 3px; font-size: 10px; transform: rotate(-2deg); }
+.kitchen-today-meal.is-lunch { color: var(--k-red); }
+.kitchen-today-meal.is-dinner { color: var(--k-green); }
+.kitchen-today-status { flex-shrink: 0; padding: 3px 4px; color: var(--k-amber); border: 1px dashed currentColor; border-radius: 3px; font-size: 10px; }
+.kitchen-today-status.is-eaten { color: var(--k-card); background: var(--k-green); border-style: solid; border-color: var(--k-green); }
+.kitchen-today-row small { flex-shrink: 0; color: var(--k-muted); font-size: 10px; }
+.kitchen-today-menu > footer { min-height: 40px; padding-top: 8px; margin-top: 4px; border-top: 1px dotted var(--k-line); color: var(--k-muted); font-size: 11px; }
+.kitchen-today-moods { display: flex; align-items: center; gap: 8px; }
+.kitchen-today-moods > button { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--k-line); border-radius: 50%; background: var(--k-card); font-size: 16px; }
+.kitchen-today-moods > button[aria-pressed="true"] { border-color: var(--k-red); background: color-mix(in srgb, var(--k-red) 9%, var(--k-card)); transform: rotate(-4deg) translateY(-1px); }
+.kitchen-today-moods > button:disabled { opacity: .45; cursor: default; }
+.kitchen-today-menu > p, .kitchen-today-retry { padding: 13px 0 18px; color: var(--k-muted); font-size: 12px; line-height: 1.7; }
+.kitchen-today-more { color: var(--k-muted); }
 @media (hover: hover) {
   .kitchen-photo-link:hover img { transform: scale(1.025); }
   .kitchen-icon-button:hover { background: var(--k-kraft); }
   .kitchen-theme-toggle:hover { color: var(--k-red); }
   .kitchen-theme-toggle:hover::after { transform: scaleX(1); }
   .kitchen-mood:hover { border-color: var(--k-red); }
+  .kitchen-today-moods > button:not(:disabled):hover { border-color: var(--k-red); }
   .kitchen-text-button:hover { text-decoration: underline; text-underline-offset: 4px; }
   .kitchen-button-outline:hover { border-color: var(--k-muted); }
 }
