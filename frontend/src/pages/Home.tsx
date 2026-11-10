@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi, getUploadErrorMessage } from "@/api"
+import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi } from "@/api"
 import type { Dish } from "@/types"
 import DishImage from "@/components/DishImage"
 import { useAuthStore } from "@/store/useAuthStore"
@@ -10,7 +10,6 @@ import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { isCurrentMoodChoice, savedHomeMood, selectedHomeMood } from "@/lib/homeMood"
 import type { HomeMood, HomeMoodChoice } from "@/lib/homeMood"
-import { scrollToElement } from "@/lib/gsap"
 import toast from "react-hot-toast"
 import { ArrowRight, Check, ChefHat, Clock3, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
@@ -82,8 +81,6 @@ export default function Home() {
   })
 
   const [pickedRec, setPickedRec] = useState<Dish | null>(null)
-  const [recQuote, setRecQuote] = useState<string>("")
-  const [recMeal, setRecMeal] = useState<"lunch" | "dinner" | null>(null)
   const [moodChoice, setMoodChoice] = useState<HomeMoodChoice | null>(null)
   const latestMoodChoice = useRef<HomeMoodChoice | null>(null)
   const moodRequestId = useRef(0)
@@ -95,7 +92,6 @@ export default function Home() {
   })
   const urgentDismissed = urgentDismissedDate === todayKey
   const confettiRef = useRef<HTMLDivElement>(null)
-  const recCardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -151,26 +147,6 @@ export default function Home() {
 
   const blindBoxMut = useMutation({
     mutationFn: () => pickApi.blindBox(),
-  })
-
-  // 午/晚餐推荐：触发后把结果写入当前推荐卡并滚动过去
-  const pickMealMut = useMutation({
-    mutationFn: (meal: "lunch" | "dinner") => (meal === "lunch" ? pickApi.lunch() : pickApi.dinner()),
-    onSuccess: (data, meal) => {
-      const dish = data?.dishes?.[0]
-      if (!dish) {
-        toast.error("暂无可推荐的菜品")
-        return
-      }
-      setPickedRec(dish)
-      setRecQuote(data.quote || "")
-      setRecMeal(meal)
-      qc.invalidateQueries({ queryKey: ["achievements"] })
-      toast.success(`${meal === "lunch" ? "🍳 午餐" : "🍲 晚餐"}推荐：${dish.name}`)
-      requestAnimationFrame(() => scrollToElement(recCardRef.current, { block: "center" }))
-    },
-    // 显示后端的原因（如 strict 忌口过滤后"没有可推荐的菜品"），不笼统说"稍后再试"
-    onError: (err: unknown) => toast.error(getUploadErrorMessage(err, "推荐失败，稍后再试")),
   })
 
   const recordMut = useMutation({
@@ -241,8 +217,6 @@ export default function Home() {
 
   function handleWheelPick(dish: Dish) {
     setPickedRec(dish)
-    setRecQuote("")
-    setRecMeal(null)
     setWheelResult(dish)
     qc.invalidateQueries({ queryKey: ["achievements"] })
   }
@@ -294,8 +268,6 @@ export default function Home() {
     const idx = currentRec ? dishes.findIndex((d) => d.id === currentRec.id) : -1
     const next = dishes[(idx + 1) % dishes.length]
     setPickedRec(next)
-    setRecQuote("")
-    setRecMeal(null)
   }
 
   const moodDishes = moodPick?.dishes
@@ -381,7 +353,7 @@ export default function Home() {
             </button>
           </div>
           {currentRec ? (
-            <article className="kitchen-polaroid" ref={recCardRef}>
+            <article className="kitchen-polaroid">
               <span className="kitchen-tape" aria-hidden="true" />
               <button
                 className="kitchen-photo-link"
@@ -400,7 +372,6 @@ export default function Home() {
                   <span>{currentRec.category || "家常菜"}</span>
                   <span><Clock3 size={12} />{currentRec.cook_time} 分钟</span>
                   <span className="kitchen-difficulty">{diffLabel(currentRec.difficulty)}</span>
-                  {recMeal && <span className="kitchen-meal-mark">{recMeal === "lunch" ? "午餐推荐" : "晚餐推荐"}</span>}
                 </div>
                 {mealButtons(currentRec)}
               </div>
@@ -414,7 +385,6 @@ export default function Home() {
               </button>
             </div>
           )}
-          {recQuote && <p className="kitchen-recipe-quote">“{recQuote}”</p>}
         </section>
 
         <TodayMenuNote date={todayKey} records={todayRecords} mood={todayRating?.mood} pending={recordsPending} error={recordsError} onRetry={() => void reloadRecords()}>
@@ -521,25 +491,6 @@ export default function Home() {
           <span><strong>明天吃什么</strong><small>提前写好，明天少一点纠结</small></span>
           <ArrowRight size={16} />
         </button>
-
-        <section className="kitchen-meal-picks" aria-label="按餐次推荐">
-          <button disabled={pickMealMut.isPending} onClick={() => pickMealMut.mutate("lunch")}>
-            <Sun size={18} />
-            <span>
-              <strong>中午吃点好的</strong>
-              <small>{pickMealMut.isPending && pickMealMut.variables === "lunch" ? "正在翻菜谱…" : "找一道午餐"}</small>
-            </span>
-            <ArrowRight size={16} />
-          </button>
-          <button disabled={pickMealMut.isPending} onClick={() => pickMealMut.mutate("dinner")}>
-            <Soup size={18} />
-            <span>
-              <strong>晚上吃点暖的</strong>
-              <small>{pickMealMut.isPending && pickMealMut.variables === "dinner" ? "正在翻菜谱…" : "找一道晚餐"}</small>
-            </span>
-            <ArrowRight size={16} />
-          </button>
-        </section>
 
         <footer className="kitchen-page-footer">
           <span>一餐一饭，都是生活。</span>

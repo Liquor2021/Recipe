@@ -14,7 +14,7 @@
 }
 .kitchen-home h1, .kitchen-home h2, .kitchen-home h3,
 .kitchen-brand, .kitchen-button, .kitchen-play-strip strong,
-.kitchen-meal-picks strong, .kitchen-recipe-list strong,
+.kitchen-recipe-list strong,
 .kitchen-sheet h2, .kitchen-sheet h3, .kitchen-sheet strong {
   font-family: "Kitchen Serif", "Songti SC", SimSun, serif;
   font-weight: 900;
@@ -59,19 +59,10 @@
 .kitchen-recipe-meta > span { display: inline-flex; align-items: center; gap: 4px; }
 .kitchen-recipe-meta > span:first-child { padding-right: 7px; border-right: 1px solid var(--k-line); }
 .kitchen-difficulty { border: 1px solid var(--k-green); color: var(--k-green); border-radius: 2px; padding: 2px 5px; transform: rotate(-3deg); font-size: 10px; }
-.kitchen-meal-mark { color: var(--k-red); }
 .kitchen-meal-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
 .kitchen-button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 44px; padding: 9px 6px; border: 1px solid var(--k-ink); border-radius: 4px; font-size: 14px; line-height: 1.5; }
 .kitchen-button-ink { background: var(--k-ink); color: var(--k-card); }
 .kitchen-button-outline { background: transparent; border-color: var(--k-line); color: var(--k-ink); }
-.kitchen-recipe-quote { color: var(--k-muted); font-size: 12px; line-height: 1.8; padding: 0 9px 8px; }
-.kitchen-meal-picks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-bottom: 1px dashed var(--k-line); padding: 16px 0 13px; }
-.kitchen-meal-picks button { display: flex; align-items: center; justify-content: flex-start; gap: 7px; min-width: 0; min-height: 48px; padding-left: 12px; text-align: left; }
-.kitchen-meal-picks button > span { min-width: 0; }
-.kitchen-meal-picks button > svg:first-child { color: var(--k-green); flex-shrink: 0; }
-.kitchen-meal-picks button > svg:last-child { color: var(--k-faint); flex-shrink: 0; }
-.kitchen-meal-picks strong { display: block; font-size: 12px; }
-.kitchen-meal-picks small { display: block; margin-top: 3px; font-size: 11px; color: var(--k-muted); }
 .kitchen-page-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 5px; padding-top: 12px; color: var(--k-muted); font-size: 11px; }
 .kitchen-theme-toggle { position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--k-muted); font-size: 11px; background: transparent; transition: color 160ms ease; }
 .kitchen-theme-toggle::after { content: ""; position: absolute; inset: auto 0 9px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left; transition: transform 160ms ease; }
@@ -188,8 +179,6 @@
   .kitchen-greeting { padding-right: 0; }
   .kitchen-margin-note { display: none; }
   .kitchen-mood-options { gap: 4px; }
-  .kitchen-meal-picks { gap: 10px; }
-  .kitchen-meal-picks button { gap: 4px; }
   .kitchen-recipe-list { grid-template-columns: 1fr; }
   .kitchen-ticket-sheet { padding-inline: 15px; }
   .kitchen-ticket-body { grid-template-columns: 70px minmax(0, 1fr) 30px; gap: 10px; }
