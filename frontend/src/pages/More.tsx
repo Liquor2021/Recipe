@@ -14,7 +14,7 @@ import StockInSheet, { type StockInCandidate } from "@/components/StockInSheet"
 import PageHeader from "@/components/PageHeader"
 import type { Achievement, ShoppingCategory, ShoppingItem } from "@/types"
 import toast from "react-hot-toast"
-import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, UtensilsCrossed, ChevronRight, ChevronDown, Settings2, LockKeyhole, LogOut, NotebookPen } from "lucide-react"
+import { Menu, ShoppingBasket, Snowflake, CalendarDays, Trophy, ChevronRight, ChevronDown, Settings2, LockKeyhole, LogOut, NotebookPen } from "lucide-react"
 import { isAxiosError } from "axios"
 import "@/styles/kitchen-tools.css"
 import WeekPlanner from "@/components/WeekPlanner"
@@ -413,10 +413,6 @@ export default function More() {
           <button type="button" className="k-more-entry" onClick={() => navigate("/achievements")}>
             <span className="k-more-entry-icon"><Trophy size={20} aria-hidden="true" /></span>
             <strong>成就墙</strong><span className="k-tool-leader" aria-hidden="true" /><small>{unlockedCount} / {achievements.length} 已解锁</small><ChevronRight size={17} aria-hidden="true" />
-          </button>
-          <button type="button" className="k-more-entry" onClick={() => navigate("/dishes")}>
-            <span className="k-more-entry-icon"><UtensilsCrossed size={20} aria-hidden="true" /></span>
-            <strong>开始做菜</strong><span className="k-tool-leader" aria-hidden="true" /><small>挑一道喜欢的菜</small><ChevronRight size={17} aria-hidden="true" />
           </button>
         </nav>
 
