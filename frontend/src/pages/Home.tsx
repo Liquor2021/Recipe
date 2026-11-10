@@ -137,7 +137,7 @@ export default function Home() {
   const todayRecords = recordsData?.items || []
   const currentRec = pickedRec || dishes[0] || null
 
-  const { data: moodPick } = useQuery({
+  const { data: moodPick, isFetching: moodFetching, isError: moodError, refetch: reloadMoodPick } = useQuery({
     queryKey: ["pick", "mood", selectedMood],
     queryFn: () => pickApi.mood(selectedMood!),
     enabled: !!selectedMood,
@@ -299,6 +299,7 @@ export default function Home() {
   }
 
   const moodDishes = moodPick?.dishes
+  const currentMood = moods.find((mood) => mood.key === selectedMood)
   const date = new Date(todayKey + "T12:00:00")
   const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日 · 周${"日一二三四五六"[date.getDay()]}`
   const brand = appName
@@ -372,69 +373,6 @@ export default function Home() {
           <span className="kitchen-margin-note" aria-hidden="true">好好吃饭</span>
         </section>
 
-        <TodayMenuNote date={todayKey} records={todayRecords} mood={todayRating?.mood} pending={recordsPending} error={recordsError} onRetry={() => void reloadRecords()} />
-
-        {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
-          <aside className="kitchen-urgent">
-            <button onClick={() => navigate(`/fridge?filter=${urgentSummary.filter}`)}>
-              <strong>{urgentSummary.title}</strong>
-              <span>
-                {urgentSummary.names} · {urgentSummary.filter === "expired" ? "先检查并处理" : "看看能做什么"} <ArrowRight size={12} />
-              </span>
-            </button>
-            <button
-              className="kitchen-icon-button"
-              aria-label="关闭提醒"
-              onClick={() => {
-                setUrgentDismissedDate(todayKey)
-                try {
-                  localStorage.setItem("urgent_dismissed_date", todayKey)
-                } catch { /* 隐私模式下不持久化关闭状态。 */ }
-              }}
-            >
-              <X size={17} />
-            </button>
-          </aside>
-        )}
-
-        <section className="kitchen-moods" aria-labelledby="kitchen-mood-title">
-          <div className="kitchen-section-heading">
-            <h2 id="kitchen-mood-title">「今天的心情」</h2>
-            <span>按心情，找点好吃的</span>
-          </div>
-          <div className="kitchen-mood-grid">
-            {moods.map((m) => (
-              <button
-                key={m.key}
-                className={`kitchen-mood ${selectedMood === m.key ? "is-selected" : ""}`}
-                aria-pressed={selectedMood === m.key}
-                onClick={() => handleMoodPick(m.key)}
-              >
-                <span className="kitchen-mood-emoji" aria-hidden="true">{m.emoji}</span>
-                <span>{m.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {moodDishes && moodDishes.length > 0 && (
-          <section className="kitchen-mood-recipes" aria-label="心情推荐">
-            <div className="kitchen-section-heading"><h2>「跟着心情吃」</h2></div>
-            <div className="kitchen-recipe-list">
-              {moodDishes.slice(0, 4).map((d) => (
-                <button key={d.id} onClick={() => navigate(`/dishes/${d.id}`)}>
-                  <DishImage dish={d} className="kitchen-recipe-thumb" />
-                  <span>
-                    <strong>{d.name}</strong>
-                    <small>{d.category} · {d.cook_time} 分钟</small>
-                  </span>
-                  <ArrowRight size={15} />
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
         <section className="kitchen-recommendation" aria-labelledby="kitchen-rec-title">
           <div className="kitchen-section-heading">
             <h2 id="kitchen-rec-title">「今日推荐」</h2>
@@ -478,6 +416,64 @@ export default function Home() {
           )}
           {recQuote && <p className="kitchen-recipe-quote">“{recQuote}”</p>}
         </section>
+
+        <TodayMenuNote date={todayKey} records={todayRecords} mood={todayRating?.mood} pending={recordsPending} error={recordsError} onRetry={() => void reloadRecords()}>
+          <div className="kitchen-mood-row">
+            <span id="kitchen-mood-label">跟着心情吃</span>
+            <div className="kitchen-mood-options" role="group" aria-labelledby="kitchen-mood-label">
+              {moods.map((m) => (
+                <button
+                  type="button"
+                  key={m.key}
+                  aria-label={`${m.label}，推荐菜品`}
+                  title={m.label}
+                  aria-pressed={selectedMood === m.key}
+                  onClick={() => handleMoodPick(m.key)}
+                >
+                  <span aria-hidden="true">{m.emoji}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {currentMood && <div className="kitchen-mood-suggestions" role="region" aria-label="心情推荐" aria-busy={moodFetching}>
+            <div className="kitchen-mood-summary">
+              <span>{currentMood.label} · 试试这两道</span>
+              <button type="button" className="kitchen-text-button" disabled={moodFetching} onClick={() => void reloadMoodPick()}>
+                <RefreshCw size={12} aria-hidden="true" />{moodFetching ? "正在找菜…" : moodError ? "重试" : "换一批"}
+              </button>
+            </div>
+            <div className="kitchen-mood-dishes" aria-live="polite">
+              {moodError ? <span role="status">心情推荐暂时没加载出来，点重试再看看。</span> : moodDishes?.length ? moodDishes.slice(0, 2).map((dish) => (
+                <button type="button" key={dish.id} aria-label={`查看${dish.name}的做法，${dish.cook_time}分钟`} onClick={() => navigate(`/dishes/${dish.id}`)}>
+                  <strong>{dish.name}</strong><small>{dish.cook_time} 分钟</small><ArrowRight size={12} aria-hidden="true" />
+                </button>
+              )) : <span role="status">{moodFetching ? "正在按心情翻菜谱…" : "暂时没有合适的菜，换个心情试试吧。"}</span>}
+            </div>
+          </div>}
+        </TodayMenuNote>
+
+        {urgentItems && urgentItems.length > 0 && !urgentDismissed && (
+          <aside className="kitchen-urgent">
+            <button onClick={() => navigate(`/fridge?filter=${urgentSummary.filter}`)}>
+              <strong>{urgentSummary.title}</strong>
+              <span>
+                {urgentSummary.names} · {urgentSummary.filter === "expired" ? "先检查并处理" : "看看能做什么"} <ArrowRight size={12} />
+              </span>
+            </button>
+            <button
+              className="kitchen-icon-button"
+              aria-label="关闭提醒"
+              onClick={() => {
+                setUrgentDismissedDate(todayKey)
+                try {
+                  localStorage.setItem("urgent_dismissed_date", todayKey)
+                } catch { /* 隐私模式下不持久化关闭状态。 */ }
+              }}
+            >
+              <X size={17} />
+            </button>
+          </aside>
+        )}
 
         <KitchenWheel
           ref={wheelHandle}

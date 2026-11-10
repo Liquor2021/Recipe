@@ -20,8 +20,8 @@
 .planner-meal+.planner-meal { border-top:1px dashed var(--k-line); }
 .planner-meal-heading { display:flex; align-items:center; flex-direction:column; gap:6px; padding-top:3px; }
 .planner-meal-heading small { font-size:9px; color:var(--k-muted); white-space:nowrap; }
-.planner-meal-stamp { font-size:11px; padding:3px 5px; border:1px solid currentColor; border-radius:3px; color:var(--k-green); white-space:nowrap; }
-.planner-meal.is-dinner .planner-meal-stamp { color:var(--k-red); }
+.planner-meal-stamp { font-size:11px; padding:3px 5px; border:1.4px solid currentColor; border-radius:5px 3px 6px 3px; color:var(--k-green); white-space:nowrap; transform:rotate(-3deg); }
+.planner-meal.is-dinner .planner-meal-stamp { color:var(--k-red); transform:rotate(3deg); }
 .planner-meal-rows { min-width:0; }
 .planner-dish { display:flex; align-items:center; gap:8px; min-height:38px; padding:3px 0; flex-wrap:wrap; }
 .planner-dish+.planner-dish { border-top:1px dotted var(--k-line); }
@@ -33,7 +33,7 @@
 .planner-day-editor button:disabled,.planner-week button:disabled,.planner-shopping-scope button:disabled { opacity:.4; cursor:not-allowed; }
 .planner-day-editor button:focus-visible,.planner-week button:focus-visible,.planner-shopping-scope button:focus-visible { outline:2px solid var(--k-green); outline-offset:3px; }
 .planner-add { display:flex; align-items:center; justify-content:center; gap:5px; min-height:32px; width:100%; padding:5px 8px; margin-top:6px; border:1px dashed var(--k-line); border-radius:4px; color:var(--k-muted); font-size:12px; }
-.planner-eaten { display:flex; align-items:center; gap:2px; color:var(--k-green); font-size:10px; }
+.planner-eaten { display:flex; align-items:center; gap:2px; color:var(--k-green); font-size:10px; transform:rotate(-2deg); }
 .planner-feedback,.planner-blank { margin:6px 0; font-size:12px; color:var(--k-muted); line-height:1.8; }
 .planner-feedback button { margin-left:8px; text-decoration:underline; }
 .planner-feedback.is-error { color:var(--k-red); }

@@ -65,12 +65,6 @@
 .kitchen-button-ink { background: var(--k-ink); color: var(--k-card); }
 .kitchen-button-outline { background: transparent; border-color: var(--k-line); color: var(--k-ink); }
 .kitchen-recipe-quote { color: var(--k-muted); font-size: 12px; line-height: 1.8; padding: 0 9px 8px; }
-.kitchen-moods .kitchen-section-heading { min-height: 32px; }
-.kitchen-mood-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 8px 0 13px; }
-.kitchen-mood { position: relative; min-width: 0; min-height: 72px; border: 1px solid var(--k-line); border-radius: 8px 10px 7px 9px; background: var(--k-card); box-shadow: 0 2px 1px rgb(57 40 24 / 6%); font-size: 11px; color: var(--k-muted); transition: transform 160ms ease, border-color 160ms ease; }
-.kitchen-mood-emoji { display: block; font-size: 25px; margin-bottom: 3px; line-height: 1.2; }
-.kitchen-mood.is-selected { border-color: var(--k-red); color: var(--k-red); transform: rotate(-4deg) translateY(-2px); }
-.kitchen-mood.is-selected::before { content: ""; position: absolute; width: 28px; height: 9px; top: -4px; left: calc(50% - 14px); background: color-mix(in srgb, var(--k-red) 28%, transparent); transform: rotate(-4deg); }
 .kitchen-meal-picks { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; border-bottom: 1px dashed var(--k-line); padding: 16px 0 13px; }
 .kitchen-meal-picks button { display: flex; align-items: center; justify-content: flex-start; gap: 7px; min-width: 0; min-height: 48px; padding-left: 12px; text-align: left; }
 .kitchen-meal-picks button > span { min-width: 0; }
@@ -147,11 +141,22 @@
 .kitchen-today-status { flex-shrink: 0; padding: 3px 4px; color: var(--k-amber); border: 1px dashed currentColor; border-radius: 3px; font-size: 10px; }
 .kitchen-today-status.is-eaten { color: var(--k-card); background: var(--k-green); border-style: solid; border-color: var(--k-green); }
 .kitchen-today-row small { flex-shrink: 0; color: var(--k-muted); font-size: 10px; }
-.kitchen-today-menu > footer { min-height: 40px; padding-top: 8px; margin-top: 4px; border-top: 1px dotted var(--k-line); color: var(--k-muted); font-size: 11px; }
-.kitchen-today-moods { display: flex; align-items: center; gap: 8px; }
-.kitchen-today-moods > button { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--k-line); border-radius: 50%; background: var(--k-card); font-size: 16px; }
-.kitchen-today-moods > button[aria-pressed="true"] { border-color: var(--k-red); background: color-mix(in srgb, var(--k-red) 9%, var(--k-card)); transform: rotate(-4deg) translateY(-1px); }
-.kitchen-today-moods > button:disabled { opacity: .45; cursor: default; }
+.kitchen-today-menu > footer { min-height: 36px; margin-top: 4px; border-top: 1px dotted var(--k-line); color: var(--k-muted); font-size: 11px; }
+.kitchen-today-review { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; color: var(--k-red); }
+.kitchen-today-review:disabled { color: var(--k-muted); }
+.kitchen-mood-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; padding-top: 8px; border-top: 1px dotted var(--k-line); color: var(--k-muted); font-size: 11px; }
+.kitchen-mood-options { display: flex; align-items: center; gap: 6px; }
+.kitchen-mood-options > button { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid transparent; border-radius: 50%; background: transparent; font-size: 19px; transition: transform 160ms ease, border-color 160ms ease; }
+.kitchen-mood-options > button[aria-pressed="true"] { border-color: var(--k-red); background: color-mix(in srgb, var(--k-red) 9%, var(--k-card)); transform: rotate(-4deg) translateY(-1px); }
+.kitchen-mood-suggestions { margin-top: 8px; padding: 6px 9px; background: var(--k-kraft); border-radius: 4px 6px 5px 4px; color: var(--k-muted); font-size: 11px; }
+.kitchen-mood-summary { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; flex-wrap: wrap; }
+.kitchen-mood-summary .kitchen-text-button { min-height: 28px; font-size: 11px; }
+.kitchen-mood-dishes { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.kitchen-mood-dishes > button { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; min-height: 32px; text-align: left; }
+.kitchen-mood-dishes strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--k-ink); font-family: "Kitchen Serif", SimSun, serif; font-size: 12px; }
+.kitchen-mood-dishes small, .kitchen-mood-dishes svg { flex-shrink: 0; }
+.kitchen-mood-dishes small { font-size: 10px; }
+.kitchen-mood-dishes > span { padding-block: 4px; line-height: 1.7; }
 .kitchen-today-menu > p, .kitchen-today-retry { padding: 13px 0 18px; color: var(--k-muted); font-size: 12px; line-height: 1.7; }
 .kitchen-today-more { color: var(--k-muted); }
 @media (hover: hover) {
@@ -159,8 +164,8 @@
   .kitchen-icon-button:hover { background: var(--k-kraft); }
   .kitchen-theme-toggle:hover { color: var(--k-red); }
   .kitchen-theme-toggle:hover::after { transform: scaleX(1); }
-  .kitchen-mood:hover { border-color: var(--k-red); }
-  .kitchen-today-moods > button:not(:disabled):hover { border-color: var(--k-red); }
+  .kitchen-mood-options > button:hover { border-color: var(--k-red); }
+  .kitchen-mood-dishes > button:hover strong { text-decoration: underline; text-underline-offset: 3px; }
   .kitchen-text-button:hover { text-decoration: underline; text-underline-offset: 4px; }
   .kitchen-button-outline:hover { border-color: var(--k-muted); }
 }
@@ -172,8 +177,6 @@
   .kitchen-greeting h1 { font-size: 39px; }
   .kitchen-food-photo { height: 250px; }
   .kitchen-recipe-note { padding: 10px 10px 15px; }
-  .kitchen-mood-grid { gap: 14px; }
-  .kitchen-mood { min-height: 78px; }
 }
 @media (max-width: 360px) {
   .kitchen-masthead { padding-inline: 16px; }
@@ -184,7 +187,7 @@
   .kitchen-greeting h1 { font-size: 25px; }
   .kitchen-greeting { padding-right: 0; }
   .kitchen-margin-note { display: none; }
-  .kitchen-mood-grid { gap: 6px; }
+  .kitchen-mood-options { gap: 4px; }
   .kitchen-meal-picks { gap: 10px; }
   .kitchen-meal-picks button { gap: 4px; }
   .kitchen-recipe-list { grid-template-columns: 1fr; }
