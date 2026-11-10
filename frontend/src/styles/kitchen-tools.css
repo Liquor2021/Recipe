@@ -93,6 +93,8 @@
 .k-plan-picker-categories .k-tool-chip { min-height: 32px; padding-inline: 11px; font-size: 12px; }
 .k-plan-picker-results { overscroll-behavior: contain; scrollbar-width: none; }
 .k-plan-picker-results::-webkit-scrollbar { display: none; }
+.k-plan-picker-virtual { position: relative; width: 100%; }
+.k-plan-picker-row { position: absolute; top: 0; left: 0; width: 100%; border-bottom: 1px solid var(--k-line); }
 .k-plan-picker-meta { margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--k-muted); font-size: 11px; }
 .k-plan-picker .k-tool-button { white-space: nowrap; }
 .k-plan-picker .k-tool-polaroid { transform: rotate(-1.5deg); }

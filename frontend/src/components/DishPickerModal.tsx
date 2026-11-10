@@ -1,11 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual"
 import { dishesApi } from "@/api"
 import type { Dish } from "@/types"
 import { Search, X, Plus } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
 import HorizontalFilterStrip from "@/components/HorizontalFilterStrip"
 import DishImage from "@/components/DishImage"
+import { includeFocusedNeighbours, resetDishMeasurements } from "@/lib/dishVirtualRows"
 import { useKitchenTheme } from "@/store/useKitchenTheme"
 import "@/styles/kitchen-tools.css"
 type MealType = "lunch" | "dinner"
@@ -32,11 +34,14 @@ export default function DishPickerModal({
   onRemove: (meal: MealType, dishId: number) => void
   onClose: () => void
 }) {
+  "use no memo"
   const [search, setSearch] = useState("")
   const [keyword, setKeyword] = useState("")
   const [category, setCategory] = useState("全部")
   const categoryStripRef = useRef<HTMLDivElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
+  const [focusedDishId, setFocusedDishId] = useState<number | null>(null)
   const meta = mealMeta[meal]
   const theme = useKitchenTheme(s => s.theme)
   const selectedCount = [...selectedMealById.values()].filter(selectedMeal => selectedMeal === meal).length
@@ -74,10 +79,44 @@ export default function DishPickerModal({
   }, [data])
   const total = data?.pages[0]?.total ?? 0
   const searchPending = search.trim() !== keyword
+  const focusedIndex = useMemo(() => filtered.findIndex(dish => dish.id === focusedDishId), [filtered, focusedDishId])
+  // 与菜品页一样，直接读取可变的虚拟列表实例，避免编译器缓存旧行窗口。
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => resultsRef.current,
+    getItemKey: useCallback((index: number) => filtered[index].id, [filtered]),
+    estimateSize: () => 96,
+    overscan: 5,
+    rangeExtractor: useCallback(range => includeFocusedNeighbours(defaultRangeExtractor(range), focusedIndex, range.count), [focusedIndex]),
+  })
 
   useLayoutEffect(() => {
-    if (resultsRef.current) resultsRef.current.scrollTop = 0
-  }, [meal, keyword, category])
+    virtualizer.scrollToOffset(0)
+  }, [meal, keyword, category, virtualizer])
+
+  useLayoutEffect(() => {
+    const container = resultsRef.current
+    if (!container) return
+    let width = container.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (width === container.clientWidth) return
+      width = container.clientWidth
+      resetDishMeasurements(virtualizer, Array.from(container.querySelectorAll<HTMLDivElement>(".k-plan-picker-row"), node => ({ index: Number(node.dataset.index), size: node.offsetHeight })))
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [virtualizer])
+
+  useEffect(() => {
+    const marker = loadMoreRef.current
+    if (!marker || !hasNextPage || isError || isFetching || searchPending) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) void fetchNextPage({ cancelRefetch: false })
+    }, { root: resultsRef.current, rootMargin: "160px 0px" })
+    observer.observe(marker)
+    return () => observer.disconnect()
+  }, [fetchNextPage, filtered.length, hasNextPage, isError, isFetching, searchPending])
 
   const { data: categoryCounts } = useQuery({
     queryKey: ["dishes", "category-counts"],
@@ -124,16 +163,31 @@ export default function DishPickerModal({
           </HorizontalFilterStrip>
         </div>
 
-        <div ref={resultsRef} className="k-plan-picker-results min-h-0 flex-1 overflow-y-auto pb-4" aria-busy={isFetching || searchPending}>
-          {isError && !isFetchNextPageError && (
-            <div className="kitchen-empty my-3" role="alert">
-              <strong>{data ? "菜品更新失败" : "菜品加载失败"}</strong>
-              <p>{data ? "已加载的菜仍可查看，请稍后重试。" : "请检查网络后再试。"}</p>
-              <button type="button" className="k-tool-button mt-3" disabled={isFetching || searchPending} onClick={() => { void refetch() }}>
-                {isFetching ? "正在重试…" : "重新加载"}
-              </button>
-            </div>
-          )}
+        {isError && !isFetchNextPageError && (
+          <div className="kitchen-empty my-3 shrink-0" role="alert">
+            <strong>{data ? "菜品更新失败" : "菜品加载失败"}</strong>
+            <p>{data ? "已加载的菜仍可查看，请稍后重试。" : "请检查网络后再试。"}</p>
+            <button type="button" className="k-tool-button mt-3" disabled={isFetching || searchPending} onClick={() => { void refetch() }}>
+              {isFetching ? "正在重试…" : "重新加载"}
+            </button>
+          </div>
+        )}
+        <div ref={resultsRef} className="k-plan-picker-results min-h-0 flex-1 overflow-y-auto pb-4" role="region" aria-label="可选菜品" tabIndex={0} aria-busy={isFetching || searchPending}
+          onKeyDown={(event) => {
+            if (event.altKey || event.metaKey || filtered.length === 0) return
+            if (event.key === "Home" || event.key === "End") {
+              event.preventDefault()
+              virtualizer.scrollToIndex(event.key === "Home" ? 0 : filtered.length - 1, { align: event.key === "Home" ? "start" : "end" })
+            }
+          }}
+          onFocusCapture={(event) => {
+            const row = (event.target as HTMLElement).closest<HTMLElement>("[data-dish-id]")
+            setFocusedDishId(row ? Number(row.dataset.dishId) : null)
+          }}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusedDishId(null)
+          }}
+        >
           {isPending ? (
             <div className="space-y-2 py-3">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -149,13 +203,15 @@ export default function DishPickerModal({
               <div className="mt-1 text-[12px] text-text3">换个关键词或分类试试</div>
             </div>
           ) : (
-            <div className={`divide-y divide-border/70 transition-opacity ${searchPending ? "opacity-60" : ""}`}>
-              {filtered.map((dish) => {
+            <div className={`k-plan-picker-virtual transition-opacity ${searchPending ? "opacity-60" : ""}`} role="list" aria-label="菜品候选" data-loaded-count={filtered.length} style={{ height: virtualizer.getTotalSize() }}>
+              {virtualizer.getVirtualItems().map((item) => {
+                const dish = filtered[item.index]
                 const selectedMeal = selectedMealById.get(dish.id)
                 const selectedHere = selectedMeal === meal
                 const selectedOther = selectedMeal && selectedMeal !== meal
                 return (
-                  <div key={dish.id} className="k-plan-picker-row flex items-center gap-3 py-3">
+                  <div key={dish.id} ref={virtualizer.measureElement} data-index={item.index} data-dish-id={dish.id} role="listitem" aria-posinset={item.index + 1} aria-setsize={total}
+                    className="k-plan-picker-row flex items-center gap-3 py-3" style={{ transform: `translateY(${item.start}px)` }}>
                     <div className="k-tool-polaroid">
                       <DishImage dish={dish} className="h-full w-full" emojiSize="text-[27px]" />
                     </div>
@@ -177,6 +233,7 @@ export default function DishPickerModal({
                     ) : selectedHere ? (
                       <button
                         onClick={() => onRemove(meal, dish.id)}
+                        aria-label={`${singlePick || lockedIds.includes(dish.id) ? "已选" : "移除"}${dish.name}`}
                         disabled={busy || singlePick || lockedIds.includes(dish.id) || searchPending}
                         className="k-tool-button shrink-0"
                       >
@@ -186,6 +243,7 @@ export default function DishPickerModal({
                     ) : (
                       <button
                         onClick={() => onAdd(dish)}
+                        aria-label={`${mealFull ? "本餐已满，无法加入" : singlePick ? "选这道" : "加入"}${dish.name}`}
                         disabled={busy || mealFull || searchPending}
                         title={mealFull ? `每餐最多 ${maxPerMeal} 道，移除一道后可继续添加` : `加入${dish.name}`}
                         className="k-tool-button is-ink shrink-0"
@@ -197,16 +255,16 @@ export default function DishPickerModal({
                   </div>
                 )
               })}
-              {filtered.length > 0 && (
-                <div className="py-4 text-center text-[12px] text-text3">
-                  <p role="status">已显示 {filtered.length} / {total} 道{!hasNextPage && " · 已到底"}</p>
-                  {isFetchNextPageError && <p role="alert" className="mt-2">后面的菜暂时没加载出来，已显示的菜还在。</p>}
-                  {(hasNextPage || isFetchNextPageError) && (
-                    <button type="button" className="k-tool-button mt-3" disabled={isFetching || searchPending} onClick={() => { if (!isFetching && !searchPending) void fetchNextPage({ cancelRefetch: false }) }}>
-                      {isFetchingNextPage ? "正在加载…" : isFetchNextPageError ? "重试加载更多" : "加载更多菜品"}
-                    </button>
-                  )}
-                </div>
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <div ref={loadMoreRef} className="py-4 text-center text-[12px] text-text3">
+              <p role="status">已加载 {filtered.length} / {total} 道 · {isFetchingNextPage ? "正在加载…" : hasNextPage ? "下滑继续看" : "已到底"}</p>
+              {isFetchNextPageError && <p role="alert" className="mt-2">后面的菜暂时没加载出来，已加载的菜还在。</p>}
+              {isFetchNextPageError && (
+                <button type="button" className="k-tool-button mt-3" disabled={isFetching || searchPending} onClick={() => { if (!isFetching && !searchPending) void fetchNextPage({ cancelRefetch: false }) }}>
+                  {isFetchingNextPage ? "正在加载…" : "重试加载更多"}
+                </button>
               )}
             </div>
           )}

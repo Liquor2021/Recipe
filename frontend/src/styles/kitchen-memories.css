@@ -196,5 +196,5 @@
 @keyframes history-ledger-refresh { from { opacity: .35; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .history-ledger-row { animation: none; } }
 
-.history-ledger-row.is-achievement-source { background: color-mix(in srgb, var(--k-green) 6%, var(--k-card)); }
+.history-ledger-row.is-achievement-source { padding: 12px; border-radius: 6px; background: color-mix(in srgb, var(--k-green) 6%, var(--k-card)); }
 .history-source-note { margin-bottom: 9px; color: var(--k-green); font-size: 12px; }

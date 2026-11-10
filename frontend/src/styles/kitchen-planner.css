@@ -49,7 +49,7 @@
 .history-plan-tools { padding:8px 14px 14px; }
 .history-plan-tools .planner-shortcuts { margin-top:0; }
 .history-plan-tools .planner-dish.has-record { display:block; }
-.history-plan-tools .history-ledger-row { padding-inline:0; border:0; }
+.history-plan-tools .history-ledger-row { border:0; }
 .history-plan-tools .history-meal-label { display:none; }
 .history-plan-tools .history-dish-link { min-height:34px; }
 .history-plan-tools .history-ledger-row:has(.history-plan-actions) { display:flex; flex-wrap:wrap; column-gap:8px; }
