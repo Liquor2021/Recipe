@@ -8,6 +8,7 @@ import { launchConfetti } from "@/lib/confetti"
 import { readTomorrowDraft, tomorrowPlanBaseline, writeTomorrowDraft } from "@/lib/tomorrowDraft"
 import type { TomorrowDraftState, TomorrowProfile } from "@/lib/tomorrowDraft"
 import { createTomorrowRequestGate, isMealPlanConflict } from "@/lib/tomorrowRequests"
+import { createTomorrowRecommendations, InsufficientTomorrowDishesError } from "@/lib/tomorrowRecommendations"
 import { getTomorrow, nextLocalMidnightDelay } from "@/lib/tomorrowDate"
 import DishImage from "@/components/DishImage"
 import PageHeader from "@/components/PageHeader"
@@ -426,6 +427,7 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
   const [picking, setPicking] = useState(false)
   const initStartedForRef = useRef<string | null>(null)
   const requestGate = useRef(createTomorrowRequestGate())
+  const recommendations = useRef(createTomorrowRecommendations(pickApi.tomorrow))
   const retryRequest = useRef<{ key: string; id: string } | null>(null)
   const saveLock = useRef(false)
 
@@ -623,6 +625,7 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
 
   function updateTarget(meal: MealType, value: number) {
     invalidateRecommendations()
+    recommendations.current.remember(getMeal(meal))
     const next = Math.max(0, Math.min(maxPerMeal, value))
     setTargets((prev) => ({ ...prev, [meal]: next }))
     updateMeal(meal, (prev) => (prev.length > next ? prev.slice(0, next) : prev))
@@ -632,38 +635,35 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
     meal: MealType,
     count: number,
     nextProfile = profile,
-    excludeIds: number[] = [],
+    additionalDishes: Dish[] = [],
+    allowPartial = false,
   ) {
-    if (count <= 0) return []
-    const res = await pickApi.tomorrow({
-      meal_type: meal,
-      profile: nextProfile,
-      count,
-      exclude_ids: excludeIds,
+    return recommendations.current.pick({
+      meal, count, profile: nextProfile, allowPartial,
+      current: [...lunch, ...dinner, ...additionalDishes],
     })
-    return res.dishes || []
+  }
+
+  function recommendationError(error: unknown) {
+    toast.error(error instanceof InsufficientTomorrowDishesError ? error.message : "推荐失败，原菜单已保留，请重试")
   }
 
   async function fillMeal(meal: MealType) {
     const current = getMeal(meal)
     const needed = Math.max(0, targets[meal] - current.length)
     if (needed === 0) return
-    const otherMeal = meal === "lunch" ? dinner : lunch
-    const excludeIds = [
-      ...otherMeal.map((dish) => dish.id),
-      ...current.map((dish) => dish.id),
-    ]
     const currentRequest = beginRecommendation()
     try {
-      const picks = await requestTomorrowDishes(meal, needed, profile, excludeIds)
+      const picks = await requestTomorrowDishes(meal, needed, profile, [], true)
       if (!currentRequest()) return
       if (picks.length === 0) {
         toast.error("没有更多合适的菜了")
         return
       }
       updateMeal(meal, (prev) => uniqueById([...prev, ...picks]).slice(0, maxPerMeal))
-    } catch {
-      if (currentRequest()) toast.error("没有更多合适的菜了")
+      if (picks.length < needed) toast(`已补入 ${picks.length} 道，暂时没有更多合适的菜了`)
+    } catch (error) {
+      if (currentRequest()) recommendationError(error)
     } finally {
       if (currentRequest()) setPicking(false)
     }
@@ -671,39 +671,28 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
 
   async function replaceMeal(meal: MealType) {
     const count = Math.max(1, targets[meal] || getMeal(meal).length || 1)
-    const otherMeal = meal === "lunch" ? dinner : lunch
     const currentRequest = beginRecommendation()
     try {
-      const picks = await requestTomorrowDishes(meal, count, profile, otherMeal.map((dish) => dish.id))
+      const picks = await requestTomorrowDishes(meal, count)
       if (!currentRequest()) return
-      if (picks.length === 0) {
-        toast.error("暂无可推荐的菜品")
-        return
-      }
+      recommendations.current.remember([...lunch, ...dinner])
       updateMeal(meal, () => picks)
-    } catch {
-      if (currentRequest()) toast.error("暂无可推荐的菜品")
+    } catch (error) {
+      if (currentRequest()) recommendationError(error)
     } finally {
       if (currentRequest()) setPicking(false)
     }
   }
 
   async function swapDish(meal: MealType, dishId: number) {
-    const current = getMeal(meal)
-    const otherMeal = meal === "lunch" ? dinner : lunch
-    const keepIds = current.filter((dish) => dish.id !== dishId).map((dish) => dish.id)
-    const excludeIds = [...keepIds, ...otherMeal.map((dish) => dish.id), dishId]
     const currentRequest = beginRecommendation()
     try {
-      const [pick] = await requestTomorrowDishes(meal, 1, profile, excludeIds)
+      const [pick] = await requestTomorrowDishes(meal, 1)
       if (!currentRequest()) return
-      if (!pick) {
-        toast.error("没有可替换的菜了")
-        return
-      }
+      recommendations.current.remember([...lunch, ...dinner])
       updateMeal(meal, (prev) => prev.map((dish) => (dish.id === dishId ? pick : dish)))
-    } catch {
-      if (currentRequest()) toast.error("没有可替换的菜了")
+    } catch (error) {
+      if (currentRequest()) recommendationError(error)
     } finally {
       if (currentRequest()) setPicking(false)
     }
@@ -726,6 +715,7 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
 
   function removeDish(meal: MealType, dishId: number) {
     invalidateRecommendations()
+    recommendations.current.remember([{ id: dishId }])
     updateMeal(meal, (prev) => prev.filter((dish) => dish.id !== dishId))
   }
 
@@ -733,21 +723,25 @@ function TomorrowEditor({ date }: { date: ReturnType<typeof getTomorrow> }) {
     const currentRequest = beginRecommendation()
     try {
       const nextLunch = nextTargets.lunch > 0
-        ? await requestTomorrowDishes("lunch", nextTargets.lunch, nextProfile)
+        ? await requestTomorrowDishes("lunch", nextTargets.lunch, nextProfile, [], !!initializeDate)
         : []
       if (!currentRequest()) return
       const nextDinner = nextTargets.dinner > 0
-        ? await requestTomorrowDishes("dinner", nextTargets.dinner, nextProfile, nextLunch.map((dish) => dish.id))
+        ? await requestTomorrowDishes("dinner", nextTargets.dinner, nextProfile, nextLunch, !!initializeDate)
         : []
       if (!currentRequest()) return
       if (nextLunch.length === 0 && nextDinner.length === 0) {
         toast.error("暂无可推荐的菜品")
         return
       }
+      recommendations.current.remember([...lunch, ...dinner])
       setLunch(nextLunch)
       setDinner(nextDinner)
-    } catch {
-      if (currentRequest()) toast.error("暂无可推荐的菜品")
+      if (nextLunch.length < nextTargets.lunch || nextDinner.length < nextTargets.dinner) {
+        toast("已列出目前合适的菜，剩余可以手动选菜")
+      }
+    } catch (error) {
+      if (currentRequest()) recommendationError(error)
     } finally {
       if (currentRequest()) {
         setPicking(false)

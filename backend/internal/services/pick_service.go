@@ -19,6 +19,7 @@ type TomorrowPickOptions struct {
 	Profile    string
 	Count      int
 	ExcludeIDs []uint
+	AvoidIDs   []uint
 }
 
 // getRepeatDays 优先读管理后台的 repeat_days 设置，读不到再回退环境变量。
@@ -120,20 +121,18 @@ func PickTomorrowDishes(opts TomorrowPickOptions) ([]models.Dish, error) {
 			excluded[id] = true
 		}
 	}
+	avoided := make(map[uint]bool, len(opts.AvoidIDs))
+	for _, id := range opts.AvoidIDs {
+		avoided[id] = true
+	}
 
 	recent := recentDishIDMap(getRepeatDays())
 	pool := filterTomorrowPool(dishes, profile, excluded, recent, true)
 	if len(pool) == 0 {
 		pool = filterTomorrowPool(dishes, profile, excluded, recent, false)
 	}
-	if len(pool) == 0 {
-		pool = filterTomorrowPool(dishes, "balanced", excluded, recent, false)
-	}
-	if len(pool) == 0 {
-		pool = filterTomorrowPool(dishes, "balanced", map[uint]bool{}, recent, false)
-	}
-
-	sortTomorrowPool(pool, profile, cfg.tokens)
+	// 当前菜单是硬排除项；候选耗尽时不能把刚换掉的菜重新放回来。
+	sortTomorrowPool(pool, profile, cfg.tokens, avoided, rand.New(rand.NewSource(time.Now().UnixNano())))
 	if len(pool) > count {
 		pool = pool[:count]
 	}
@@ -185,18 +184,28 @@ func matchesTomorrowProfile(d models.Dish, profile string) bool {
 	}
 }
 
-func sortTomorrowPool(dishes []models.Dish, profile string, dislikes map[string]bool) {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+func sortTomorrowPool(dishes []models.Dish, profile string, dislikes map[string]bool, avoided map[uint]bool, r *rand.Rand) {
 	r.Shuffle(len(dishes), func(i, j int) {
 		dishes[i], dishes[j] = dishes[j], dishes[i]
 	})
+	scores := make(map[uint]int, len(dishes))
+	disliked := make(map[uint]bool, len(dishes))
+	for _, dish := range dishes {
+		scores[dish.ID] = tomorrowDishScore(dish, profile, dislikes)
+		disliked[dish.ID] = dishHitsDislikes(dish, dislikes)
+	}
 
 	sort.SliceStable(dishes, func(i, j int) bool {
-		a, b := tomorrowDishScore(dishes[i], profile, dislikes), tomorrowDishScore(dishes[j], profile, dislikes)
-		if a != b {
-			return a > b
+		a, b := dishes[i].ID, dishes[j].ID
+		if disliked[a] != disliked[b] {
+			return !disliked[a]
 		}
-		return dishes[i].ID < dishes[j].ID
+		// 最近看过的菜只降优先级，候选不足时仍可用；忌口优先级不受影响。
+		if avoided[a] != avoided[b] {
+			return !avoided[a]
+		}
+		// 同分保留洗牌顺序，不能再按 ID 排回固定的一批。
+		return scores[a] > scores[b]
 	})
 }
 

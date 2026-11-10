@@ -23,7 +23,7 @@ export const pickApi = {
   lunch: (count?: number) => api<PickResult>("POST", `/pick/lunch${count ? `?count=${count}` : ""}`),
   dinner: (count?: number) => api<PickResult>("POST", `/pick/dinner${count ? `?count=${count}` : ""}`),
   mood: (mood: string) => api<PickResult>("POST", "/pick/mood", { mood }),
-  tomorrow: (data: { meal_type: string; profile: string; count: number; exclude_ids?: number[] }) =>
+  tomorrow: (data: { meal_type: string; profile: string; count: number; exclude_ids?: number[]; avoid_ids?: number[] }) =>
     api<PickResult>("POST", "/pick/tomorrow", data),
   blindBox: () => api<BlindBoxResult>("POST", "/pick/blind-box"),
 }

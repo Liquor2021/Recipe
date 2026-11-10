@@ -14,6 +14,7 @@ node --test scripts/*.test.*
 | --- | --- |
 | `tomorrow-draft.test.mjs` | 明日菜单草稿往返、空菜单、保存基线、取消/改期/份量变化时保留冲突草稿、跨日与异常存储 |
 | `tomorrow-requests.test.mjs` | 推荐请求乱序、手动选菜或修改数量后丢弃旧响应、离页隔离、重新挂载与冲突响应识别 |
+| `tomorrow-recommendations.test.mjs` | 单道替换、整餐换菜与重新生成的当前菜排除、最近换菜历史、候选不足与重复响应处理 |
 | `tomorrow-date.test.mjs` | 本地午夜切换、跨月/跨年/闰日，以及夏令时 23/25 小时日期的刷新时间 |
 | `home-mood.test.mjs` | 心情异步恢复、快速点选、失败回退与跨日隔离 |
 | `history-summary.test.mjs` | 计划相对日期、跨月/跨年/闰日/夏令时、月度顿数与道数区分、状态和月份过滤、分页重复去重 |

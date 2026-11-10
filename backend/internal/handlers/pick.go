@@ -23,6 +23,7 @@ type TomorrowPickRequest struct {
 	Profile    string `json:"profile"`
 	Count      int    `json:"count"`
 	ExcludeIDs []uint `json:"exclude_ids"`
+	AvoidIDs   []uint `json:"avoid_ids"`
 }
 
 func PickLunch(c *gin.Context) {
@@ -83,6 +84,7 @@ func PickTomorrow(c *gin.Context) {
 		Profile:    req.Profile,
 		Count:      req.Count,
 		ExcludeIDs: req.ExcludeIDs,
+		AvoidIDs:   req.AvoidIDs,
 	})
 	if err != nil || len(dishes) == 0 {
 		utils.NotFound(c, "没有可推荐的菜品")
