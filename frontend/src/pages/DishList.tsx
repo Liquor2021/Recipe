@@ -326,7 +326,7 @@ function DishListPage({ today, generation }: { today: string; generation: number
       ? recordsApi.update(cancelRecordId, { status: "cancelled" })
       : recordsApi.create({ ...data, status: "planned" }),
     onSuccess: (_saved, request) => {
-      toast.success(request.cancelRecordId !== undefined ? "已取消计划，可在记录页恢复" : "已加入今日计划")
+      toast.success(request.cancelRecordId !== undefined ? "已取消计划" : "已加入今日计划")
     },
     onError: (err: unknown, request) => {
       // Until success the row is unchanged, so no whole-list rollback is needed.

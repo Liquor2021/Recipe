@@ -349,7 +349,7 @@ export default function History() {
     mutationFn: ({ record, status }: { record: MealRecord; status: MealRecord["status"] }) =>
       recordsApi.update(record.id, { status }),
     onSuccess: async (saved, { record, status }) => {
-      toast.success(status === "completed" ? "已记为吃过" : status === "cancelled" ? "已取消计划，购物清单已同步" : "已恢复计划")
+      toast.success(status === "completed" ? "已记为吃过" : status === "cancelled" ? "已取消计划" : "已恢复计划")
       const refreshing = refreshMealQueries()
       if (status === "completed") {
         try {

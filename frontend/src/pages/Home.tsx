@@ -166,10 +166,10 @@ export default function Home() {
       : recordsApi.create({ ...data, status: "planned" }),
     onSuccess: (_saved, request) => {
       if (request.cancelRecordId !== undefined) {
-        toast.success("已取消计划，可在记录页恢复")
+        toast.success("已取消计划")
       } else {
         setWheelResult((current) => current?.id === request.dish_id ? null : current)
-        toast.success("已加入今日计划，吃过后到记录页确认")
+        toast.success("已加入今日计划")
         launchConfetti(confettiRef.current)
       }
     },
@@ -208,8 +208,6 @@ export default function Home() {
       if (!isCurrentMoodChoice(latestMoodChoice.current, request, dateKey())) return
       latestMoodChoice.current = null
       setMoodChoice(null)
-      const label = moods.find(mood => mood.key === request.mood)?.label || request.mood
-      toast.success(`心情：${label}，已保存`)
     },
     onError: async (_error, request) => {
       // A timed-out response may still have saved. Read back before rolling the selection back.
@@ -228,7 +226,6 @@ export default function Home() {
         qc.invalidateQueries({ queryKey: ["day-ratings"] })
         qc.invalidateQueries({ queryKey: ["photo-wall"] })
         qc.invalidateQueries({ queryKey: ["achievements"] })
-        toast.success(`心情：${moods.find(mood => mood.key === request.mood)?.label || request.mood}，已保存`)
       } else {
         toast.error("心情保存失败，请重试")
       }
