@@ -1,7 +1,8 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom"
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { CalendarDays, Heart, Home as HomeIcon, Images, Menu, UtensilsCrossed } from "lucide-react"
-import { gsap, motionDuration, useGSAP } from "@/lib/gsap"
+import { motionDuration } from "@/lib/gsap"
+import { createTabStripMotion } from "@/lib/tabStripMotion"
 import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
 import "@/styles/kitchen-shell.css"
 
@@ -44,7 +45,7 @@ export default function MainLayout() {
   )
   const stripRef = useRef<HTMLDivElement>(null)
   const didMountRef = useRef(false)
-  const animatingRef = useRef(false)
+  const stripMotionRef = useRef<ReturnType<typeof createTabStripMotion> | null>(null)
   const offsetXRef = useRef(0)
   // 路由变化（后退/前进、其他页面跳转）时同步当前 tab：在渲染中按"上一次的路径"调整，
   // 比在 effect 里 setState 少一次以旧 tab 渲染的中间态
@@ -88,44 +89,44 @@ export default function MainLayout() {
     isHorizontal: boolean | null
   } | null>(null)
 
-  useGSAP(() => {
+  useLayoutEffect(() => {
     const el = stripRef.current
     if (!el) return
-    const duration = didMountRef.current ? motionDuration(0.32) : 0
-    didMountRef.current = true
+    const motion = createTabStripMotion(el, STEP_PCT)
+    stripMotionRef.current = motion
+    return () => {
+      motion.stop()
+      stripMotionRef.current = null
+      touchRef.current = null
+      offsetXRef.current = 0
+      didMountRef.current = false
+    }
+  }, [])
+
+  const slideStripTo = useCallback((index: number, duration = 0.32) => {
+    // 新的导航接管条带后，旧手指松开也不能再提交一次跳转。
+    touchRef.current = null
     offsetXRef.current = 0
-    animatingRef.current = duration > 0
-    gsap.to(el, {
-      xPercent: -activeIdx * STEP_PCT,
-      x: 0,
-      duration,
-      ease: "power3.out",
-      force3D: true,
-      onComplete: () => {
-        animatingRef.current = false
-      },
-    })
-  }, { dependencies: [activeIdx], scope: stripRef })
+    stripMotionRef.current?.slideTo(index, motionDuration(duration))
+  }, [])
+
+  useLayoutEffect(() => {
+    slideStripTo(activeIdx, didMountRef.current ? 0.32 : 0)
+    didMountRef.current = true
+  }, [activeIdx, slideStripTo])
 
   useEffect(() => {
     function cancelSwipe() {
       touchRef.current = null
       const hadOffset = offsetXRef.current !== 0
       offsetXRef.current = 0
-      if (!hadOffset || !stripRef.current) return
-      animatingRef.current = true
-      gsap.to(stripRef.current, {
-        x: 0,
-        duration: motionDuration(0.18),
-        ease: "power2.out",
-        onComplete: () => { animatingRef.current = false },
-      })
+      if (hadOffset) slideStripTo(stateRef.current.activeIdx, 0.18)
     }
 
     function onTouchStart(e: TouchEvent) {
       cancelSwipe()
       const s = stateRef.current
-      if (animatingRef.current || e.touches.length !== 1 || e.defaultPrevented) return
+      if (stripMotionRef.current?.isAnimating || e.touches.length !== 1 || e.defaultPrevented) return
       const target = e.target
       // Portal 弹层不在页面条带里；输入、按钮等控件保留自己的触摸操作。
       if (!(target instanceof Element) || !stripRef.current?.contains(target)) return
@@ -186,7 +187,7 @@ export default function MainLayout() {
 
       const rubber = clampedDx * (1 - Math.abs(clampedDx) / (vw * 1.2))
       offsetXRef.current = rubber
-      gsap.set(stripRef.current, { x: rubber, force3D: true })
+      stripMotionRef.current?.dragTo(rubber)
     }
 
     function onTouchEnd(e: TouchEvent) {
@@ -207,19 +208,7 @@ export default function MainLayout() {
         setActiveIdx(s.activeIdx + 1)
         navigate(tabs[s.activeIdx + 1].path)
       } else {
-        if (stripRef.current) {
-          offsetXRef.current = 0
-          animatingRef.current = true
-          gsap.to(stripRef.current, {
-            xPercent: -s.activeIdx * STEP_PCT,
-            x: 0,
-            duration: motionDuration(0.25),
-            ease: "power3.out",
-            onComplete: () => {
-              animatingRef.current = false
-            },
-          })
-        }
+        slideStripTo(s.activeIdx, 0.25)
       }
       touchRef.current = null
     }
@@ -234,11 +223,12 @@ export default function MainLayout() {
       document.removeEventListener("touchend", onTouchEnd)
       document.removeEventListener("touchcancel", cancelSwipe)
     }
-  }, [navigate])
+  }, [navigate, slideStripTo])
 
   return (
-    <div className="h-dvh overflow-hidden kitchen-shell" data-kitchen-theme={kitchenTheme}>
-      <div className="h-full overflow-hidden">
+    <div className="h-dvh overflow-clip kitchen-shell" data-kitchen-theme={kitchenTheme}>
+      {/* 视口不能被原生横向滚动或焦点滚动带偏；位置只交给条带动画。 */}
+      <div className="h-full overflow-clip">
         <div
           ref={stripRef}
           className="flex h-full will-change-transform"

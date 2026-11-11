@@ -5,9 +5,10 @@ import { Download, Share2, Trophy, Salad, Flame, Utensils, Heart } from "lucide-
 import toast from "react-hot-toast"
 import { reportApi } from "@/api"
 import PageHeader, { HeaderIconButton } from "@/components/PageHeader"
-import AnimatedBottomSheet from "@/components/AnimatedBottomSheet"
+import KitchenSheet from "@/components/KitchenSheet"
 import { renderReportImage } from "@/lib/reportImage"
 import { DEFAULT_APP_NAME, useAppInfoStore } from "@/store/useAppInfoStore"
+import { useKitchenTheme } from "@/store/useKitchenTheme"
 import type { DietBalance, DietReport, ReportShare } from "@/types"
 import "@/styles/kitchen-report.css"
 
@@ -104,6 +105,7 @@ function reportFileName(report: DietReport, appName: string) {
 
 // 分享长图弹层：内嵌 canvas 预览 + 保存图片 + 系统分享（支持的浏览器）
 function ReportShareSheet({ report, appName, onClose }: { report: DietReport; appName: string; onClose: () => void }) {
+  const theme = useKitchenTheme((state) => state.theme)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [saving, setSaving] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -178,42 +180,34 @@ function ReportShareSheet({ report, appName, onClose }: { report: DietReport; ap
   }
 
   return (
-    <AnimatedBottomSheet onClose={onClose} className="rounded-t-3xl p-5 pb-8 shadow-[0_-4px_24px_rgba(0,0,0,.12)]">
-      {({ close }) => (
-        <>
-          <div className="w-10 h-1 rounded-full bg-border2 mx-auto mb-4" />
-          <div className="text-lg font-bold mb-1">分享饮食报告</div>
-          <div className="text-xs text-text2 mb-4">保存长图，分享这段时间的下厨成果</div>
-          <div className="max-h-[52vh] overflow-y-auto scrollbar-none rounded-2xl border border-border bg-bg p-2">
-            {failed ? (
-              <div className="w-full h-44 flex items-center justify-center text-sm text-text3">图片生成失败，请关闭后重试</div>
-            ) : (
-              <canvas ref={canvasRef} className="w-full rounded-xl block" />
-            )}
-          </div>
-          <div className="flex gap-3 mt-4">
-            <button onClick={close} className="flex-1 py-2.5 rounded-full text-sm font-semibold border-[1.5px] border-border transition-all active:scale-96">关闭</button>
-            <button
-              onClick={handleSave}
-              disabled={saving || failed}
-              className={`flex-1 py-2.5 rounded-full text-sm font-semibold bg-primary text-white transition-all active:scale-96 flex items-center justify-center gap-1.5 ${(saving || failed) ? "opacity-60 pointer-events-none" : ""}`}
-            >
-              <Download size={16} strokeWidth={2.4} />
-              {saving ? "保存中..." : "保存图片"}
-            </button>
-            {canShareFile && !failed && (
-              <button
-                onClick={handleShare}
-                className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-mint text-white transition-all active:scale-96 flex items-center justify-center gap-1.5"
-              >
-                <Share2 size={16} strokeWidth={2.4} />
-                分享
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </AnimatedBottomSheet>
+    <KitchenSheet
+      title="分享饮食报告"
+      theme={theme}
+      icon={<Share2 size={18} />}
+      onClose={onClose}
+      closeDisabled={saving}
+      footer={<>
+        <button onClick={onClose} disabled={saving}>关闭</button>
+        <button onClick={handleSave} disabled={saving || failed} className="is-ink flex items-center justify-center gap-1.5 whitespace-nowrap">
+          <Download size={16} className="shrink-0 max-[360px]:hidden" aria-hidden="true" />
+          {saving ? "保存中…" : "保存图片"}
+        </button>
+        {canShareFile && !failed && (
+          <button onClick={handleShare} disabled={saving} className="flex items-center justify-center gap-1.5">
+            <Share2 size={16} aria-hidden="true" />分享
+          </button>
+        )}
+      </>}
+    >
+      <p className="kitchen-sheet-hint mb-4">保存长图，分享这段时间的下厨成果</p>
+      <div className="rounded border border-border bg-bg p-2">
+        {failed ? (
+          <p role="alert" className="w-full h-44 flex items-center justify-center text-sm text-text3">图片生成失败，请关闭后重试</p>
+        ) : (
+          <canvas ref={canvasRef} className="w-full rounded block" role="img" aria-label="饮食报告长图预览" />
+        )}
+      </div>
+    </KitchenSheet>
   )
 }
 

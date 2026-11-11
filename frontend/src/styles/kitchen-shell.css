@@ -61,6 +61,12 @@
 }
 .kitchen-surface[data-tab-scroll]::-webkit-scrollbar { display: none; }
 
+/* 与条带同步轻淡入；不在滑动结束后重新隐藏内容，也不重挂常驻页。 */
+.kitchen-surface[data-tab-scroll][aria-hidden="false"] {
+  animation: kitchen-tab-arrive 150ms ease-out;
+}
+@keyframes kitchen-tab-arrive { from { opacity: .94; } to { opacity: 1; } }
+
 .kitchen-empty { display: grid; place-items: center; min-height: 280px; align-content: center; gap: 12px; color: var(--k-muted); border: 1px dashed var(--k-line); background: var(--k-card); }
 
 .kitchen-bookmarks {
@@ -154,4 +160,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .kitchen-bookmark { transition: none; }
+  .kitchen-surface[data-tab-scroll][aria-hidden="false"] { animation: none; }
 }
