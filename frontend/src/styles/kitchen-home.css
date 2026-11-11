@@ -62,6 +62,7 @@
 .kitchen-meal-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
 .kitchen-button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 44px; padding: 9px 6px; border: 1px solid var(--k-ink); border-radius: 4px; font-size: 14px; line-height: 1.5; }
 .kitchen-button-ink { background: var(--k-ink); color: var(--k-card); }
+.kitchen-meal-actions .kitchen-button[aria-pressed="true"]:not(:disabled) { background: color-mix(in srgb, var(--k-red) 8%, var(--k-card)); border-color: var(--k-red); color: var(--k-red); }
 .kitchen-button-outline { background: transparent; border-color: var(--k-line); color: var(--k-ink); }
 .kitchen-page-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 5px; padding-top: 12px; color: var(--k-muted); font-size: 11px; }
 .kitchen-theme-toggle { position: relative; display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--k-muted); font-size: 11px; background: transparent; transition: color 160ms ease; }

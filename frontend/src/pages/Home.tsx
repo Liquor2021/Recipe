@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useLocation, useNavigate } from "react-router-dom"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi } from "@/api"
+import { useQuery, useMutation, useMutationState, useQueryClient } from "@tanstack/react-query"
+import { pickApi, dishesApi, recordsApi, dayRatingApi, fridgeApi, getUploadErrorMessage } from "@/api"
 import type { Dish } from "@/types"
 import DishImage from "@/components/DishImage"
 import { useAuthStore } from "@/store/useAuthStore"
@@ -10,8 +10,10 @@ import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { launchConfetti } from "@/lib/confetti"
 import { isCurrentMoodChoice, savedHomeMood, selectedHomeMood } from "@/lib/homeMood"
 import type { HomeMood, HomeMoodChoice } from "@/lib/homeMood"
+import { getMealSelectionRecord, getMealSelectionRequest, hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, pendingMealSelectionKey, reconcileMealSelection } from "@/lib/mealSelection"
+import type { MealSelectionRequest } from "@/lib/mealSelection"
 import toast from "react-hot-toast"
-import { ArrowRight, Check, ChefHat, Clock3, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
+import { ArrowRight, Check, ChefHat, Clock3, LoaderCircle, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
 import LedgerHomeNote from "@/components/LedgerHomeNote"
 import TodayMenuNote from "@/components/TodayMenuNote"
@@ -57,6 +59,12 @@ export default function Home() {
     if (wheelResult) setWheelResult(null)
   }
   const qc = useQueryClient()
+  const mealEditLocks = useRef(new Set<string>())
+  const pendingMealKeys = useMutationState({
+    filters: { mutationKey: mealSelectionMutationKey, status: "pending" },
+    select: mutation => pendingMealSelectionKey(mutation.state.variables),
+  })
+  const pendingMeals = new Set(pendingMealKeys)
   const [todayKey, setTodayKey] = useState(dateKey)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const appName = useAppInfoStore((s) => s.appName)
@@ -67,7 +75,7 @@ export default function Home() {
     queryKey: ["dishes", "enabled"],
     queryFn: () => dishesApi.list({ enabled: "true", pageSize: "20", sort: "sort_order", order: "asc", recommend: "1" }),
   })
-  const { data: recordsData, isPending: recordsPending, isError: recordsError, refetch: reloadRecords } = useQuery({
+  const { data: recordsData, isPending: recordsPending, isError: recordsError, fetchStatus: recordsFetchStatus, refetch: reloadRecords } = useQuery({
     queryKey: ["records", "today", todayKey],
     queryFn: () => recordsApi.list({ pageSize: "100", date_from: todayKey, date_to: todayKey }),
   })
@@ -131,6 +139,7 @@ export default function Home() {
     }
   }, [urgentItems, todayKey])
   const todayRecords = recordsData?.items || []
+  const mealStateUnavailable = !recordsData || recordsError || recordsFetchStatus === "paused"
   const currentRec = pickedRec || dishes[0] || null
 
   const { data: moodPick, isFetching: moodFetching, isError: moodError, refetch: reloadMoodPick } = useQuery({
@@ -150,22 +159,38 @@ export default function Home() {
   })
 
   const recordMut = useMutation({
-    mutationFn: (data: { dish_id: number; dish_name: string; meal_type: string; meal_date: string }) =>
-      recordsApi.create({ ...data, status: "planned" }),
+    mutationKey: mealSelectionMutationKey,
+    retry: false,
+    mutationFn: ({ cancelRecordId, ...data }: MealSelectionRequest) => cancelRecordId !== undefined
+      ? recordsApi.update(cancelRecordId, { status: "cancelled" })
+      : recordsApi.create({ ...data, status: "planned" }),
     onSuccess: (_saved, request) => {
-      setWheelResult((current) => current?.id === request.dish_id ? null : current)
-      toast.success("已加入今日计划，吃过后到记录页确认")
-      launchConfetti(confettiRef.current)
-      qc.invalidateQueries({ queryKey: ["records"] })
-      qc.invalidateQueries({ queryKey: ["achievements"] })
-      qc.invalidateQueries({ queryKey: ["shopping-list"] })
-      qc.invalidateQueries({ queryKey: ["record"] })
-      qc.invalidateQueries({ queryKey: ["dish-records"] })
-      qc.invalidateQueries({ queryKey: ["admin", "records"] })
+      if (request.cancelRecordId !== undefined) {
+        toast.success("已取消计划，可在记录页恢复")
+      } else {
+        setWheelResult((current) => current?.id === request.dish_id ? null : current)
+        toast.success("已加入今日计划，吃过后到记录页确认")
+        launchConfetti(confettiRef.current)
+      }
     },
-    onError: (err: unknown) => {
-      const msg = (err instanceof Error ? err.message : "") || "记录失败"
-      toast.error(msg)
+    onError: (err: unknown, request) => {
+      toast.error(getUploadErrorMessage(err, request.cancelRecordId !== undefined ? "取消失败" : "加入计划失败"))
+    },
+    onSettled: async (saved, _error, request) => {
+      try {
+        // 与菜品页共用写入锁；成功或超时后都等权威读取完成，不能用旧状态再次提交。
+        await Promise.all([
+          reconcileMealSelection(qc, request.meal_date, saved),
+          qc.invalidateQueries({ queryKey: ["records"], predicate: query => !(query.queryKey.length === 3 && query.queryKey[1] === "today" && query.queryKey[2] === request.meal_date) }),
+          qc.invalidateQueries({ queryKey: ["achievements"] }),
+          qc.invalidateQueries({ queryKey: ["shopping-list"] }),
+          qc.invalidateQueries({ queryKey: ["record"] }),
+          qc.invalidateQueries({ queryKey: ["dish-records"] }),
+          qc.invalidateQueries({ queryKey: ["admin", "records"] }),
+        ])
+      } finally {
+        mealEditLocks.current.delete(mealSelectionKey(request))
+      }
     },
   })
 
@@ -222,24 +247,16 @@ export default function Home() {
   }
 
   function recordForDish(dish: Dish, mealType: "lunch" | "dinner") {
-    const alreadyPicked = todayRecords.some(
-      (r) => r.status !== "cancelled" && r.dish_id === dish.id && r.meal_type === mealType && r.meal_date === todayKey
-    )
-    if (alreadyPicked) {
-      toast.error(`${dish.name} 已在今日${mealType === "lunch" ? "午餐" : "晚餐"}中记录过啦~`)
-      return
-    }
-    recordMut.mutate({
-      dish_id: dish.id,
-      dish_name: dish.name,
-      meal_type: mealType,
-      meal_date: todayKey,
-    })
-  }
-
-  function handlePickMeal(mealType: "lunch" | "dinner") {
-    if (!currentRec) return
-    recordForDish(currentRec, mealType)
+    const date = dateKey()
+    if (date !== todayKey) { setTodayKey(date); return }
+    if (mealStateUnavailable) return
+    const selection = { dish_id: dish.id, dish_name: dish.name, meal_type: mealType, meal_date: date }
+    const request = getMealSelectionRequest(todayRecords, selection)
+    if (!request) return // 已吃记录不能从推荐入口取消。
+    const key = mealSelectionKey(request)
+    if (mealEditLocks.current.has(key) || hasPendingMealSelection(qc, request)) return
+    mealEditLocks.current.add(key)
+    recordMut.mutate(request)
   }
 
   function handleMoodPick(mood: HomeMood) {
@@ -275,24 +292,30 @@ export default function Home() {
   const date = new Date(todayKey + "T12:00:00")
   const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日 · 周${"日一二三四五六"[date.getDay()]}`
   const brand = appName
-  const isPlanned = (dish: Dish, meal: "lunch" | "dinner") => todayRecords.some(
-    (r) => r.status !== "cancelled" && r.dish_id === dish.id && r.meal_type === meal && r.meal_date === todayKey
-  )
-
   const mealButtons = (dish: Dish) => (
     <div className="kitchen-meal-actions">
       {(["lunch", "dinner"] as const).map((meal) => {
-        const added = isPlanned(dish, meal)
-        const Icon = added ? Check : meal === "lunch" ? Utensils : Soup
+        const selection = { dish_id: dish.id, meal_type: meal, meal_date: todayKey }
+        const record = getMealSelectionRecord(todayRecords, selection)
+        const added = !!record
+        const completed = record?.status === "completed"
+        const pending = pendingMeals.has(mealSelectionKey(selection))
+        const label = meal === "lunch" ? "午餐" : "晚餐"
+        const Icon = pending ? LoaderCircle : added ? Check : meal === "lunch" ? Utensils : Soup
         return (
           <button
             key={meal}
+            type="button"
             className={`kitchen-button ${meal === "lunch" ? "kitchen-button-ink" : "kitchen-button-outline"}`}
-            disabled={recordMut.isPending || added}
-            onClick={() => dish === currentRec ? handlePickMeal(meal) : recordForDish(dish, meal)}
+            disabled={mealStateUnavailable || pending || completed}
+            aria-pressed={added}
+            aria-busy={pending}
+            aria-label={`${dish.name}，${pending ? "正在更新" + label + "计划" : completed ? label + "已吃" : added ? "取消" + label + "计划" : "加入" + label}`}
+            title={completed ? "已标记吃过，请到记录页撤销已吃" : added ? `已加入今日${label}，再点即可取消计划` : undefined}
+            onClick={() => recordForDish(dish, meal)}
           >
-            <Icon size={17} strokeWidth={1.6} aria-hidden="true" />
-            {added ? `已加入${meal === "lunch" ? "午餐" : "晚餐"}` : `加入${meal === "lunch" ? "午餐" : "晚餐"}`}
+            <Icon size={17} strokeWidth={1.6} className={pending ? "animate-spin" : undefined} aria-hidden="true" />
+            {pending ? "更新中…" : completed ? `${label}已吃` : `${added ? "取消" : "加入"}${label}`}
           </button>
         )
       })}

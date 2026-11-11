@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import { QueryClient } from "@tanstack/react-query"
-import { hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, mergeMealSelectionRecord, reconcileMealSelection, waitForMealSelectionRefresh } from "../src/lib/mealSelection.ts"
+import { getMealSelectionRecord, getMealSelectionRequest, hasPendingMealSelection, mealSelectionKey, mealSelectionMutationKey, mergeMealSelectionRecord, reconcileMealSelection, waitForMealSelectionRefresh } from "../src/lib/mealSelection.ts"
 
 function deferred() {
   let resolve, reject
@@ -205,5 +205,78 @@ test("刷新失败会结束等待并保留错误状态，由页面要求显式�
   await waiting
   assert.equal(client.getQueryState(queryKey).status, "error")
   assert.equal(client.getQueryData(queryKey).items.length, 1)
+  client.clear()
+})
+
+
+test("推荐餐次可从加入到取消再加入，只取消对应的计划而不删除记录", () => {
+  const request = { ...selection, dish_name: "番茄炒蛋" }
+  assert.deepEqual(getMealSelectionRequest([], request), request)
+  const planned = { ...row(81), dish_id: request.dish_id, dish_name: request.dish_name }
+  assert.equal(getMealSelectionRecord([planned], request), planned)
+  assert.deepEqual(getMealSelectionRequest([planned], request), { ...request, cancelRecordId: 81 })
+  const cancelled = { ...planned, status: "cancelled" }
+  assert.equal(getMealSelectionRecord([cancelled], request), undefined)
+  assert.deepEqual(getMealSelectionRequest([cancelled], request), request)
+  assert.equal(planned.status, "planned", "不得乐观修改原记录")
+})
+
+test("首页午晚餐分别切换，匹配相同菜品、餐次和日期的服务端记录 ID", () => {
+  const lunch = { ...selection, dish_name: "番茄炒蛋" }
+  const dinner = { ...lunch, meal_type: "dinner" }
+  const records = [
+    { ...row(71), dish_id: lunch.dish_id },
+    { ...row(72), dish_id: dinner.dish_id, meal_type: "dinner" },
+  ]
+  assert.equal(getMealSelectionRequest(records, lunch).cancelRecordId, 71)
+  assert.equal(getMealSelectionRequest(records, dinner).cancelRecordId, 72)
+  records[0] = { ...records[0], status: "cancelled" }
+  assert.deepEqual(getMealSelectionRequest(records, lunch), lunch)
+  assert.equal(getMealSelectionRequest(records, dinner).cancelRecordId, 72)
+})
+
+test("已经吃过的餐次禁止从推荐按钮取消，即使存在异常重复计划", () => {
+  const request = { ...selection, dish_name: "番茄炒蛋" }
+  const planned = { ...row(51), dish_id: request.dish_id }
+  const completed = { ...planned, id: 52, status: "completed" }
+  assert.equal(getMealSelectionRecord([planned, completed], request), completed)
+  assert.equal(getMealSelectionRequest([planned, completed], request), undefined)
+  assert.equal(getMealSelectionRequest([completed], request), undefined)
+})
+
+test("推荐取消不匹配昨天、其它菜或其它餐次，跨日只能操作当天计划", () => {
+  const request = { ...selection, dish_name: "番茄炒蛋" }
+  const records = [
+    { ...row(21, "completed"), dish_id: request.dish_id, meal_date: "2026-11-05" },
+    { ...row(22), dish_id: request.dish_id, meal_type: "dinner" },
+    row(23),
+  ]
+  assert.deepEqual(getMealSelectionRequest(records, request), request)
+  const yesterday = { ...request, meal_date: "2026-11-05" }
+  assert.equal(getMealSelectionRequest(records, yesterday), undefined)
+})
+
+test("首页新增和菜品页取消同一道菜，使用相同的跨页待处理键", async () => {
+  const client = new QueryClient()
+  const request = { ...selection, dish_name: "番茄炒蛋" }
+  const write = deferred()
+  const refresh = deferred()
+  const mutation = client.getMutationCache().build(client, {
+    mutationKey: mealSelectionMutationKey,
+    mutationFn: () => write.promise,
+    onSettled: () => refresh.promise,
+  })
+  const done = mutation.execute(request)
+  const saved = { ...row(91), dish_id: selection.dish_id }
+  const cancel = getMealSelectionRequest([saved], request)
+  assert.equal(mealSelectionKey(request), mealSelectionKey(cancel))
+  assert.equal(hasPendingMealSelection(client, cancel), true)
+  assert.equal(hasPendingMealSelection(client, { ...request, meal_type: "dinner" }), false)
+  write.resolve(saved)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(hasPendingMealSelection(client, cancel), true)
+  refresh.resolve()
+  await done
+  assert.equal(hasPendingMealSelection(client, cancel), false)
   client.clear()
 })

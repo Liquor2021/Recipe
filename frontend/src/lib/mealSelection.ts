@@ -4,6 +4,21 @@ import type { MealRecord, PaginatedData } from "../types/index.ts"
 export const mealSelectionMutationKey = ["meal-selection"] as const
 
 export type MealSelection = Pick<MealRecord, "dish_id" | "meal_date" | "meal_type">
+export type MealSelectionRequest = MealSelection & Pick<MealRecord, "dish_name"> & { cancelRecordId?: number }
+
+// 已吃优先于待做，避免历史异常重复行让推荐按钮误撤销完成记录。
+export function getMealSelectionRecord(records: readonly MealRecord[], selection: MealSelection): MealRecord | undefined {
+  const matches = (record: MealRecord) => record.dish_id === selection.dish_id
+    && record.meal_date === selection.meal_date && record.meal_type === selection.meal_type
+  return records.find(record => matches(record) && record.status === "completed")
+    ?? records.find(record => matches(record) && record.status === "planned")
+}
+
+export function getMealSelectionRequest(records: readonly MealRecord[], selection: MealSelection & Pick<MealRecord, "dish_name">): MealSelectionRequest | undefined {
+  const record = getMealSelectionRecord(records, selection)
+  if (record?.status === "completed") return
+  return record ? { ...selection, cancelRecordId: record.id } : { ...selection }
+}
 
 export function mealSelectionKey(selection: MealSelection): string {
   return `${selection.meal_date}:${selection.meal_type}:${selection.dish_id}`
