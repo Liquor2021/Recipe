@@ -8,6 +8,7 @@ import OfflineBanner from "@/components/OfflineBanner"
 import MainLayout from "@/layouts/MainLayout"
 import AdminLayout from "@/layouts/AdminLayout"
 import SubPageLayout from "@/layouts/SubPageLayout"
+import RouteErrorBoundary from "@/components/RouteErrorBoundary"
 
 // 页面组件全部按需加载：首屏只拉当前路由 + 布局壳的代码
 const Home = lazy(() => import("@/pages/Home"))
@@ -58,43 +59,45 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <OfflineBanner />
-        <Routes>
-          <Route element={<AppGate><Suspense fallback={<RouteLoading />}><MainLayout /></Suspense></AppGate>}>
-            <Route path="/" element={<Home />} />
-            <Route path="/dishes" element={<DishList />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/photo-wall" element={<PhotoWall />} />
-            <Route path="/favorites" element={<Favorites />} />
-            <Route path="/more" element={<More />} />
-          </Route>
-          <Route element={<AppGate><Suspense fallback={<RouteLoading />}><SubPageLayout /></Suspense></AppGate>}>
-            <Route path="/dishes/:id" element={<DishDetail />} />
-            <Route path="/tomorrow" element={<Tomorrow />} />
-            <Route path="/achievements" element={<Achievements />} />
-            <Route path="/fridge" element={<Fridge />} />
-            <Route path="/report" element={<Report />} />
-            <Route path="/ledger" element={<Ledger />} />
-          </Route>
-          <Route path="/dishes/:id/cook" element={<AppGate><Suspense fallback={<RouteLoading />}><CookMode /></Suspense></AppGate>} />
-          <Route
-            path="/admin"
-            element={
-              <Suspense fallback={<div className="min-h-dvh bg-bg" />}>
-                <AdminLayout />
-              </Suspense>
-            }
-          >
-            <Route path="login" element={<AdminLogin />} />
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="dishes" element={<AdminDishes />} />
-            <Route path="dishes/new" element={<AdminDishEdit />} />
-            <Route path="dishes/:id" element={<AdminDishEdit />} />
-          <Route path="settings" element={<AdminSettings />} />
-          <Route path="achievements" element={<AdminAchievements />} />
-          <Route path="quotes" element={<AdminQuotes />} />
-          <Route path="records" element={<AdminRecords />} />
-          </Route>
-        </Routes>
+        <RouteErrorBoundary fullScreen>
+          <Routes>
+            <Route element={<AppGate><Suspense fallback={<RouteLoading />}><MainLayout /></Suspense></AppGate>}>
+              <Route path="/" element={<Home />} />
+              <Route path="/dishes" element={<DishList />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/photo-wall" element={<PhotoWall />} />
+              <Route path="/favorites" element={<Favorites />} />
+              <Route path="/more" element={<More />} />
+            </Route>
+            <Route element={<AppGate><Suspense fallback={<RouteLoading />}><SubPageLayout /></Suspense></AppGate>}>
+              <Route path="/dishes/:id" element={<DishDetail />} />
+              <Route path="/tomorrow" element={<Tomorrow />} />
+              <Route path="/achievements" element={<Achievements />} />
+              <Route path="/fridge" element={<Fridge />} />
+              <Route path="/report" element={<Report />} />
+              <Route path="/ledger" element={<Ledger />} />
+            </Route>
+            <Route path="/dishes/:id/cook" element={<AppGate><RouteErrorBoundary fullScreen><Suspense fallback={<RouteLoading />}><CookMode /></Suspense></RouteErrorBoundary></AppGate>} />
+            <Route
+              path="/admin"
+              element={
+                <Suspense fallback={<div className="min-h-dvh bg-bg" />}>
+                  <AdminLayout />
+                </Suspense>
+              }
+            >
+              <Route path="login" element={<AdminLogin />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="dishes" element={<AdminDishes />} />
+              <Route path="dishes/new" element={<AdminDishEdit />} />
+              <Route path="dishes/:id" element={<AdminDishEdit />} />
+              <Route path="settings" element={<AdminSettings />} />
+              <Route path="achievements" element={<AdminAchievements />} />
+              <Route path="quotes" element={<AdminQuotes />} />
+              <Route path="records" element={<AdminRecords />} />
+            </Route>
+          </Routes>
+        </RouteErrorBoundary>
       </BrowserRouter>
       <Toaster
         position="top-center"

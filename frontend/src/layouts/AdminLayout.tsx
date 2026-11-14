@@ -4,6 +4,7 @@ import { LogOut, Moon, Sun } from "lucide-react"
 import { useAuthStore } from "@/store/useAuthStore"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
+import RouteErrorBoundary from "@/components/RouteErrorBoundary"
 import "@/styles/kitchen-admin.css"
 
 const navItems = [
@@ -69,7 +70,9 @@ export default function AdminLayout() {
         </>
       )}
       <div className="k-admin-content flex-1 overflow-y-auto overscroll-y-contain">
-        <Outlet />
+        <RouteErrorBoundary>
+          <Outlet />
+        </RouteErrorBoundary>
       </div>
     </div>
   )

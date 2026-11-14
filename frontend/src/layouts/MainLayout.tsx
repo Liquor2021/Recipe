@@ -4,6 +4,7 @@ import { CalendarDays, Heart, Home as HomeIcon, Images, Menu, UtensilsCrossed } 
 import { motionDuration } from "@/lib/gsap"
 import { createTabStripMotion } from "@/lib/tabStripMotion"
 import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
+import ErrorBoundary from "@/components/ErrorBoundary"
 import "@/styles/kitchen-shell.css"
 
 // 六个 tab 页懒加载：首屏只下载当前页代码
@@ -246,9 +247,11 @@ export default function MainLayout() {
               style={{ width: `${STEP_PCT}%`, flexShrink: 0 }}
             >
               {mountedTabs.has(i) ? (
-                <Suspense fallback={<TabLoading />}>
-                  <tab.Component />
-                </Suspense>
+                <ErrorBoundary onGoHome={() => navigate("/")}>
+                  <Suspense fallback={<TabLoading />}>
+                    <tab.Component />
+                  </Suspense>
+                </ErrorBoundary>
               ) : (
                 <TabLoading />
               )}
