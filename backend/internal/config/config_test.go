@@ -19,3 +19,12 @@ func TestInsecureDefaults(t *testing.T) {
 		t.Fatalf("都改过时应为空, got %v", got)
 	}
 }
+
+func TestProxyAddresses(t *testing.T) {
+	if got := proxyAddresses(""); got != nil {
+		t.Fatalf("默认不应信任任何代理: %v", got)
+	}
+	if got := proxyAddresses(" 127.0.0.1, , ::1,192.0.2.0/24 "); !reflect.DeepEqual(got, []string{"127.0.0.1", "::1", "192.0.2.0/24"}) {
+		t.Fatalf("代理列表解析错误: %v", got)
+	}
+}

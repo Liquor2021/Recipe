@@ -20,7 +20,7 @@ node --test scripts/*.test.*
 | `history-summary.test.mjs` | 计划相对日期、跨月/跨年/闰日/夏令时、月度顿数与道数区分、状态和月份过滤、分页重复去重 |
 | `fridge-filters.test.mjs` | 同名多批筛选、名称搜索、临期边界、无效日期与跨日更新 |
 | `auth-regression.test.cjs` | 管理员与应用认证分离、状态同步、登录失败和迟到的旧请求；普通读取接受离线副本、编辑读取拒绝旧 Service Worker 缓存 |
-| `login-error.test.mjs` | 应用与管理登录区分密码错误、断网、超时、限流和服务故障；仅密码错误标记输入无效 |
+| `login-error.test.mjs` | 应用与管理登录区分密码错误、断网、超时、限流和服务故障；锁定等待头/响应体解析、截止时间纠偏与到期；仅密码错误标记输入无效 |
 | `cook-timer.test.mjs` | 做菜倒计时延迟纠偏、暂停继续、总进度保持、到时与重置边界 |
 | `dish-editor-session.test.mjs` | 编辑器上传乱序、替换失败、离开页面隔离、上传与保存互斥、服务器版本识别 |
 | `meal-selection.test.mjs` | 推荐餐次加入/取消/重新加入、已吃保护、日期与餐次隔离、点菜请求互斥、跨页面等待、不同菜独立更新、失败恢复与并发刷新交接 |

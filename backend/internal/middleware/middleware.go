@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"ninimenu/internal/config"
@@ -74,8 +73,7 @@ func AppAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if subtle.ConstantTimeCompare([]byte(appToken), []byte(config.C.AppPassword)) != 1 {
-			utils.Error(c, http.StatusUnauthorized, AppAuthErrorCode, "应用密码错误")
+		if !VerifyPassword(c, AppPasswordScope, appToken, config.C.AppPassword, false) {
 			c.Abort()
 			return
 		}
@@ -89,6 +87,7 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-App-Token")
+		c.Header("Access-Control-Expose-Headers", "Retry-After")
 		c.Header("Access-Control-Max-Age", "86400")
 
 		if c.Request.Method == http.MethodOptions {

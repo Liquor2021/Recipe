@@ -14,6 +14,7 @@ type Config struct {
 	AdminPassword  string
 	JWTSecret      string
 	JWTExpire      string
+	TrustedProxies []string // 默认不信任转发 IP；只填写实际反向代理的 IP/CIDR
 	RepeatDays     int
 	DBPath         string
 	UploadDir      string
@@ -58,6 +59,7 @@ func Load() {
 		AdminPassword:  getEnv("ADMIN_PASSWORD", DefaultPassword),
 		JWTSecret:      getEnv("JWT_SECRET", DefaultJWTSecret),
 		JWTExpire:      getEnv("JWT_EXPIRE", "24h"),
+		TrustedProxies: proxyAddresses(os.Getenv("TRUSTED_PROXIES")),
 		RepeatDays:     3,
 		DBPath:         getEnv("DB_PATH", "data/ninimenu.db"),
 		UploadDir:      getEnv("UPLOAD_DIR", "uploads"),
@@ -78,6 +80,16 @@ func Load() {
 	if C.DBBackupKeep < 0 {
 		C.DBBackupKeep = 0
 	}
+}
+
+func proxyAddresses(value string) []string {
+	var addresses []string
+	for _, address := range strings.Split(value, ",") {
+		if address = strings.TrimSpace(address); address != "" {
+			addresses = append(addresses, address)
+		}
+	}
+	return addresses
 }
 
 func loadDotEnv() {

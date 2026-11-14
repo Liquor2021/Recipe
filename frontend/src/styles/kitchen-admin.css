@@ -34,6 +34,7 @@
 .k-admin-login-message svg { flex-shrink: 0; margin-top: 2px; }
 .k-admin-login-submit { width: 100%; min-height: 46px; padding: 10px; background: var(--k-ink); color: var(--k-card); border: 1px solid var(--k-ink); border-radius: 5px; font-weight: 700; }
 .k-admin-login-submit:disabled { opacity: .5; }
+.k-admin-login-submit[data-login-locked] { background: var(--k-kraft); color: var(--k-ink); border-color: var(--k-line); opacity: 1; }
 .k-admin-login-cancel { width: 100%; min-height: 44px; margin-top: 8px; color: var(--k-muted); font-size: 13px; }
 .k-admin-dish-list { display: flex; flex-direction: column; gap: 10px; }
 .k-admin-dish-row { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: center; gap: 8px 12px; padding: 12px; border: 1px solid var(--k-line); border-radius: 6px; background: var(--k-card); }

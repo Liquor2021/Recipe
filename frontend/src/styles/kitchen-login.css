@@ -86,6 +86,7 @@
 .kitchen-night .kitchen-login-submit { background: var(--k-red); color: var(--k-paper); box-shadow: 0 6px 20px color-mix(in srgb, var(--k-red) 13%, transparent); }
 .kitchen-night .kitchen-login-submit::after { display: none; }
 .kitchen-night .kitchen-login-submit:hover:not(:disabled) { background: color-mix(in srgb, var(--k-red) 85%, var(--k-ink)); }
+.kitchen-login .kitchen-login-submit[data-login-locked] { background: var(--k-kraft); color: var(--k-ink); border: 1px solid var(--k-line); opacity: 1; }
 
 @media (max-width: 360px) {
   .kitchen-login-stage { padding-inline: 14px; }

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"ninimenu/internal/config"
 	"ninimenu/internal/handlers"
@@ -12,7 +13,12 @@ import (
 )
 
 func Setup(r *gin.Engine) {
+	// Gin 默认信任所有代理，会让直连设备靠伪造 X-Forwarded-For 绕过同 IP 限制。
+	if err := r.SetTrustedProxies(config.C.TrustedProxies); err != nil {
+		panic(fmt.Sprintf("TRUSTED_PROXIES 配置无效: %v", err))
+	}
 	r.MaxMultipartMemory = config.C.MaxUploadSize + 1<<20
+	r.Use(middleware.PasswordProtection())
 	r.Use(middleware.CORSMiddleware())
 	r.Use(middleware.LoggerMiddleware())
 

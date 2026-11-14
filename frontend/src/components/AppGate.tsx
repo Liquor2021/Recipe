@@ -5,7 +5,7 @@ import { AlertCircle, ArrowRight, LoaderCircle, Moon, Soup, Sun } from "lucide-r
 import { authApi } from "@/api"
 import { APP_TOKEN_KEY } from "@/api/client"
 import { getLoginError } from "@/lib/loginError"
-import type { LoginError } from "@/lib/loginError"
+import { useLoginFeedback } from "@/hooks/useLoginFeedback"
 import { useAppInfoStore } from "@/store/useAppInfoStore"
 import { useKitchenTheme, watchKitchenTheme } from "@/store/useKitchenTheme"
 import AchievementUnlockOverlay from "@/components/AchievementUnlockOverlay"
@@ -14,7 +14,7 @@ import "@/styles/kitchen-login.css"
 
 function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
   const [password, setPassword] = useState("")
-  const [error, setError] = useState<LoginError | null>(null)
+  const { error, isLocked, message, showError, clearError } = useLoginFeedback()
   const [shake, setShake] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const appName = useAppInfoStore((s) => s.appName)
@@ -36,7 +36,7 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
     },
     onError: (cause) => {
       const feedback = getLoginError(cause, "app")
-      setError(feedback)
+      showError(feedback)
       setShake(feedback.invalidPassword)
       inputRef.current?.focus()
     },
@@ -44,8 +44,8 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!password || loginMut.isPending) return
-    setError(null)
+    if (!password || loginMut.isPending || isLocked) return
+    clearError()
     setShake(false)
     loginMut.mutate(password)
   }
@@ -92,16 +92,16 @@ function KitchenLogin({ onUnlock }: { onUnlock: () => void }) {
                 aria-invalid={error?.invalidPassword ?? false}
                 aria-describedby={error ? "kitchen-login-error" : undefined}
                 placeholder={isNight ? "压低声音，对上暗号…" : "写下口令，翻开手账…"}
-                onChange={(event) => { setPassword(event.target.value); setError(null) }}
+                onChange={(event) => { setPassword(event.target.value); clearError() }}
               />
             </div>
-            <button className="kitchen-login-submit" type="submit" disabled={!password || loginMut.isPending}>
+            <button className="kitchen-login-submit" type="submit" disabled={!password || loginMut.isPending || isLocked} data-login-locked={isLocked || undefined}>
               {loginMut.isPending ? <LoaderCircle size={17} className="kitchen-login-spinner" aria-hidden="true" /> : null}
-              <span>{loginMut.isPending ? "对暗号中…" : isNight ? "掀开锅盖" : "翻开手账"}</span>
-              {!loginMut.isPending ? <ArrowRight size={17} aria-hidden="true" /> : null}
+              <span>{isLocked ? "已锁定" : loginMut.isPending ? "对暗号中…" : isNight ? "掀开锅盖" : "翻开手账"}</span>
+              {!loginMut.isPending && !isLocked ? <ArrowRight size={17} aria-hidden="true" /> : null}
             </button>
             <div id="kitchen-login-error" className="kitchen-login-message" aria-live="polite" aria-atomic="true">
-              {error ? <p className="kitchen-login-error"><AlertCircle size={16} aria-hidden="true" /><span>{error.message}</span></p> : null}
+              {message ? <p className="kitchen-login-error"><AlertCircle size={16} aria-hidden="true" /><span>{message}</span></p> : null}
             </div>
           </form>
           <footer className="kitchen-login-footer">

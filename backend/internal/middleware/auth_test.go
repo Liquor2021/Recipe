@@ -16,6 +16,9 @@ import (
 func TestAuthMiddlewareSeparatesCredentialFailures(t *testing.T) {
 	oldConfig, oldMode := config.C, gin.Mode()
 	t.Cleanup(func() { config.C = oldConfig; gin.SetMode(oldMode) })
+	oldGuard := passwords
+	passwords = newPasswordGuard()
+	t.Cleanup(func() { passwords = oldGuard })
 	gin.SetMode(gin.TestMode)
 	config.C = config.Config{AppPassword: "test-app-password", JWTSecret: "test-secret"}
 

@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"crypto/subtle"
+	"net/http"
 	"ninimenu/internal/config"
 	"ninimenu/internal/middleware"
 	"ninimenu/internal/utils"
@@ -14,14 +14,15 @@ type LoginRequest struct {
 }
 
 func AppLogin(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "密码不能为空")
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(req.Password), []byte(config.C.AppPassword)) != 1 {
-		utils.Unauthorized(c, "应用密码错误")
+	if !middleware.VerifyPassword(c, middleware.AppPasswordScope, req.Password, config.C.AppPassword, true) {
 		return
 	}
 
@@ -29,14 +30,15 @@ func AppLogin(c *gin.Context) {
 }
 
 func Login(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		utils.BadRequest(c, "密码不能为空")
 		return
 	}
 
-	if req.Password != config.C.AdminPassword {
-		utils.Unauthorized(c, "密码错误")
+	if !middleware.VerifyPassword(c, middleware.AdminPasswordScope, req.Password, config.C.AdminPassword, true) {
 		return
 	}
 
