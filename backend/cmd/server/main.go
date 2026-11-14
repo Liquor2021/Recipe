@@ -5,6 +5,7 @@ import (
 	"ninimenu/internal/config"
 	"ninimenu/internal/database"
 	"ninimenu/internal/routes"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,11 @@ import (
 
 func main() {
 	config.Load()
+	mode := os.Getenv("GIN_MODE")
+	if mode == "" {
+		mode = gin.ReleaseMode
+	}
+	gin.SetMode(mode)
 
 	if err := database.Init(); err != nil {
 		panic(fmt.Sprintf("数据库初始化失败: %v", err))

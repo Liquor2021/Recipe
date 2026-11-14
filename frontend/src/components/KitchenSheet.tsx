@@ -17,6 +17,7 @@ interface KitchenSheetProps {
   closeDisabled?: boolean
   closeLabel?: string
   onKeyDown?: KeyboardEventHandler<HTMLDialogElement>
+  initialFocusRef?: { readonly current: HTMLElement | null }
 }
 
 function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
@@ -28,7 +29,7 @@ function isBackdrop(event: PointerEvent<HTMLDialogElement>) {
 
 // The parent mounts this sheet while open. Native modal dialogs keep keyboard
 // focus inside the sheet and make the rest of the page inert.
-export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false, icon, footer, bodyClassName = "", closeDisabled = false, closeLabel = "关闭", onKeyDown }: KitchenSheetProps) {
+export default function KitchenSheet({ title, theme, onClose, children, className = "", hideHeading = false, icon, footer, bodyClassName = "", closeDisabled = false, closeLabel = "关闭", onKeyDown, initialFocusRef }: KitchenSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const backdropPointerDown = useRef(false)
   const titleId = useId()
@@ -38,11 +39,12 @@ export default function KitchenSheet({ title, theme, onClose, children, classNam
     if (!dialog) return
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialog.showModal()
+    initialFocusRef?.current?.focus({ preventScroll: true })
     return () => {
       dialog.close()
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
     }
-  }, [])
+  }, [initialFocusRef])
 
   return createPortal(
     <dialog
@@ -62,7 +64,7 @@ export default function KitchenSheet({ title, theme, onClose, children, classNam
       <header className="kitchen-sheet-heading">
         {icon && <span className="kitchen-sheet-stamp" aria-hidden="true">{icon}</span>}
         <h2 id={titleId} className={hideHeading ? "sr-only" : undefined}>{title}</h2>
-        <button type="button" className="kitchen-icon-button" aria-label={closeLabel} disabled={closeDisabled} onClick={onClose} autoFocus>
+        <button type="button" className="kitchen-icon-button" aria-label={closeLabel} disabled={closeDisabled} onClick={onClose} autoFocus={!initialFocusRef}>
           <X size={20} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </header>

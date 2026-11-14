@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"net/http"
 	"ninimenu/internal/config"
 	imgproc "ninimenu/internal/imaging"
 	"ninimenu/internal/utils"
@@ -26,8 +27,25 @@ func randomSuffix() string {
 }
 
 func UploadImage(c *gin.Context) {
+	// FormFile 会先解析整个 multipart；必须在解析前限制整份请求，而非只查已读入的单文件。
+	requestLimit := config.C.MaxUploadSize + 64*1024
+	if c.Request.ContentLength > requestLimit {
+		utils.Error(c, http.StatusRequestEntityTooLarge, 41300, "上传请求过大，请缩小图片后重试")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, requestLimit)
+	defer func() {
+		if c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
 	file, err := c.FormFile("image")
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			utils.Error(c, http.StatusRequestEntityTooLarge, 41300, "上传请求过大，请缩小图片后重试")
+			return
+		}
 		utils.BadRequest(c, "请选择图片")
 		return
 	}
@@ -90,6 +108,10 @@ func UploadImage(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, imgproc.ErrInvalidImage) {
 			utils.BadRequest(c, "图片内容损坏或无法读取，请重新选择 jpg/png/webp 图片")
+			return
+		}
+		if errors.Is(err, imgproc.ErrImageTooLarge) {
+			utils.Error(c, http.StatusRequestEntityTooLarge, 41300, imgproc.ErrImageTooLarge.Error())
 			return
 		}
 		if !errors.Is(err, imgproc.ErrImageProcessing) {

@@ -17,10 +17,22 @@ import (
 // ErrInvalidImage 表示输入无法完整解码，不能作为原图发布。
 var ErrInvalidImage = errors.New("图片内容损坏或格式不受支持")
 
+// 字节数小不代表解码后的位图小；先检查图片头，避免压缩图片撑爆解码内存。
+const MaxUploadPixels = 40_000_000
+
+var ErrImageTooLarge = errors.New("图片分辨率超过4000万像素，请缩小图片后重试")
+
 // ErrImageProcessing 只用于已成功解码的图片，调用方可在压缩失败时保留原图。
 var ErrImageProcessing = errors.New("图片处理失败")
 
 func ProcessUpload(srcPath, dstDir, baseName string, maxDim, quality int) (string, error) {
+	cfg, err := readConfig(srcPath)
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return "", ErrInvalidImage
+	}
+	if int64(cfg.Width) > MaxUploadPixels/int64(cfg.Height) {
+		return "", ErrImageTooLarge
+	}
 	src, err := os.Open(srcPath)
 	if err != nil {
 		return "", err

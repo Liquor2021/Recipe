@@ -3,7 +3,10 @@ package imaging
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -170,5 +173,39 @@ func TestProcessUploadValidatesBeforeAllowingFallback(t *testing.T) {
 	}
 	if _, err := ProcessUpload(src, root, "result", 0, 85); !errors.Is(err, ErrImageProcessing) {
 		t.Fatalf("valid input may fall back when compression settings fail: %v", err)
+	}
+}
+
+func TestProcessUploadChecksPixelBudgetBeforeDecode(t *testing.T) {
+	for _, dimensions := range [][2]uint32{{10000, 10000}, {1, 40000001}, {40000001, 1}, {8000, 5000}} {
+		t.Run(fmt.Sprintf("%dx%d", dimensions[0], dimensions[1]), func(t *testing.T) {
+			data := make([]byte, 33)
+			copy(data, "\x89PNG\r\n\x1a\n")
+			binary.BigEndian.PutUint32(data[8:12], 13)
+			copy(data[12:16], "IHDR")
+			binary.BigEndian.PutUint32(data[16:20], dimensions[0])
+			binary.BigEndian.PutUint32(data[20:24], dimensions[1])
+			data[24], data[25] = 8, 2
+			binary.BigEndian.PutUint32(data[29:33], crc32.ChecksumIEEE(data[12:29]))
+			if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			src := filepath.Join(root, "header.png")
+			if err := os.WriteFile(src, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := ProcessUpload(src, root, "result", 8, 85)
+			if uint64(dimensions[0])*uint64(dimensions[1]) > MaxUploadPixels {
+				if !errors.Is(err, ErrImageTooLarge) || errors.Is(err, ErrImageProcessing) {
+					t.Fatalf("oversized header must be rejected before decode/fallback: %v", err)
+				}
+			} else if !errors.Is(err, ErrInvalidImage) {
+				t.Fatalf("exact pixel budget must proceed to full image validation: %v", err)
+			}
+			if entries, err := os.ReadDir(root); err != nil || len(entries) != 1 {
+				t.Fatalf("rejected header left output artifacts: %v %v", entries, err)
+			}
+		})
 	}
 }

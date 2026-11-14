@@ -55,6 +55,7 @@ chmod +x ninimenu
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `8080` | 服务端口 |
+| `GIN_MODE` | `release` | 生产模式；本机开发可显式设为 `debug` |
 | `APP_PASSWORD` | `123456` | 应用端密码 |
 | `ADMIN_PASSWORD` | `123456` | 管理端密码 |
 | `JWT_SECRET` | `ninimenu-secret-key` | JWT 签名密钥 |
@@ -93,6 +94,8 @@ chmod +x ninimenu
 恢复：停止服务 → 把 `data/ninimenu.db` 换成要恢复的备份文件（同时删掉旁边的 `ninimenu.db-wal`、`ninimenu.db-shm`）→ 启动服务。
 
 ## 上传图片压缩机制
+
+单文件上限由 `MAX_UPLOAD_SIZE_MB` 控制（默认 5MB）。解析 multipart 前对整份请求设上限（文件上限加 64KiB 协议开销），未知 Content-Length 的流式请求也受限制，超出返回 HTTP 413；临时文件会清理。解码前先检查图片头，超过 4000 万像素拒绝，避免小压缩文件触发巨大的位图分配。
 
 手机上传的截图和照片通常是体积很大的 PNG 格式。系统在上传时自动处理：
 

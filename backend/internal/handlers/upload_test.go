@@ -3,11 +3,15 @@ package handlers
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/jpeg"
+	"io"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"net/textproto"
 	"ninimenu/internal/config"
@@ -243,5 +247,114 @@ func TestUploadImageCompressesJPEGWithSharedUploadAndBackupDirectory(t *testing.
 	}
 	if bytes.Equal(data, original) {
 		t.Fatal("JPEG must be compressed, not silently returned by the original-image fallback")
+	}
+}
+
+type countedUploadBody struct {
+	io.Reader
+	read int64
+}
+
+func (b *countedUploadBody) Read(p []byte) (int, error) {
+	n, err := b.Reader.Read(p)
+	b.read += int64(n)
+	return n, err
+}
+
+func TestUploadImageLimitsEntireMultipartBeforeSaving(t *testing.T) {
+	for _, extra := range []string{"field", "file"} {
+		for _, knownLength := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/known-length=%t", extra, knownLength), func(t *testing.T) {
+				uploads, backups := setupImageUploadTest(t)
+				config.C.MaxUploadSize = 1024
+				limit := config.C.MaxUploadSize + 64*1024
+				var buf bytes.Buffer
+				writer := multipart.NewWriter(&buf)
+				part, err := writer.CreateFormFile("image", "photo.png")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = part.Write(uploadTestData(t, "png")); err != nil {
+					t.Fatal(err)
+				}
+				if extra == "field" {
+					part, err = writer.CreateFormField("unused")
+				} else {
+					part, err = writer.CreateFormFile("unused", "extra.png")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = io.Copy(part, strings.NewReader(strings.Repeat("x", int(limit)))); err != nil {
+					t.Fatal(err)
+				}
+				if err = writer.Close(); err != nil {
+					t.Fatal(err)
+				}
+				body := &countedUploadBody{Reader: bytes.NewReader(buf.Bytes())}
+				response := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(response)
+				c.Request = httptest.NewRequest(http.MethodPost, "/api/admin/upload/image", body)
+				c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+				c.Request.ContentLength = -1
+				if knownLength {
+					c.Request.ContentLength = int64(buf.Len())
+				}
+				UploadImage(c)
+				if response.Code != http.StatusRequestEntityTooLarge {
+					t.Fatalf("oversized multipart response=%d %s", response.Code, response.Body.String())
+				}
+				if knownLength && body.read != 0 {
+					t.Fatalf("known oversized body was read: %d", body.read)
+				}
+				if !knownLength && (body.read == 0 || body.read > limit+1) {
+					t.Fatalf("stream read=%d; want 1..%d", body.read, limit+1)
+				}
+				for _, root := range []string{uploads, backups} {
+					if files := uploadedFiles(t, root); len(files) != 0 {
+						t.Fatalf("rejected upload left files: %v", files)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestUploadImageKeepsSingleFileSizeLimit(t *testing.T) {
+	uploads, backups := setupImageUploadTest(t)
+	config.C.MaxUploadSize = 1024
+	response := serveImageUpload(t, "photo.png", bytes.Repeat([]byte("x"), 1025))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "图片大小不能超过") {
+		t.Fatalf("single-file limit response=%d %s", response.Code, response.Body.String())
+	}
+	for _, root := range []string{uploads, backups} {
+		if files := uploadedFiles(t, root); len(files) != 0 {
+			t.Fatalf("rejected upload left files: %v", files)
+		}
+	}
+}
+
+func TestUploadImageRejectsPixelBombWithoutArtifacts(t *testing.T) {
+	uploads, backups := setupImageUploadTest(t)
+	// Valid PNG IHDR/CRC, but no pixel data: DecodeConfig succeeds, full decode cannot.
+	data := make([]byte, 33)
+	copy(data, "\x89PNG\r\n\x1a\n")
+	binary.BigEndian.PutUint32(data[8:12], 13)
+	copy(data[12:16], "IHDR")
+	binary.BigEndian.PutUint32(data[16:20], 10000)
+	binary.BigEndian.PutUint32(data[20:24], 10000)
+	data[24], data[25] = 8, 2
+	binary.BigEndian.PutUint32(data[29:33], crc32.ChecksumIEEE(data[12:29]))
+	if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	response := serveImageUpload(t, "photo.png", data)
+	if response.Code != http.StatusRequestEntityTooLarge || !strings.Contains(response.Body.String(), "4000万像素") {
+		t.Fatalf("pixel bomb response=%d %s", response.Code, response.Body.String())
+	}
+	for _, root := range []string{uploads, backups} {
+		if files := uploadedFiles(t, root); len(files) != 0 {
+			t.Fatalf("rejected upload left files: %v", files)
+		}
 	}
 }

@@ -18,6 +18,8 @@ node --test scripts/*.test.*
 | `tomorrow-date.test.mjs` | 本地午夜切换、跨月/跨年/闰日，以及夏令时 23/25 小时日期的刷新时间 |
 | `home-mood.test.mjs` | 心情异步恢复、快速点选、失败回退与跨日隔离 |
 | `history-summary.test.mjs` | 计划相对日期、跨月/跨年/闰日/夏令时、月度顿数与道数区分、状态和月份过滤、分页重复去重 |
+| `history-model.test.mjs` | 拆分后的缓存结构合并、照片 JSON 容错与评价版本冲突识别 |
+| `ui-invariants.test.cjs` | 已有图片懒加载、夜间主题实际对比度、动态行高虚拟列表及 GSAP CSS 入口 |
 | `fridge-filters.test.mjs` | 同名多批筛选、名称搜索、临期边界、无效日期与跨日更新 |
 | `auth-regression.test.cjs` | 管理员与应用认证分离、状态同步、登录失败和迟到的旧请求；普通读取接受离线副本、编辑读取拒绝旧 Service Worker 缓存 |
 | `login-error.test.mjs` | 应用与管理登录区分密码错误、断网、超时、限流和服务故障；锁定等待头/响应体解析、截止时间纠偏与到期；仅密码错误标记输入无效 |
