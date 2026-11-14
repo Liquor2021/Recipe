@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, ChevronRight, NotebookPen, Plus, ReceiptText, Wallet } from "lucide-react"
@@ -51,7 +51,20 @@ export default function Ledger() {
   const today = ledgerToday()
   const selected = params.get("month") ?? ""
   const month = /^(?:19|[2-9]\d)\d{2}-(?:0[1-9]|1[0-2])$/.test(selected) ? selected : today.slice(0, 7)
-  const [editing, setEditing] = useState<Expense | "new" | null>(null)
+  const addRequested = params.get("action") === "add"
+  const [editing, setEditing] = useState<Expense | "new" | null>(() => addRequested ? "new" : null)
+  const [handledAdd, setHandledAdd] = useState(addRequested)
+  // 外部快捷入口也可能进入已挂载的账本；只处理新请求，不重置正在填写的表单。
+  if (handledAdd !== addRequested) {
+    setHandledAdd(addRequested)
+    if (addRequested && !editing) setEditing("new")
+  }
+  useEffect(() => {
+    if (!addRequested) return
+    const next = new URLSearchParams(params)
+    next.delete("action")
+    setParams(next, { replace: true })
+  }, [addRequested, params, setParams])
   const [budgetOpen, setBudgetOpen] = useState(false)
   const [category, setCategory] = useState<string>("all")
   const query = useQuery({ queryKey: ["ledger", month], queryFn: () => ledgerApi.month(month) })

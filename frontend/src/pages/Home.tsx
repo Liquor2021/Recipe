@@ -16,6 +16,7 @@ import toast from "react-hot-toast"
 import { ArrowRight, Check, ChefHat, Clock3, LoaderCircle, Moon, RefreshCw, Scissors, Settings, Soup, Sun, Utensils, X } from "lucide-react"
 import KitchenSheet from "@/components/KitchenSheet"
 import LedgerHomeNote from "@/components/LedgerHomeNote"
+import HomeOccasionNote from "@/components/HomeOccasionNote"
 import TodayMenuNote from "@/components/TodayMenuNote"
 import KitchenWheel from "@/components/KitchenWheel"
 import type { KitchenWheelHandle } from "@/components/KitchenWheel"
@@ -364,6 +365,8 @@ export default function Home() {
           </h1>
           <span className="kitchen-margin-note" aria-hidden="true">好好吃饭</span>
         </section>
+
+        <HomeOccasionNote today={todayKey} active={location.pathname === "/"} />
 
         <section className="kitchen-recommendation" aria-labelledby="kitchen-rec-title">
           <div className="kitchen-section-heading">

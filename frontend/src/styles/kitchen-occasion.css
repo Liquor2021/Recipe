@@ -1,0 +1,7 @@
+.kitchen-occasion-note { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; padding: 8px 0 8px 11px; border-left: 2px solid var(--k-ochre); border-radius: 2px 5px 5px 2px; background: var(--k-card); }
+.kitchen-occasion-icon { flex-shrink: 0; color: var(--k-ochre); }
+.kitchen-occasion-link { flex: 1; min-width: 0; padding-block: 3px; color: var(--k-ink); }
+.kitchen-occasion-copy { display: block; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.kitchen-occasion-action { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--k-muted); font-size: 11px; line-height: 1.7; }
+.kitchen-occasion-note > button { flex-shrink: 0; width: 44px; height: 44px; }
+@media (hover: hover) { .kitchen-occasion-link:hover .kitchen-occasion-action { color: var(--k-ochre); text-decoration: underline; text-underline-offset: 3px; } }

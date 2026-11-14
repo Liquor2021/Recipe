@@ -6,6 +6,29 @@
   "display": "standalone",
   "background_color": "#FFF8F0",
   "theme_color": "#c2492f",
+  "shortcuts": [
+    {
+      "name": "记一笔",
+      "short_name": "记一笔",
+      "description": "直接打开支出记录表单",
+      "url": "/ledger?action=add",
+      "icons": [{ "src": "/kitchen-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "今天吃什么",
+      "short_name": "今天吃什么",
+      "description": "看看今日推荐和用餐菜单",
+      "url": "/",
+      "icons": [{ "src": "/kitchen-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "冰箱",
+      "short_name": "冰箱",
+      "description": "查看食材库存和临期提醒",
+      "url": "/fridge",
+      "icons": [{ "src": "/kitchen-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/kitchen-icon-192.png",

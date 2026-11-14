@@ -1,6 +1,6 @@
 // NiniMenu Service Worker：静态资源 + API 离线缓存
 // 策略：页面导航 network-first（离线回退缓存的 index.html）；
-// 同源静态资源（构建产物/图标/上传图片）cache-first；
+// manifest network-first（快捷入口可随发布更新），其他同源静态资源 cache-first；
 // 白名单 API（只读数据）network-first，离线回退最近一次成功的响应副本；
 // 其余 API 一律透传网络，保证数据新鲜。
 const CACHE_NAME = "ninimenu-v1"
@@ -112,6 +112,19 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
+
+  // manifest 不能长期停留在 cache-first 的旧副本，否则已安装 PWA 永远看不到新快捷入口。
+  if (url.pathname === "/manifest.json") {
+    event.respondWith(
+      fetch(req, { cache: "no-cache" }).then((res) => {
+        if (!res.ok) throw new Error("manifest unavailable")
+        const copy = res.clone()
+        event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {}))
+        return res
+      }).catch(async () => (await caches.match(req)) || Response.error())
+    )
+    return
+  }
 
   // 白名单 API：network-first。网络成功返回响应并把副本写进缓存（只缓存 2xx，
   // 避免把 401/500 等错误响应写进缓存污染离线回退）；网络失败回退最近一次缓存副本。
